@@ -109,6 +109,17 @@ function showLogin(message = '') {
   });
 }
 
+async function signOutFromAccount() {
+  if (saveTimer) {
+    clearTimeout(saveTimer);
+    saveTimer = null;
+    await enqueueCloudSave();
+  }
+  const { error } = await supabase.auth.signOut();
+  if (error) toast(`Çıkış yapılamadı: ${error.message}`);
+  else showLogin();
+}
+
 function friendlyAuthError(error) {
   const message = String(error?.message || error || 'Bilinmeyen hata');
   if (/invalid login credentials/i.test(message)) return 'E-posta veya parola doğru değil.';
@@ -144,16 +155,7 @@ function showMainUI(user) {
     signOut.title = 'Hesaptan çıkış yap';
     signOut.setAttribute('aria-label', 'Hesaptan çıkış yap');
     $('.topbar-actions')?.prepend(signOut);
-    signOut.addEventListener('click', async () => {
-      if (saveTimer) {
-        clearTimeout(saveTimer);
-        saveTimer = null;
-        await enqueueCloudSave();
-      }
-      const { error } = await supabase.auth.signOut();
-      if (error) toast(`Çıkış yapılamadı: ${error.message}`);
-      else showLogin();
-    });
+    signOut.addEventListener('click', signOutFromAccount);
   }
 }
 
@@ -404,6 +406,8 @@ async function render() {
       showFund: (code) => showFundDetail(code, ctx),
       prefill: prefillCode,
       profileName: activeProfileName(),
+      accountEmail: sessionUser?.email || '',
+      changeAccount: signOutFromAccount,
     };
     if (view.needsAnalysis) {
       const txs = transactions();

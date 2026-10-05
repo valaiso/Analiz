@@ -148,6 +148,17 @@ export function renderAyarlar(ctx) {
   const root = h('div', { class: 'stack' });
   const cfg = settings();
 
+  /* --------------------------------------------------------------- hesap */
+
+  root.append(sectionCard('Hesap ve eşitleme',
+    'Supabase hesabı bu tarayıcıda açık kalır. Telefonun Google hesabı otomatik kullanılmaz.',
+    h('div', { class: 'btn-row', style: 'align-items:center;justify-content:space-between' },
+      h('span', { class: 'dim' }, `Giriş yapılan hesap: ${ctx.accountEmail || '—'}`),
+      h('button', {
+        class: 'btn', type: 'button',
+        onclick: ctx.changeAccount,
+      }, 'Çıkış yap / Hesap değiştir'))));
+
   /* ------------------------------------------------------------------ profiller */
 
   const profileRows = profiles().map((p) => {
