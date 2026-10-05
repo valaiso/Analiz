@@ -1,12 +1,13 @@
-/* Uygulama çatısı: veri yükleme, sekme yönlendirme, profil ve tema yönetimi. */
+/* Uygulama çatısı: veri yükleme, sekme yönlendirme, profil/tema ve Supabase eşitlemesi. */
 
 import { $, h, fmtDate, toast } from './util.js';
 import { loadCore, refreshData, DB } from './data.js';
 import { analyze } from './portfolio.js';
 import {
   transactions, profiles, activeProfileId, setActiveProfile, activeProfileName,
-  settings, setSetting, subscribe,
+  settings, setSetting, subscribe, getState, importJSON,
 } from './store.js';
+import { supabase } from './supabase-client.js';
 import { renderPanel } from './views/panel.js';
 import { renderDagilim } from './views/dagilim.js';
 import { renderKiyaslama } from './views/kiyaslama.js';
@@ -29,13 +30,259 @@ const app = $('#app');
 let currentView = 'panel';
 let prefillCode = null;
 let rendering = false;
+let sessionUser = null;
+let cloudReady = false;
+let applyingCloudState = false;
+let lastCloudUpdatedAt = null;
+let saveTimer = null;
+let pollTimer = null;
+let saveQueue = Promise.resolve();
+let startingSession = null;
 
-/* ---------------------------------------------------------------- veri tazeliği */
+/* ---------------------------------------------------------------- eşitleme */
 
-/**
- * Cihazın saat dilimi ne olursa olsun Türkiye saatine göre "şimdi".
- * Ailenin biri yurt dışındayken de doğru karar verilsin diye gerekli.
- */
+function showAuthStyles() {
+  if (document.getElementById('authStyles')) return;
+  const style = document.createElement('style');
+  style.id = 'authStyles';
+  style.textContent = `
+    .auth-shell { min-height: 72vh; display:grid; place-items:center; padding:24px 12px; }
+    .auth-card { width:min(440px,100%); padding:24px; background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); box-shadow:var(--shadow); }
+    .auth-card h1 { font-size:1.35rem; margin-bottom:6px; }
+    .auth-card p { color:var(--text-dim); margin:0 0 18px; }
+    .auth-form { display:grid; gap:12px; }
+    .auth-form label { display:grid; gap:5px; font-size:.82rem; color:var(--text-dim); font-weight:600; }
+    .auth-form input { width:100%; min-height:42px; }
+    .auth-error { color:var(--down); background:var(--down-soft); border-radius:8px; padding:9px 11px; font-size:.86rem; }
+    .auth-note { margin-top:14px!important; font-size:.78rem; }
+    .auth-sync { font-size:.76rem; color:var(--text-dim); white-space:nowrap; }
+    @media(max-width:640px) { .auth-card { padding:19px; } .auth-sync { display:none; } }
+  `;
+  document.head.append(style);
+}
+
+function showLogin(message = '') {
+  clearInterval(pollTimer);
+  clearTimeout(saveTimer);
+  pollTimer = null;
+  saveTimer = null;
+  cloudReady = false;
+  sessionUser = null;
+  const topbar = document.querySelector('.topbar');
+  const footer = document.querySelector('.footer');
+  if (topbar) topbar.hidden = true;
+  if (footer) footer.hidden = true;
+  showAuthStyles();
+  app.className = 'app auth-shell';
+  app.innerHTML = `
+    <section class="auth-card">
+      <h1>Portföy hesabına giriş</h1>
+      <p>PC ve telefondaki portföy kayıtlarını eşitlemek için Supabase hesabınla giriş yap.</p>
+      <form class="auth-form" id="loginForm">
+        <label>E-posta<input id="loginEmail" type="email" autocomplete="username" required></label>
+        <label>Parola<input id="loginPassword" type="password" autocomplete="current-password" required></label>
+        ${message ? '<div class="auth-error" id="loginError"></div>' : '<div class="auth-error" id="loginError" hidden></div>'}
+        <button class="btn btn-primary" id="loginButton" type="submit">Giriş yap</button>
+      </form>
+      <p class="auth-note">İlk eşitlemeyi, kayıtlarının bulunduğu PC’de yap. Böylece mevcut portföyün buluta aktarılır. Hesap açma kapalıdır; bu ekrandan yeni hesap oluşturulamaz.</p>
+    </section>`;
+  const err = $('#loginError');
+  if (message && err) err.textContent = message;
+  $('#loginForm').addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const button = $('#loginButton');
+    const email = $('#loginEmail').value.trim();
+    const password = $('#loginPassword').value;
+    button.disabled = true;
+    button.textContent = 'Giriş yapılıyor…';
+    err.hidden = true;
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) throw error;
+      if (data.user) await startAuthenticatedSession(data.user);
+    } catch (error) {
+      err.textContent = friendlyAuthError(error);
+      err.hidden = false;
+      button.disabled = false;
+      button.textContent = 'Giriş yap';
+    }
+  });
+}
+
+function friendlyAuthError(error) {
+  const message = String(error?.message || error || 'Bilinmeyen hata');
+  if (/invalid login credentials/i.test(message)) return 'E-posta veya parola doğru değil.';
+  if (/email not confirmed/i.test(message)) return 'E-posta hesabı henüz doğrulanmamış. Supabase Authentication > Users bölümünü kontrol et.';
+  if (/fetch|network|failed to reach/i.test(message)) return 'Supabase bağlantısı kurulamadı. İnternet bağlantını kontrol et.';
+  return `Giriş/eşitleme hatası: ${message}`;
+}
+
+function showMainUI(user) {
+  app.className = 'app';
+  const topbar = document.querySelector('.topbar');
+  const footer = document.querySelector('.footer');
+  if (topbar) topbar.hidden = false;
+  if (footer) footer.hidden = false;
+
+  let status = $('#cloudStatus');
+  if (!status) {
+    status = document.createElement('span');
+    status.id = 'cloudStatus';
+    status.className = 'auth-sync';
+    $('.topbar-actions')?.prepend(status);
+  }
+  status.textContent = `Bulut · ${user.email || 'Giriş yapıldı'}`;
+  status.title = 'Portföy kayıtları Supabase hesabınla eşitleniyor';
+
+  let signOut = $('#signOutBtn');
+  if (!signOut) {
+    signOut = document.createElement('button');
+    signOut.id = 'signOutBtn';
+    signOut.className = 'icon-btn';
+    signOut.type = 'button';
+    signOut.textContent = '⇥';
+    signOut.title = 'Hesaptan çıkış yap';
+    signOut.setAttribute('aria-label', 'Hesaptan çıkış yap');
+    $('.topbar-actions')?.prepend(signOut);
+    signOut.addEventListener('click', async () => {
+      if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+        await enqueueCloudSave();
+      }
+      const { error } = await supabase.auth.signOut();
+      if (error) toast(`Çıkış yapılamadı: ${error.message}`);
+      else showLogin();
+    });
+  }
+}
+
+function hasLocalPortfolio(state) {
+  return Array.isArray(state?.tx) && state.tx.length > 0;
+}
+
+async function readCloudState(userId) {
+  const { data, error } = await supabase
+    .from('portfolio_state')
+    .select('state_json, updated_at')
+    .eq('user_id', userId)
+    .maybeSingle();
+  if (error) throw error;
+  return data;
+}
+
+async function writeCloudState(snapshot) {
+  if (!sessionUser) return;
+  const { data, error } = await supabase
+    .from('portfolio_state')
+    .upsert({
+      user_id: sessionUser.id,
+      state_json: snapshot,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'user_id' })
+    .select('updated_at')
+    .single();
+  if (error) throw error;
+  lastCloudUpdatedAt = data.updated_at;
+}
+
+function applyCloudState(remoteState) {
+  applyingCloudState = true;
+  try {
+    importJSON(JSON.stringify(remoteState), 'replace');
+  } finally {
+    applyingCloudState = false;
+  }
+}
+
+async function enqueueCloudSave() {
+  if (!sessionUser || !cloudReady || applyingCloudState) return;
+  const snapshot = JSON.parse(JSON.stringify(getState()));
+  // Bir başarısız ağ yazımı sıradaki eşitlemeleri kilitlemesin.
+  saveQueue = saveQueue.catch(() => {}).then(() => writeCloudState(snapshot));
+  try {
+    await saveQueue;
+  } catch (error) {
+    console.error('Bulut eşitleme hatası', error);
+    toast('Cihaza kaydedildi; buluta eşitlenemedi. İnterneti kontrol et.');
+  }
+}
+
+function scheduleCloudSave() {
+  if (!sessionUser || !cloudReady || applyingCloudState) return;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    enqueueCloudSave();
+  }, 700);
+}
+
+async function pullCloudChanges() {
+  if (!sessionUser || !cloudReady || document.visibilityState === 'hidden' || saveTimer) return;
+  try {
+    const remote = await readCloudState(sessionUser.id);
+    if (!remote) return;
+    if (remote.updated_at && remote.updated_at !== lastCloudUpdatedAt) {
+      lastCloudUpdatedAt = remote.updated_at;
+      applyCloudState(remote.state_json);
+      renderProfileSelect();
+      await render();
+    }
+  } catch (error) {
+    console.warn('Bulut verisi kontrol edilemedi', error);
+  }
+}
+
+async function startAuthenticatedSession(user) {
+  if (cloudReady && sessionUser?.id === user.id) return;
+  if (startingSession) return startingSession;
+  startingSession = (async () => {
+    sessionUser = user;
+    showMainUI(user);
+    app.replaceChildren(h('div', { class: 'loading' },
+      h('div', { class: 'spinner' }), h('p', {}, 'Portföy bulutla eşitleniyor…')));
+    try {
+      const remote = await readCloudState(user.id);
+      if (remote) {
+        lastCloudUpdatedAt = remote.updated_at;
+        applyCloudState(remote.state_json);
+      } else if (hasLocalPortfolio(getState())) {
+        // İlk giriş kayıtların bulunduğu PC'den yapılır; mevcut işlemler ilk kez buluta taşınır.
+        await writeCloudState(JSON.parse(JSON.stringify(getState())));
+      } else {
+        throw new Error('Bulutta henüz portföy kaydı yok. İlk eşitlemeyi, işlemlerinin bulunduğu PC’de yap.');
+      }
+
+      cloudReady = true;
+      await loadCore();
+      updateDataStatus();
+      renderProfileSelect();
+      navigate(VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : 'panel');
+      clearInterval(pollTimer);
+      pollTimer = setInterval(pullCloudChanges, 15000);
+      window.addEventListener('focus', pullCloudChanges);
+      document.addEventListener('visibilitychange', pullCloudChanges);
+    } catch (error) {
+      console.error(error);
+      cloudReady = false;
+      showLogin(friendlyAuthError(error));
+    }
+  })().finally(() => { startingSession = null; });
+  return startingSession;
+}
+
+function installAuthListener() {
+  supabase.auth.onAuthStateChange((event, session) => {
+    // Auth callback içinden Supabase sorgusu başlatmamak için işi sonraki kuyruğa bırak.
+    queueMicrotask(() => {
+      if (session?.user) startAuthenticatedSession(session.user);
+      else if (event === 'SIGNED_OUT') showLogin();
+    });
+  });
+}
+
+/* ------------------------------------------------------------------ veri tazeliği */
+
 function istanbulNow() {
   const parts = Object.fromEntries(
     new Intl.DateTimeFormat('en-CA', {
@@ -46,30 +293,17 @@ function istanbulNow() {
   return {
     date,
     minutes: Number(parts.hour) * 60 + Number(parts.minute),
-    weekday: new Date(`${date}T00:00:00`).getDay(),      // 0 Pazar, 6 Cumartesi
+    weekday: new Date(`${date}T00:00:00`).getDay(),
   };
 }
 
-/**
- * Gösterilen fiyatlar bugünün fiyatı değilse kullanıcıyı bilgilendirir.
- *
- * TEFAS fon pay fiyatları her işlem günü sabah Takasbank sistemine tanımlanır:
- * talimat kabulü 09:00'da başlıyor ve TEFAS Uygulama Esasları MADDE 13(2)
- * uyarınca 09:30 itibarıyla fiyatı tanımlanmamış fonlar için operatör üyesine
- * uyarı gidiyor. Otomatik güncelleme 09:00-11:50 arası 10 dakikada bir
- * yokluyor, yani fiyat yayımlandıktan en geç ~15 dakika sonra sitede oluyor.
- * Saat 10:00'ı geçtiği hâlde bugünün verisi yoksa ya resmî tatil ya da
- * güncelleme gecikmiş demektir. Sessizce eski fiyatı göstermek yerine bunu
- * açıkça söylüyoruz.
- */
 function stalenessNotice() {
   const last = DB.meta.lastDataDate;
   if (!last) return null;
   const { date, minutes, weekday } = istanbulNow();
-  if (last >= date) return null;                       // bugünün verisi mevcut
+  if (last >= date) return null;
   const isWeekday = weekday >= 1 && weekday <= 5;
-  if (!isWeekday || minutes < 10 * 60) return null;    // hafta sonu ya da daha erken
-
+  if (!isWeekday || minutes < 10 * 60) return null;
   return h('div', { class: 'notice warn', style: 'margin-bottom:14px' },
     h('b', {}, 'Bugünün fiyatları henüz yansımadı. '),
     `Gösterilen değerler ${fmtDate(last)} kapanışına ait. `,
@@ -77,24 +311,17 @@ function stalenessNotice() {
     + 'gecikmiş olabilir, genelde kısa sürede düzelir.');
 }
 
-/* ------------------------------------------------------------------ yenileme */
-
-/** Alt bilgideki veri durumu satırını tazeler. */
 function updateDataStatus() {
   const status = $('#dataStatus');
   if (!status) return;
   status.textContent = `Veri: TEFAS · son fiyat günü ${fmtDate(DB.meta.lastDataDate)} · `
     + `${DB.meta.fundCount ?? DB.funds.length} fon kapsanıyor`;
+  const disclaimer = document.querySelector('.disclaimer');
+  if (disclaimer) disclaimer.textContent = 'Bu araç kişisel takip amaçlıdır, yatırım tavsiyesi değildir. Fiyat verileri TEFAS ve açık piyasa kaynaklarından alınır. Portföy işlemleri Supabase hesabınla eşitlenir; erişim kullanıcı hesabı ve veritabanı kurallarıyla sınırlandırılır.';
 }
 
-/**
- * Verileri sunucudan yeniden çeker.
- *
- * iOS'ta ana ekrana eklenen uygulamada tarayıcı arayüzü olmadığı için sayfayı
- * yenilemenin başka yolu yok; bu düğme onun yerini tutuyor. Sayfa yeniden
- * yüklenmez, yalnızca veri tazelenip görünüm yeniden çizilir - böylece hangi
- * sekmede olduğun ve girdiğin işlemler korunur.
- */
+/* ------------------------------------------------------------------ yenileme */
+
 async function refresh() {
   const btn = $('#refreshBtn');
   if (btn.disabled) return;
@@ -104,13 +331,10 @@ async function refresh() {
     const { oncekiGun, yeniGun } = await refreshData();
     updateDataStatus();
     await render();
-    if (yeniGun && oncekiGun && yeniGun > oncekiGun) {
-      toast(`Yeni veriler yüklendi: ${fmtDate(yeniGun)}`);
-    } else {
-      toast(`Veriler güncel: ${fmtDate(yeniGun)}`);
-    }
-  } catch (err) {
-    console.error(err);
+    if (yeniGun && oncekiGun && yeniGun > oncekiGun) toast(`Yeni veriler yüklendi: ${fmtDate(yeniGun)}`);
+    else toast(`Veriler güncel: ${fmtDate(yeniGun)}`);
+  } catch (error) {
+    console.error(error);
     toast('Yenilenemedi - internet bağlantını kontrol et');
   } finally {
     btn.classList.remove('spinning');
@@ -139,13 +363,12 @@ function cycleTheme() {
 
 function renderProfileSelect() {
   const select = $('#profileSelect');
-  const options = profiles().map((p) => h('option', {
-    value: p.id, selected: p.id === activeProfileId(),
-  }, p.name));
+  if (!select) return;
+  const options = profiles().map((profile) => h('option', {
+    value: profile.id, selected: profile.id === activeProfileId(),
+  }, profile.name));
   if (profiles().length > 1) {
-    options.push(h('option', {
-      value: 'ALL', selected: activeProfileId() === 'ALL',
-    }, '★ Tüm profiller'));
+    options.push(h('option', { value: 'ALL', selected: activeProfileId() === 'ALL' }, '★ Tüm profiller'));
   }
   select.replaceChildren(...options);
 }
@@ -162,9 +385,7 @@ function navigate(view, opts = {}) {
   if (!VIEWS[view]) view = 'panel';
   currentView = view;
   prefillCode = opts.code || null;
-  if (location.hash.slice(1) !== view) {
-    history.replaceState(null, '', `#${view}`);
-  }
+  if (location.hash.slice(1) !== view) history.replaceState(null, '', `#${view}`);
   setActiveTab(view);
   render();
 }
@@ -172,10 +393,9 @@ function navigate(view, opts = {}) {
 /* -------------------------------------------------------------------- çizim */
 
 async function render() {
-  if (rendering) return;
+  if (rendering || !cloudReady) return;
   rendering = true;
   const view = VIEWS[currentView] || VIEWS.panel;
-
   try {
     const ctx = {
       navigate,
@@ -185,26 +405,22 @@ async function render() {
       prefill: prefillCode,
       profileName: activeProfileName(),
     };
-
     if (view.needsAnalysis) {
       const txs = transactions();
-      if (txs.length) {
-        app.replaceChildren(h('div', { class: 'loading' },
-          h('div', { class: 'spinner' }), h('p', {}, 'Hesaplanıyor…')));
-      }
+      if (txs.length) app.replaceChildren(h('div', { class: 'loading' },
+        h('div', { class: 'spinner' }), h('p', {}, 'Hesaplanıyor…')));
       ctx.analysis = await analyze(txs);
     }
-
     const node = view.render(ctx);
-    const uyari = stalenessNotice();
-    app.replaceChildren(...(uyari ? [uyari, node] : [node]));
+    const warning = stalenessNotice();
+    app.replaceChildren(...(warning ? [warning, node] : [node]));
     prefillCode = null;
     window.scrollTo({ top: 0, behavior: 'auto' });
-  } catch (err) {
-    console.error(err);
+  } catch (error) {
+    console.error(error);
     app.replaceChildren(h('div', { class: 'card empty' },
       h('h3', {}, 'Bir hata oluştu'),
-      h('p', {}, String(err?.message || err)),
+      h('p', {}, String(error?.message || error)),
       h('button', { class: 'btn', type: 'button', onclick: () => render() }, 'Tekrar dene')));
   } finally {
     rendering = false;
@@ -215,11 +431,15 @@ async function render() {
 
 async function boot() {
   applyTheme();
+  const topbar = document.querySelector('.topbar');
+  const footer = document.querySelector('.footer');
+  if (topbar) topbar.hidden = true;
+  if (footer) footer.hidden = true;
 
   $('#themeBtn').addEventListener('click', cycleTheme);
   $('#refreshBtn').addEventListener('click', refresh);
-  $('#profileSelect').addEventListener('change', (e) => {
-    setActiveProfile(e.target.value);
+  $('#profileSelect').addEventListener('change', (event) => {
+    setActiveProfile(event.target.value);
     render();
   });
   for (const tab of document.querySelectorAll('.tab')) {
@@ -230,24 +450,19 @@ async function boot() {
     if (VIEWS[view] && view !== currentView) navigate(view);
   });
 
-  try {
-    await loadCore();
-  } catch (err) {
-    app.replaceChildren(h('div', { class: 'card empty' },
-      h('h3', {}, 'Veriler yüklenemedi'),
-      h('p', {}, 'TEFAS verileri henüz üretilmemiş olabilir. GitHub Actions üzerindeki '
-        + '"Veri güncelle" iş akışını çalıştırdıktan sonra tekrar dene.'),
-      h('p', { class: 'dim' }, String(err?.message || err))));
+  subscribe(() => {
+    renderProfileSelect();
+    scheduleCloudSave();
+  });
+  installAuthListener();
+  showLogin();
+
+  const { data, error } = await supabase.auth.getSession();
+  if (error) {
+    showLogin(friendlyAuthError(error));
     return;
   }
-
-  updateDataStatus();
-
-  renderProfileSelect();
-  subscribe(() => renderProfileSelect());
-
-  const initial = location.hash.slice(1);
-  navigate(VIEWS[initial] ? initial : 'panel');
+  if (data.session?.user) await startAuthenticatedSession(data.session.user);
 }
 
 boot();
