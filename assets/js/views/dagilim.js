@@ -36,7 +36,7 @@ export function renderDagilim(ctx) {
     .map(([label, value], i) => ({ label, value, color: colorAt(i) }));
 
   root.append(h('div', { class: 'grid grid-2' },
-    sectionCard('Fon Dağılımı', `${open.length} fon`,
+    sectionCard('Dağılım', `${open.length} fon`,
       donutWithLegend(byFund, {
         centerTop: tl(totals.value, { compact: true }),
         centerBottom: 'toplam',
