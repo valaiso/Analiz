@@ -153,7 +153,14 @@ def fetch_prices(conn: sqlite3.Connection, client: Tefas, kinds: list[str], star
             conn.executemany("INSERT OR REPLACE INTO prices (date, code, price) VALUES (?,?,?)", price_rows)
             total += len(price_rows)
         if fund_rows:
-            conn.executemany("INSERT OR REPLACE INTO funds VALUES (?,?,?,?,?,?,?)", list(fund_rows.values()))
+            conn.executemany(
+                "INSERT INTO funds (code, name, kind, shares, investors, size, updated) "
+                "VALUES (?,?,?,?,?,?,?) "
+                "ON CONFLICT(code) DO UPDATE SET "
+                "name=excluded.name, kind=excluded.kind, shares=excluded.shares, "
+                "investors=excluded.investors, size=excluded.size, updated=excluded.updated",
+                list(fund_rows.values())
+            )
         conn.commit()
     return total
 
