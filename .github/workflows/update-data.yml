@@ -98,6 +98,11 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Bağımlılıkları yükle
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance requests urllib3
+
       # Ham fiyat deposu (SQLite) çalışmalar arasında cache'te taşınır.
       # Anahtar her çalışmada yeni olur; restore-keys en son kaydı geri yükler.
       - name: Veri deposunu geri yükle
