@@ -18,8 +18,10 @@ import urllib.parse
 import urllib.request
 
 YAHOO_URL = "https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-EVDS_URL = "https://evds2.tcmb.gov.tr/service/evds/series={series}&startDate={start}&endDate={end}&type=json"
-
+EVDS3_URL = "https://evds3.tcmb.gov.tr/igmevdsms-dis/series={series}&startDate={start}&endDate={end}&type=json"
+EVDS2_URL = "https://evds2.tcmb.gov.tr/service/evds/series={series}&startDate={start}&endDate={end}&type=json"
+TUFE_OLD_SERIES = "TP.FG.J0"                  # TÜFE 2003=100; legacy series
+TUFE_NEW_SERIES = "TP.TUKFIY2025.GENEL"       # TÜFE 2025=100; current series
 TROY_OUNCE_GRAMS = 31.1034768
 
 _UA = (
@@ -37,7 +39,16 @@ def _get_json(url: str, headers: dict | None = None, timeout: int = 45) -> dict:
         raw = resp.read()
         if resp.headers.get("Content-Encoding") == "gzip":
             raw = gzip.decompress(raw)
-        return json.loads(raw.decode("utf-8"))
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            # Yanıt içeriğini veya istekteki API anahtarını loglama.
+            host = urllib.parse.urlparse(url).netloc
+            content_type = resp.headers.get("Content-Type", "bilinmiyor")
+            raise ValueError(
+                f"{host} JSON olmayan yanıt verdi (HTTP {resp.status}, "
+                f"Content-Type: {content_type}, {len(raw)} bayt)"
+            ) from exc
 
 
 def yahoo_series(symbol: str, start: dt.date, end: dt.date) -> dict[str, float]:
@@ -67,51 +78,128 @@ def yahoo_series(symbol: str, start: dt.date, end: dt.date) -> dict[str, float]:
 
 
 def _forward_fill(series: dict[str, float], days: list[str]) -> dict[str, float]:
-    """Eksik gunleri bir onceki gecerli degerle doldurur."""
+    """Her güne, o gün itibarıyla bilinen en son gözlemi taşır."""
     out: dict[str, float] = {}
+    observation_days = sorted(day for day in series if days and day <= days[-1])
+    cursor = 0
     last: float | None = None
     for day in days:
-        if day in series:
-            last = series[day]
+        while cursor < len(observation_days) and observation_days[cursor] <= day:
+            last = series[observation_days[cursor]]
+            cursor += 1
         if last is not None:
             out[day] = last
     return out
 
+def _parse_evds_date(raw_date: object) -> dt.date | None:
+    """EVDS tarihini ayın ilk günü olarak döndürür (YYYY-MM, DD-MM-YYYY vb.)."""
+    if not raw_date:
+        return None
+    parts = str(raw_date).strip().replace(".", "-").replace("/", "-").split("-")
+    try:
+        if len(parts) == 3 and len(parts[0]) == 4:
+            year, month = int(parts[0]), int(parts[1])
+        elif len(parts) == 3 and len(parts[2]) == 4:
+            month, year = int(parts[1]), int(parts[2])
+        elif len(parts) == 3:
+            _, month, year = map(int, parts)
+        elif len(parts) == 2 and len(parts[0]) == 4:
+            year, month = int(parts[0]), int(parts[1])
+        elif len(parts) == 2:
+            month, year = int(parts[0]), int(parts[1])
+        else:
+            return None
+        return dt.date(year, month, 1)
+    except (ValueError, IndexError):
+        return None
+
+
+def _release_day(reference_month: dt.date) -> dt.date:
+    """TÜFE ayın 3'ünde, hafta sonuna gelirse sonraki iş gününde yayımlanır."""
+    if reference_month.month == 12:
+        year, month = reference_month.year + 1, 1
+    else:
+        year, month = reference_month.year, reference_month.month + 1
+    day = dt.date(year, month, 3)
+    while day.weekday() >= 5:
+        day += dt.timedelta(days=1)
+    return day
+
+
+def _fetch_tufe_series(series_code: str, start: dt.date, end: dt.date) -> tuple[dict[dt.date, float], list[str]]:
+    """Bir TÜFE seri kodunu EVDS3'ten, eski kod için EVDS2 yedeğiyle alır."""
+    errors: list[str] = []
+    templates = [EVDS3_URL]
+    if series_code == TUFE_OLD_SERIES:
+        templates.append(EVDS2_URL)
+    for template in templates:
+        url = template.format(series=series_code, start=start.strftime("%d-%m-%Y"),
+                              end=end.strftime("%d-%m-%Y"))
+        host = urllib.parse.urlparse(url).netloc
+        try:
+            data = _get_json(url, headers={"key": os.environ.get("EVDS_API_KEY", "").strip()})
+        except Exception as exc:  # noqa: BLE001
+            errors.append(f"{host}/{series_code}: {exc}")
+            continue
+        items = data.get("items", []) if isinstance(data, dict) else []
+        values: dict[dt.date, float] = {}
+        column = series_code.lower().replace(".", "_")
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            normalized = {str(k).strip().lower().replace(".", "_"): v
+                          for k, v in item.items()}
+            period = _parse_evds_date(normalized.get("tarih"))
+            raw_value = normalized.get(column)
+            if period is None or raw_value in (None, "", "null"):
+                continue
+            try:
+                values[period] = float(str(raw_value).replace(",", "."))
+            except (ValueError, TypeError):
+                continue
+        if values:
+            return values, errors
+        errors.append(f"{host}/{series_code}: JSON yanıtında seri gözlemi yok")
+    return {}, errors
+
 
 def tufe_series(start: dt.date, end: dt.date) -> dict[str, float]:
-    """TCMB EVDS'ten TUFE endeksi (aylik). EVDS_API_KEY yoksa bos doner."""
+    """Aylık TÜFE'yi yayımlandığı tarihten itibaren kullanılabilir kılar."""
     key = os.environ.get("EVDS_API_KEY", "").strip()
     if not key:
+        print("  TUFE atlandi: EVDS_API_KEY bu CMD penceresinde tanimli degil", flush=True)
         return {}
-    url = EVDS_URL.format(
-        series="TP.FG.J0",
-        start=start.strftime("%d-%m-%Y"),
-        end=end.strftime("%d-%m-%Y"),
-    )
-    try:
-        data = _get_json(url, headers={"key": key})
-    except (urllib.error.URLError, urllib.error.HTTPError, json.JSONDecodeError) as exc:
-        print(f"  TUFE cekilemedi ({exc}) - enflasyon kiyasi atlandi", flush=True)
+
+    fetch_start = start - dt.timedelta(days=70)
+    old_values, errors = _fetch_tufe_series(TUFE_OLD_SERIES, fetch_start, end)
+    new_values, new_errors = _fetch_tufe_series(TUFE_NEW_SERIES, fetch_start, end)
+    errors.extend(new_errors)
+    if not old_values and not new_values:
+        print("  TUFE cekilemedi: " + " | ".join(errors), flush=True)
         return {}
-    out: dict[str, float] = {}
-    for item in data.get("items", []):
-        raw_date = item.get("Tarih")      # "2026-8" veya "08-2026"
-        value = item.get("TP_FG_J0")
-        if not raw_date or value in (None, "", "null"):
-            continue
-        parts = str(raw_date).replace(".", "-").split("-")
-        try:
-            if len(parts[0]) == 4:
-                year, month = int(parts[0]), int(parts[1])
-            else:
-                month, year = int(parts[0]), int(parts[1])
-            # Ay basina yaz; gunluk seriye ileri-doldurma ile yayilir.
-            out[dt.date(year, month, 1).isoformat()] = float(value)
-        except (ValueError, IndexError):
-            continue
-    return out
 
+    overlap = sorted(set(old_values) & set(new_values))
+    if old_values and new_values and overlap:
+        anchor = overlap[-1]
+        factor = old_values[anchor] / new_values[anchor]
+        new_start = min(new_values)
+        monthly = {day: value for day, value in old_values.items() if day < new_start}
+        monthly.update({day: value * factor for day, value in new_values.items()})
+        print(f"  TUFE: eski/yeni baz {anchor:%Y-%m} gözleminde zincirlendi", flush=True)
+    elif new_values:
+        monthly = dict(new_values)
+        if old_values:
+            print("  TUFE uyarisi: eski/yeni seri ortak ay vermedi; eski seri eklenmedi", flush=True)
+    else:
+        monthly = dict(old_values)
+        print("  TUFE uyarisi: yeni 2025=100 seri alınamadı; yalnızca eski seri kullanılacak", flush=True)
 
+    # TÜFE referans ayın başında henüz bilinmez. Ayın 3'ünde, hafta sonuysa
+    # takip eden ilk iş gününde yayımlanmış kabul edilir (TÜİK takvim kuralı).
+    published = {_release_day(period).isoformat(): value for period, value in monthly.items()}
+    if published:
+        print(f"  TUFE: {len(published)} aylik gozlem, yayim gunlerine hizalandi", flush=True)
+    return published
 def collect(start: dt.date, end: dt.date, days: list[str]) -> dict:
     """Tum kiyaslama serilerini toplayip takvim gunlerine hizalar.
 
@@ -167,3 +255,8 @@ def collect(start: dt.date, end: dt.date, days: list[str]) -> dict:
 
     add("TUFE", "TUFE (Enflasyon)", "endeks", tufe_series(start, end))
     return series
+
+
+
+
+

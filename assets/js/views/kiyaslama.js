@@ -104,7 +104,7 @@ export function renderKiyaslama(ctx) {
   const head = h('div', { class: 'card-head' },
     h('div', {},
       h('h2', {}, 'Getiri Kıyaslaması'),
-      h('span', { class: 'sub' }, 'Hepsi dönem başında 100 kabul edilerek karşılaştırılır')),
+      h('span', { class: 'sub' }, 'Portföy ve endeksler dönem başında 100’e eşitlenir · TÜFE aylık yayın günlerinde basamaklı değişir')),
     rangeSelector(rangeKey, (r) => {
       rangeKey = r.key;
       head.querySelectorAll('.seg button').forEach((b) => {
@@ -147,6 +147,9 @@ export function renderKiyaslama(ctx) {
   const txs = transactions();
   const senaryolar = [];
   for (const key of available) {
+    // TÜFE bir yatırım aracı değildir; getiri karşılaştırmasında alım gücü
+    // eşiği olarak kalır, yatırım senaryosu gibi sunulmaz.
+    if (key === 'TUFE') continue;
     const seri = DB.benchmarks[key]?.values || [];
     const sonuc = counterfactual(txs, seri);
     if (sonuc) senaryolar.push({ key, label: DB.benchmarks[key].label, ...sonuc });
@@ -204,9 +207,12 @@ export function renderKiyaslama(ctx) {
       + 'gerçek yıllık getiriyi verir.'),
     !available.includes('TUFE')
       ? h('div', { style: 'margin-top:8px' },
-        'Enflasyon (TÜFE) kıyası şu an kapalı. Açmak için depo ayarlarına ücretsiz bir '
-        + 'EVDS API anahtarı eklemen yeterli - README\'de anlatılıyor.')
-      : null));
+        'TÜFE verisi şu an yüklenemedi. EVDS API anahtarını ve veri güncelleme çıktısını kontrol et.')
+      : h('div', { style: 'margin-top:8px' },
+        'TÜFE yatırım aracı değil, alım gücü ölçütüdür. Aylık endeks yayın gününde güncellenir; değerler dönem başında 100’e eşitlenerek portföyün nominal zaman ağırlıklı getirisiyle karşılaştırılır.')));
 
   return root;
 }
+
+
+

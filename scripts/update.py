@@ -25,16 +25,14 @@ ROOT = Path(__file__).resolve().parent.parent
 
 EKSTRA_ENSTRUMANLAR = {
     # ABD ETF'leri
-    "VOO":   {"symbol": "VOO",      "title": "Vanguard S&P 500 ETF", "type": "US_ETF", "cat": "Yabancı ETF"},
     "QQQ":   {"symbol": "QQQ",      "title": "Invesco QQQ Trust (Nasdaq 100)", "type": "US_ETF", "cat": "Yabancı ETF"},
     "SCHD":  {"symbol": "SCHD",     "title": "Schwab U.S. Dividend Equity ETF", "type": "US_ETF", "cat": "Yabancı ETF"},
     "VIG":   {"symbol": "VIG",      "title": "Vanguard Dividend Appreciation ETF", "type": "US_ETF", "cat": "Yabancı ETF"},
     "MGV":   {"symbol": "MGV",      "title": "Vanguard Mega Cap Value ETF", "type": "US_ETF", "cat": "Yabancı ETF"},
+    "ETH":   {"symbol": "ETH-USD", "title": "Ethereum", "type": "CRYPTO", "cat": "Kripto"},
 
     # BIST Hisseleri
     "ASELS": {"symbol": "ASELS.IS", "title": "Aselsan Elektronik Sanayi", "type": "HISSE", "cat": "Hisse Senedi"},
-    "THYAO": {"symbol": "THYAO.IS", "title": "Türk Hava Yolları", "type": "HISSE", "cat": "Hisse Senedi"},
-    "PGSUS": {"symbol": "PGSUS.IS", "title": "Pegasus Hava Taşımacılığı", "type": "HISSE", "cat": "Hisse Senedi"},
     "TUPRS": {"symbol": "TUPRS.IS", "title": "TÜPRAŞ - Türkiye Petrol Rafinerileri", "type": "HISSE", "cat": "Hisse Senedi"},
     "FROTO": {"symbol": "FROTO.IS", "title": "Ford Otomotiv Sanayi", "type": "HISSE", "cat": "Hisse Senedi"},
     "TOASO": {"symbol": "TOASO.IS", "title": "Tofaş Türk Otomobil Fabrikası", "type": "HISSE", "cat": "Hisse Senedi"},
@@ -51,7 +49,8 @@ EKSTRA_ENSTRUMANLAR = {
     "TCELL": {"symbol": "TCELL.IS", "title": "Turkcell İletişim Hizmetleri", "type": "HISSE", "cat": "Hisse Senedi"},
     "TTKOM": {"symbol": "TTKOM.IS", "title": "Türk Telekomünikasyon", "type": "HISSE", "cat": "Hisse Senedi"},
     "CCOLA": {"symbol": "CCOLA.IS", "title": "Coca-Cola İçecek", "type": "HISSE", "cat": "Hisse Senedi"},
-    "EREGL": {"symbol": "EREGL.IS", "title": "Ereğli Demir Çelik", "type": "HISSE", "cat": "Hisse Senedi"},
+    "DOAS":  {"symbol": "DOAS.IS",  "title": "Doğuş Otomotiv", "type": "HISSE", "cat": "Hisse Senedi"},
+    "OTKAR": {"symbol": "OTKAR.IS", "title": "Otokar", "type": "HISSE", "cat": "Hisse Senedi"},
 }
 
 OVERLAP_DAYS = 7

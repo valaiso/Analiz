@@ -13,7 +13,7 @@ import { sectionCard, fundPicker } from './common.js';
 /** Seçilen varlığın USD bazlı olup olmadığını belirler. */
 function getAssetCurrency(code) {
   const meta = DB.byCode.get(code);
-  const isUsd = meta && (meta.currency === 'USD' || meta.kind === 'US_ETF' || meta.catSrc === 'ekstra');
+  const isUsd = meta && (meta.currency === 'USD' || meta.kind === 'US_ETF' || meta.kind === 'CRYPTO');
   return {
     isUsd,
     sym: isUsd ? '$' : '₺',

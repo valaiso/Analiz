@@ -313,16 +313,23 @@ function renderBars(container, cfg) {
     container.append(h('p', { class: 'dim', style: 'padding:20px 0;text-align:center' }, 'Veri yok.'));
     return;
   }
-  const width = Math.max(container.clientWidth || 520, 260);
+  // Çok geniş kartlarda grafiği sınırlı tut; tüm alanı kaplayan çubuk yerine
+  // değerleri çubuğun hemen yanında göster.
+  const width = Math.min(Math.max(container.clientWidth || 520, 260), 620);
   const height = items.length * rowHeight + 8;
   const maxAbs = Math.max(...items.map((it) => Math.abs(it.value) || 0), 1e-9);
   const hasNegative = items.some((it) => it.value < 0);
   const plotLeft = labelWidth;
-  const plotW = width - labelWidth - 8;
-  const zeroX = hasNegative ? plotLeft + plotW / 2 : plotLeft;
-  const scale = hasNegative ? (plotW / 2) / maxAbs : plotW / maxAbs;
+  const usable = Math.max(80, width - labelWidth - 110);
+  const maxBar = usable * (hasNegative ? 0.28 : 0.42);
+  const zeroX = hasNegative ? plotLeft + maxBar : plotLeft;
+  const scale = maxBar / maxAbs;
+  const valueX = plotLeft + maxBar * (hasNegative ? 2 : 1) + 10;
 
-  const svg = svgEl('svg', { viewBox: `0 0 ${width} ${height}`, width: '100%', height });
+  const svg = svgEl('svg', {
+    viewBox: `0 0 ${width} ${height}`, width: '100%', height,
+    style: 'max-width:620px',
+  });
 
   items.forEach((it, i) => {
     const yTop = i * rowHeight + 4;
@@ -344,9 +351,8 @@ function renderBars(container, cfg) {
     svg.append(label);
 
     const val = svgEl('text', {
-      x: value >= 0 ? x0 + len + 6 : x0 - 6, y: yTop + rowHeight / 2 - 1,
-      'text-anchor': value >= 0 ? 'start' : 'end',
-      fill: 'var(--text-dim)', 'font-size': 11,
+      x: valueX, y: yTop + rowHeight / 2 - 1,
+      'text-anchor': 'start', fill: 'var(--text-dim)', 'font-size': 11,
     });
     val.textContent = format(value);
     svg.append(val);
@@ -360,7 +366,6 @@ function renderBars(container, cfg) {
   }
   container.append(svg);
 }
-
 /* -------------------------------------------------------------- ısı haritası */
 
 /** Korelasyon matrisi tablosu (-1 kırmızı, +1 yeşil). */
@@ -602,3 +607,5 @@ function renderScatter(container, cfg) {
 }
 
 export { colorAt };
+
+

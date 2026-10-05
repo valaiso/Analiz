@@ -3,6 +3,7 @@
 import { h, tl, tlSigned, pct, pctSigned, colorAt, isNum, num } from '../util.js';
 import { donutWithLegend, barChart, stackedAreaChart } from '../charts.js';
 import { weightHistory, attribution } from '../insights.js';
+import { DB } from '../data.js';
 import { transactions } from '../store.js';
 import { sectionCard, emptyState } from './common.js';
 
@@ -52,13 +53,29 @@ export function renderDagilim(ctx) {
   const assetMap = new Map();
   let covered = 0;
   for (const holding of open) {
+    if (holding.value <= 0) continue;
     const alloc = holding.alloc || {};
-    const keys = Object.keys(alloc);
-    if (!keys.length || holding.value <= 0) continue;
-    covered += holding.value;
-    for (const [bucket, share] of Object.entries(alloc)) {
-      assetMap.set(bucket, (assetMap.get(bucket) || 0) + holding.value * (share / 100));
+    const entries = Object.entries(alloc);
+
+    // TEFAS fonlarında alt varlık dağılımı bulunur. Doğrudan eklenen
+    // ETF/hisse/kripto varlıklarında ise pozisyonun tamamını sınıflandır.
+    if (entries.length) {
+      covered += holding.value;
+      for (const [bucket, share] of entries) {
+        assetMap.set(bucket, (assetMap.get(bucket) || 0) + holding.value * (share / 100));
+      }
+      continue;
     }
+
+    const kind = DB.byCode.get(holding.code)?.kind;
+    const directBucket = {
+      CRYPTO: 'Kripto',
+      HISSE: 'Hisse Senedi',
+      US_ETF: 'Yabancı ETF',
+    }[kind];
+    if (!directBucket) continue;
+    covered += holding.value;
+    assetMap.set(directBucket, (assetMap.get(directBucket) || 0) + holding.value);
   }
   const byAsset = [...assetMap.entries()]
     .sort((a, b) => b[1] - a[1])
