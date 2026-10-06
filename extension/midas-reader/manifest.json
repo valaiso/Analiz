@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Analiz · Midas işlem aktarımı",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Açık Midas işlem geçmişini kullanıcı isteğiyle Analiz'e yerel olarak aktarır.",
   "host_permissions": [
     "https://atlas.getmidas.com/*",

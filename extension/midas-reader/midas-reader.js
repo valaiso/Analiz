@@ -1,6 +1,6 @@
 // Salt DOM okuma: mevcut Atlas oturumunu kullanır, ağ çağrısı/emir göndermez.
 const TRADE_WORDS = /alış|alım|satış|satım|buy|sell/i;
-const DATE_WORDS = /(?:\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b|(?:^|\s)\d{1,2}\s+(?:oca|şub|sub|mar|nis|may|haz|tem|ağu|agu|eyl|eki|kas|ara)\w*\s+\d{4}\b)/i;
+const DATE_WORDS = /(?:\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b|(?:^|\s)\d{1,2}\s+(?:oca(?:k)?|şub(?:at)?|sub(?:at)?|mar(?:t)?|nis(?:an)?|may(?:ıs|is)?|haz(?:iran)?|tem(?:muz)?|ağu(?:stos)?|agu(?:stos)?|eyl(?:ül|ul)?|eki(?:m)?|kas(?:ım|im)?|ara(?:lık|lik)?)(?:\s+\d{4})?\b)/iu;
 
 function isVisible(element) {
   const box = element.getBoundingClientRect();
@@ -21,6 +21,8 @@ function candidateElements() {
   const isTransactionRow = (el) => {
     if (!isVisible(el)) return false;
     const text = textOf(el);
+    // Bekleyen/iptal edilmiş emirler portföy işlemi değildir; aktarıma alma.
+    if (/bekliyor|[iİ]ptal(?:\s+edildi)?/i.test(text)) return false;
     return text.length >= 12 && text.length <= 700 && TRADE_WORDS.test(text) && DATE_WORDS.test(text);
   };
   const selectors = [
@@ -94,11 +96,14 @@ function parseDate(text) {
     return `${year}-${String(Number(match[2])).padStart(2, '0')}-${String(Number(match[1])).padStart(2, '0')}`;
   }
   const months = { oca: '01', şub: '02', sub: '02', mar: '03', nis: '04', may: '05', haz: '06', tem: '07', ağu: '08', agu: '08', eyl: '09', eki: '10', kas: '11', ara: '12' };
-  match = text.toLocaleLowerCase('tr').match(/(?:^|\s)(\d{1,2})\s+(oca|şub|sub|mar|nis|may|haz|tem|ağu|agu|eyl|eki|kas|ara)\w*\s+(\d{4})\b/);
+  match = text.toLocaleLowerCase('tr').match(/(?:^|\s)(\d{1,2})\s+(oca(?:k)?|şub(?:at)?|sub(?:at)?|mar(?:t)?|nis(?:an)?|may(?:ıs|is)?|haz(?:iran)?|tem(?:muz)?|ağu(?:stos)?|agu(?:stos)?|eyl(?:ül|ul)?|eki(?:m)?|kas(?:ım|im)?|ara(?:lık|lik)?)(?:\s+(\d{4}))?(?=$|[\s,])/u);
   if (!match) return '';
-  return `${match[3]}-${months[match[2]]}-${String(Number(match[1])).padStart(2, '0')}`;
+  const monthKey = match[2].slice(0, 3);
+  const now = new Date();
+  let year = Number(match[3] || now.getFullYear());
+  if (!match[3] && Number(months[monthKey]) > now.getMonth() + 1) year -= 1;
+  return `${year}-${months[monthKey]}-${String(Number(match[1])).padStart(2, '0')}`;
 }
-
 function normalizeRow(row) {
   const text = row.text;
   const lower = text.toLocaleLowerCase('tr');
