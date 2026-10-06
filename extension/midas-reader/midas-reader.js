@@ -113,6 +113,27 @@ function assetHintsFor(element, root) {
   return hints;
 }
 
+function assetCodeAtRow(root, rowElement, headerItem) {
+  const rowBox = rowElement.getBoundingClientRect();
+  const rowY = (rowBox.top + rowBox.bottom) / 2;
+  const headerBox = headerItem?.box;
+  const assetX = headerBox ? (headerBox.left + headerBox.right) / 2 : null;
+  const excluded = new Set(['AL', 'SAT', 'BUY', 'SELL', 'USD', 'TRY', 'TL', 'FON', 'BIST', 'NASDAQ']);
+  const candidates = [...root.querySelectorAll('*')]
+    .filter(isVisible)
+    .map((node) => ({ node, code: textOf(node), box: node.getBoundingClientRect() }))
+    .filter(({ code, box }) => /^[A-Z][A-Z0-9.-]{1,9}$/.test(code)
+      && !excluded.has(code) && box.width <= 100 && box.height <= 32)
+    .map((item) => ({
+      ...item,
+      yDistance: Math.abs((item.box.top + item.box.bottom) / 2 - rowY),
+      xDistance: assetX == null ? 0 : Math.abs((item.box.left + item.box.right) / 2 - assetX),
+    }))
+    .filter((item) => item.yDistance <= Math.max(18, rowBox.height / 2 + 4))
+    .sort((a, b) => a.yDistance - b.yDistance || a.xDistance - b.xDistance);
+  return candidates[0]?.code || '';
+}
+
 function orderHistoryRoot() {
   const headings = [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div')]
     .filter((element) => isVisible(element) && /^emir\s+geçmişi$/iu.test(textOf(element)))
@@ -166,6 +187,7 @@ function candidateElements(root, scanStats) {
       .filter((container) => isVisible(container) && container.children.length >= 5 && container.children.length <= 12)
       .sort((a, b) => textOf(a).length - textOf(b).length);
     let cells = null;
+    let matchedContainer = null;
     let directCount = 0;
     for (const container of cellContainers) {
       const cellElements = directCellElements(container).filter(isVisible);
@@ -182,6 +204,7 @@ function candidateElements(root, scanStats) {
       });
       if (TRADE_WORDS.test(aligned[columns.side] || '') && DATE_WORDS.test(aligned[columns.date] || '')) {
         cells = aligned;
+        matchedContainer = container;
         directCount = rawCells.length;
         break;
       }
@@ -204,6 +227,9 @@ function candidateElements(root, scanStats) {
     const row = {
       text, headers, cells,
       sourceId: element.getAttribute('data-order-id') || element.getAttribute('data-id') || '',
+      assetCode: assetCodeAtRow(root,
+        matchedContainer && matchedContainer.getBoundingClientRect().height <= 80 ? matchedContainer : element,
+        headerItems[columns.code]),
       codeHints: assetHintsFor(element, root),
     };
     const key = row.sourceId || text.replace(/\s+/g, ' ').trim();
@@ -480,7 +506,7 @@ function normalizeRow(row) {
     })();
 
   const codeValue = valueByHeader(/varlık|sembol|fon kodu|hisse kodu/i);
-  let code = (codeValue
+  let code = row.assetCode || (codeValue
     || getLabel(/sembol|varlık|fon kodu|hisse kodu/i, 'sembol|varlık|fon kodu|hisse kodu'))
     .match(/[A-Z][A-Z0-9.-]{1,9}/)?.[0] || '';
   const codeExcluded = new Set(['AL', 'SAT', 'ALIŞ', 'ALIM', 'SATIŞ', 'SATIM', 'BUY', 'SELL', 'USD', 'TRY', 'TL', 'ADET', 'LOT', 'FON', 'PIYASA', 'LIMIT', 'GERCEKLESTI', 'TAMAMLANDI']);
