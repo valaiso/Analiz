@@ -26,39 +26,51 @@ function showMidasPreview(rows, ctx) {
     h('td', {}, row.price > 0 ? money(row.price) : '—'),
     h('td', { style: 'text-align:left;max-width:360px;white-space:normal' }, row.rawText));
 
+  const table = (items, priceHeading, textHeading) => h('div', { class: 'table-wrap' },
+    h('table', {},
+      h('thead', {}, h('tr', {},
+        h('th', {}, 'Tarih'),
+        h('th', {}, 'Kod'),
+        h('th', {}, 'Tür'),
+        h('th', {}, 'Miktar'),
+        h('th', {}, priceHeading),
+        h('th', { style: 'text-align:left' }, textHeading))),
+      h('tbody', {}, items.map(line))));
+
+  const readyContent = ready.length
+    ? table(ready, 'Birim fiyat', 'Midas satırı')
+    : h('div', { class: 'notice warn' },
+      'Henüz otomatik eşleşen işlem yok. Midas işlem geçmişindeki görünen satır biçimini kontrol et.');
+
+  const unmatchedContent = unmatched.length
+    ? h('details', {},
+      h('summary', {}, `Atlanacak ${unmatched.length} satırı göster`),
+      h('div', { style: 'margin-top:10px' }, table(unmatched, 'Fiyat', 'Okunan satır')))
+    : null;
+
   let close;
+  const actions = h('div', { class: 'btn-row', style: 'justify-content:flex-end' },
+    h('button', { class: 'btn', type: 'button', onclick: () => close() }, 'Vazgeç'),
+    h('button', {
+      class: 'btn btn-primary', type: 'button', disabled: !ready.length,
+      onclick: () => {
+        const count = addMidasTransactions(ready);
+        close();
+        toast(count ? `${count} Midas işlemi yerel olarak eklendi` : 'Bu işlemler zaten kayıtlı');
+        ctx.refresh();
+      },
+    }, `${ready.length} işlemi içe aktar`));
+
   const body = h('div', { class: 'stack' },
     h('p', { class: 'dim' },
       `${candidates.length} satır bulundu. ${ready.length} satır otomatik eşleşti; `
       + `${unmatched.length} satır eksik bilgi veya tanınmayan varlık kodu nedeniyle atlanacak. `
       + 'Midas’a hiçbir emir gönderilmez. Onaylanan kayıtlar bu tarayıcıda yerel saklanır.'),
-    ready.length ? h('div', { class: 'table-wrap' }, h('table', {},
-      h('thead', {}, h('tr', {},
-        h('th', {}, 'Tarih'), h('th', {}, 'Kod'), h('th', {}, 'Tür'),
-        h('th', {}, 'Miktar'), h('th', {}, 'Birim fiyat'), h('th', { style: 'text-align:left' }, 'Midas satırı'))),
-      h('tbody', {}, ready.map(line)))) : h('div', { class: 'notice warn' },
-      'Henüz otomatik eşleşen işlem yok. Midas işlem geçmişindeki görünen satır biçimini kontrol et.'),
-    unmatched.length ? h('details', {},
-      h('summary', {}, `Atlanacak ${unmatched.length} satırı göster`),
-      h('div', { class: 'table-wrap', style: 'margin-top:10px' }, h('table', {},
-        h('thead', {}, h('tr', {},
-          h('th', {}, 'Tarih'), h('th', {}, 'Kod'), h('th', {}, 'Tür'),
-          h('th', {}, 'Miktar'), h('th', {}, 'Fiyat'), h('th', { style: 'text-align:left' }, 'Okunan satır'))),
-        h('tbody', {}, unmatched.map(line)))) : null,
-    h('div', { class: 'btn-row', style: 'justify-content:flex-end' },
-      h('button', { class: 'btn', type: 'button', onclick: () => close() }, 'Vazgeç'),
-      h('button', {
-        class: 'btn btn-primary', type: 'button', disabled: !ready.length,
-        onclick: () => {
-          const count = addMidasTransactions(ready);
-          close();
-          toast(count ? `${count} Midas işlemi yerel olarak eklendi` : 'Bu işlemler zaten kayıtlı');
-          ctx.refresh();
-        },
-      }, `${ready.length} işlemi içe aktar`)));
+    readyContent,
+    unmatchedContent,
+    actions);
   close = openModal('Midas işlem aktarımı · önizleme', body, { wide: true });
 }
-
 async function readMidas(ctx, button) {
   button.disabled = true;
   button.textContent = 'Midas sekmesi okunuyor…';
