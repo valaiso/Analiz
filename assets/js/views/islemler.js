@@ -153,6 +153,9 @@ async function readMidas(ctx, button) {
       for (const position of result.positions.filter((row) => row.code === 'TP2')) {
         logMidas(`TP2 adet kontrolü: Midas hücresi “${position.unitsText || 'okunamadı'}” → ayrıştırılan adet ${Number.isFinite(position.units) ? fmtUnits(position.units) : 'okunamadı'}.`);
       }
+      for (const position of result.positions.filter((row) => ['THF', 'MGV', 'VIG', 'SCHD'].includes(row.code))) {
+        logMidas(`${position.code} Midas alanları: adet “${position.unitsText || 'yok'}” → ${Number.isFinite(position.units) ? fmtUnits(position.units) : 'okunamadı'}; fiyat ${Number.isFinite(position.price) ? position.price : 'yok'} ${position.currency}; ort. maliyet ${Number.isFinite(position.avgCost) ? position.avgCost : 'yok'}; dağılım ${Number.isFinite(position.allocationPct) ? `${position.allocationPct}%` : 'yok'}.`);
+      }
     } else {
       logMidas('Midas toplam hesabı okundu; ancak Pozisyonlar tablosundaki açık varlıklar okunamadı. Panelde eski işlem kayıtlarından türetilmiş pozisyonlar kullanılmayacak.');
     }

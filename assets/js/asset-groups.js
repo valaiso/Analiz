@@ -2,6 +2,7 @@ import { DB, cachedHistory, exactPriceAtIndex, lastIndex, fxToTRY } from './data
 import { getMidasAccountSnapshot } from './store.js';
 
 const GROUP_ORDER = ['ETF', 'Fon', 'Hisse', 'Kripto', 'Diğer'];
+const NO_DAILY_CHANGE_CODES = new Set(['THF', 'TP2']);
 
 export function assetType(code, suppliedKind = '', suppliedCategory = '') {
   const kind = String(suppliedKind || DB.byCode.get(code)?.kind || '').toUpperCase();
@@ -44,14 +45,15 @@ export function currentMidasPositions() {
 }
 
 /** Midas'ın açık sembollerini site fiyat geçmişi ve yerel işlem adetleriyle birleştir. */
-export function addSiteMarketMetrics(positions, localHoldings = []) {
-  const holdings = new Map((localHoldings || []).map((row) => [row.code, row]));
+export function addSiteMarketMetrics(positions) {
   return (positions || []).map((position) => {
-    const holding = holdings.get(position.code);
-    const units = Number.isFinite(position.units) && position.units > 0
-      ? position.units : holding?.units;
+    // Midas canlı pozisyonlarında adet yalnızca Midas tablosundan gelmeli.
+    // Eski işlem kayıtları açık adetle uyuşmayabilir ve günlük katkıyı büyütür.
+    const units = Number.isFinite(position.units) && position.units > 0 ? position.units : null;
     if (!(units > 0)) return {
-      ...position, units: null, dailyPLTRY: null, dailyPct: null, totalPLTRY: null,
+      ...position, units: null,
+      dailyPLTRY: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null,
+      dailyPct: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null, totalPLTRY: null,
       totalPct: null, marketValueTRY: null, marketValuePrevTRY: null, siteDataAvailable: false,
     };
     const latestIndex = Math.max(0, lastIndex());
@@ -78,9 +80,10 @@ export function addSiteMarketMetrics(positions, localHoldings = []) {
     }
     const quoteDate = quoteIndex >= 0 ? DB.calendar[quoteIndex] : DB.byCode.get(position.code)?.date || null;
     const price = Number.isFinite(priceFromHistory) ? priceFromHistory
-      : (Number.isFinite(DB.byCode.get(position.code)?.price) ? DB.byCode.get(position.code).price : null);
+      : (Number.isFinite(DB.byCode.get(position.code)?.price) ? DB.byCode.get(position.code).price
+        : (Number.isFinite(position.price) && position.price > 0 ? position.price : null));
     const avgCost = Number.isFinite(position.avgCost) && position.avgCost > 0
-      ? position.avgCost : holding?.avgCost;
+      ? position.avgCost : null;
     const fx = fxToTRY(position.code, quoteIndex >= 0 ? quoteIndex : latestIndex);
     const previousFx = fxToTRY(position.code, previousIndex);
     const hasSitePrice = Number.isFinite(price) && Number.isFinite(fx);
@@ -88,11 +91,12 @@ export function addSiteMarketMetrics(positions, localHoldings = []) {
     // Her varlığı kendi son iki gerçek kapanışından hesapla; global TEFAS tarihiyle
     // birebir eşitlik aramak geçerli fiyatları yanlışlıkla eksik sayıyordu.
     const recentQuote = quoteIndex >= 0 && latestIndex - quoteIndex <= 1;
-    const hasPreviousPrice = hasSitePrice && recentQuote && previousIndex >= 0
+    const noDailyChange = NO_DAILY_CHANGE_CODES.has(position.code);
+    const hasPreviousPrice = !noDailyChange && hasSitePrice && recentQuote && previousIndex >= 0
       && Number.isFinite(previousPrice) && Number.isFinite(previousFx);
-    const dailyPLTRY = hasPreviousPrice
+    const dailyPLTRY = noDailyChange ? 0 : hasPreviousPrice
       ? units * (price * fx - previousPrice * previousFx) : null;
-    const dailyPct = hasPreviousPrice && previousPrice * previousFx > 0
+    const dailyPct = noDailyChange ? 0 : hasPreviousPrice && previousPrice * previousFx > 0
       ? ((price * fx) / (previousPrice * previousFx) - 1) * 100 : null;
     const totalPLTRY = hasSitePrice && Number.isFinite(avgCost)
       ? units * (price - avgCost) * fx : null;
@@ -111,6 +115,7 @@ export function addSiteMarketMetrics(positions, localHoldings = []) {
       marketValuePrevTRY: hasPreviousPrice ? units * previousPrice * previousFx : null,
       siteDataAvailable: hasSitePrice,
       quoteDate,
+      noDailyChange,
     };
   });
 }

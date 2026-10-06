@@ -30,7 +30,7 @@ export function renderPanel(ctx) {
   const midasSummary = midasSnapshot?.summary;
   const hasMidasTotal = isNum(midasSummary?.totalValue) && midasSummary.totalValue > 0;
   const rawSnapshotPositions = currentMidasPositions() || [];
-  const snapshotPositions = addSiteMarketMetrics(rawSnapshotPositions, open);
+  const snapshotPositions = addSiteMarketMetrics(rawSnapshotPositions);
   const snapshotCodes = new Set(snapshotPositions.map((row) => row.code));
   const pricedSnapshotPositions = snapshotPositions.filter((row) => isNum(row.dailyPLTRY));
   const missingDailyCodes = snapshotPositions.filter((row) => !isNum(row.dailyPLTRY)).map((row) => {
@@ -185,7 +185,7 @@ export function renderPanel(ctx) {
         { key: 'marketValueTRY', label: 'Portföy Değeri', render: (r) => isNum(r.marketValueTRY) ? tl(r.marketValueTRY) : '—' },
         { key: 'avgCost', label: 'Ort. Maliyet', render: (r) => moneyByCurrency(r.avgCost, r.currency) },
         { key: 'dailyPLTRY', label: 'Günlük', render: (r) => h('span', { class: cls(r.dailyPLTRY) }, `${isNum(r.dailyPLTRY) ? tlSigned(r.dailyPLTRY) : '—'}${isNum(r.dailyPct) ? ` · ${pctSigned(r.dailyPct)}` : ''}`) },
-        { key: 'totalPLTRY', label: 'Ort. Maliyete Göre K/Z', render: (r) => h('span', { class: cls(r.totalPLTRY) }, `${isNum(r.totalPLTRY) ? tlSigned(r.totalPLTRY) : '—'}${isNum(r.totalPct) ? ` · ${pctSigned(r.totalPct)}` : ''}`) },
+        { key: 'totalPLTRY', label: 'Toplam K/Z', render: (r) => h('span', { class: cls(r.totalPLTRY) }, `${isNum(r.totalPLTRY) ? tlSigned(r.totalPLTRY) : '—'}${isNum(r.totalPct) ? ` · ${pctSigned(r.totalPct)}` : ''}`) },
         { key: 'allocationPct', label: 'Dağılım', render: (r) => isNum(r.allocationPct) ? pct(r.allocationPct, 2) : '—' },
       ],
       rows,
