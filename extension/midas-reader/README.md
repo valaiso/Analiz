@@ -10,7 +10,7 @@ Midas'ın özel API uçlarına erişmez; ağ isteği ya da emir göndermez.
 2. Geliştirici modunu açın ve **Paketlenmemiş öğe yükle** seçeneğini kullanın.
 3. Bu klasörü seçin: `extension/midas-reader`.
 4. `https://atlas.getmidas.com/` sekmesini yenileyin ve Midas'ta **Emir geçmişi** tablosunu açın.
-5. Midas emir geçmişinde, eklenti son eriştiğiniz Midas sekmesindeki tablonun sayfalarını sırayla tarar ve başladığı sayfaya geri döner.
+5. Midas emir geçmişinde, eklenti son eriştiğiniz Midas sekmesindeki tablonun sayfalarını sırayla tarar ve başladığı sayfaya geri döner. Sayfa göstergesi ve oklar farklı kapsayıcılarda olsa da yalnızca göstergeyle aynı satırdaki yakın sayfalama kontrolü kullanılır.
 6. Analiz'i ayrı sekmede yenileyin. **İşlemler → Midas Aktarımı → Midas’tan İşlemleri Oku** düğmesine basın.
 7. Önizlemede sembol, alış/satış, tarih, adet ve fiyatı kontrol edip içe aktarımı onaylayın.
 

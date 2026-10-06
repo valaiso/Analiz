@@ -143,7 +143,14 @@ function historyDiagnostics(root) {
 function paginationState(direction, root) {
   const labels = [...root.querySelectorAll('span, div, p')]
     .filter((element) => isVisible(element) && /^\d+\s*[-–]\s*\d+\s*\/\s*\d+$/.test(textOf(element)))
-    .sort((a, b) => textOf(a).length - textOf(b).length);
+    // innerText eşit olan bir sürü ancestor bulunabilir; en küçük metin kutusu
+    // sayfa aralığının gerçek etiketi, geniş parent ise oku yanlış tarafta aratır.
+    .sort((a, b) => {
+      const aBox = a.getBoundingClientRect();
+      const bBox = b.getBoundingClientRect();
+      return (aBox.width * aBox.height) - (bBox.width * bBox.height)
+        || textOf(a).length - textOf(b).length;
+    });
   const indicator = labels[0];
   if (!indicator) return null;
   const indicatorBox = indicator.getBoundingClientRect();
@@ -159,7 +166,11 @@ function paginationState(direction, root) {
 
   // Önce erişilebilir etiketle doğru oku seç; burada üst çubuktaki diğer
   // butonlarla karışmaması için sayfa göstergesiyle aynı satırda olmasını şart koş.
-  const named = [...root.querySelectorAll('button, [role="button"], a[aria-label]')]
+  // Midas'ın responsive görünümünde gösterge ve ok farklı kardeş kapsayıcılara
+  // alınabiliyor. Kontrolü belge genelinde buluyoruz ama yalnızca aynı satırdaki
+  // ve göstergenin 140px yakınındaki kontrolleri kabul ediyoruz.
+  const searchRoot = root.ownerDocument || document;
+  const named = [...searchRoot.querySelectorAll('button, [role="button"], a[aria-label]')]
     .filter(isVisible)
     .filter((element) => verticalMatch(element.getBoundingClientRect())
       && inDirection(element.getBoundingClientRect()))
@@ -170,7 +181,7 @@ function paginationState(direction, root) {
 
   // Midas'ın ikon-only pager oku button etiketi taşımayabilir. Sayfa
   // göstergesinin hemen sağı/solundaki gerçek butonu veya tıklanabilir SVG'yi bul.
-  const candidates = [...root.querySelectorAll('button, [role="button"], [tabindex="0"], a, svg, [class*="button" i]')]
+  const candidates = [...searchRoot.querySelectorAll('button, [role="button"], [tabindex="0"], a, svg, [class*="button" i]')]
     .filter(isVisible)
     .map((element) => {
       const box = element.getBoundingClientRect();
@@ -185,7 +196,7 @@ function paginationState(direction, root) {
   }
 
   // Son çare: sayfa okları div olabilir ve yalnızca cursor:pointer ile belli olur.
-  const nearby = [...root.querySelectorAll('div, span')]
+  const nearby = [...searchRoot.querySelectorAll('div, span')]
     .filter(isVisible)
     .map((element) => ({ element, box: element.getBoundingClientRect(), cursor: getComputedStyle(element).cursor }))
     .filter(({ box, cursor }) => cursor === 'pointer' && verticalMatch(box) && inDirection(box)
@@ -194,7 +205,26 @@ function paginationState(direction, root) {
     nearby.sort((a, b) => direction === 'next' ? a.box.left - b.box.left : b.box.right - a.box.right);
     return { label: textOf(indicator), button: nearby[0].element, disabled: false };
   }
-  return { label: textOf(indicator), button: null, disabled: true, reason: `${direction} sayfa kontrolü göstergenin yanında bulunamadı.` };
+  const box = indicatorBox;
+  const nearbyControls = [...searchRoot.querySelectorAll('button, [role="button"], [tabindex], a, svg, [class*="button" i]')]
+    .filter(isVisible)
+    .map((element) => {
+      const target = element.closest('button, [role="button"], [tabindex], a') || element;
+      const rect = target.getBoundingClientRect();
+      return {
+        target,
+        rect,
+        description: [target.tagName.toLowerCase(), target.getAttribute('aria-label'), target.getAttribute('title'), target.getAttribute('data-testid'), target.className?.baseVal || target.className || '']
+          .filter(Boolean).join(':').slice(0, 100),
+      };
+    })
+    .filter(({ rect }) => rect.bottom >= box.top - 28 && rect.top <= box.bottom + 28
+      && rect.left >= box.left - 150 && rect.right <= box.right + 180)
+    .slice(0, 12)
+    .map(({ description, rect }) => `${description}@${Math.round(rect.left)},${Math.round(rect.top)} ${Math.round(rect.width)}x${Math.round(rect.height)}`);
+  const geometry = `Gösterge kutusu: x=${Math.round(box.left)}, y=${Math.round(box.top)}, w=${Math.round(box.width)}, h=${Math.round(box.height)}.`;
+  const controls = nearbyControls.length ? `Yakın kontroller: ${nearbyControls.join(' · ')}.` : 'Gösterge çevresinde görünür kontrol yok.';
+  return { label: textOf(indicator), button: null, disabled: true, reason: `${direction} sayfa kontrolü göstergenin yanında bulunamadı. ${geometry} ${controls}` };
 }
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
