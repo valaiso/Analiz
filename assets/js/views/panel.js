@@ -58,7 +58,7 @@ export function renderPanel(ctx) {
     if (row.quoteStale) return row.quoteAgeMinutes === null
       ? `${row.code} (kotasyon zamanı yok; günlük hesaba alınmadı)`
       : `${row.code} (kotasyon ${row.quoteAgeMinutes} dk eski; günlük hesaba alınmadı)`;
-    if (row.quoteMissing) return `${row.code} (piyasa kotasyonu alınmadı; son fiyat korunuyor)`;
+    if (row.quoteMissing) return `${row.code} (${row.quoteMissingReason}; son fiyat korunuyor)`;
     if (!row.siteDataAvailable) return `${row.code} (fiyat yok)`;
     return `${row.code} (önceki fiyat yok)`;
   });
@@ -104,7 +104,7 @@ export function renderPanel(ctx) {
       formatPct: pctSigned,
       hint: hasMidasTotal
         ? (isNum(siteDailyChange)
-          ? `Hisse/ETF: piyasa tarihli kotasyon · fon: son yayımlanan fiyat · ${fmtDate(DB.meta.lastDataDate)} fiyat havuzu`
+          ? `BIST: BIST seans kotasyonu · ABD: ABD seans kotasyonu · fon: son TEFAS fiyatı · ${fmtDate(DB.meta.lastDataDate)} fiyat havuzu`
           : `Günlük hesap eksikleri: ${dailyMissing.join(', ') || 'açık pozisyon fiyatı bulunamadı'}`)
         : `${fmtDate(totals.prevDate)} kapanışına göre`,
     }),

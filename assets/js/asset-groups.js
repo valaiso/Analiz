@@ -95,9 +95,10 @@ export function addSiteMarketMetrics(positions) {
     const liveQuote = canUseIntraday ? liveQuotes[position.code] : null;
     const hasLiveQuote = Number.isFinite(liveQuote?.price) && liveQuote.price > 0
       && Number.isFinite(liveQuote?.previousClose) && liveQuote.previousClose > 0;
+    const useQuotePrice = hasLiveQuote && liveQuote.isRegularSessionBar !== false;
     // Midas aktarımındaki fiyat yerine piyasa fiyat havuzunu; varsa en güncel
     // tarayıcı kotasyonunu kullan.
-    const price = hasLiveQuote ? liveQuote.price : Number.isFinite(priceFromHistory) ? priceFromHistory
+    const price = useQuotePrice ? liveQuote.price : Number.isFinite(priceFromHistory) ? priceFromHistory
       : (Number.isFinite(DB.byCode.get(position.code)?.price) ? DB.byCode.get(position.code).price
         : Number.isFinite(position.price) && position.price > 0 ? position.price : null);
     const avgCost = Number.isFinite(position.avgCost) && position.avgCost > 0
@@ -119,14 +120,20 @@ export function addSiteMarketMetrics(positions) {
     const defaultTimezone = ['US_ETF', 'US_STOCK'].includes(kind) ? 'America/New_York' : 'Europe/Istanbul';
     const marketToday = exchangeTraded
       ? marketDateInTimezone(liveQuote?.exchangeTimezoneName || defaultTimezone) : null;
-    const quoteIsFromCurrentMarketDate = hasLiveQuote && liveQuote.date === marketToday;
+    const quoteIsFromCurrentMarketDate = hasLiveQuote && liveQuote.date === marketToday
+      && liveQuote.isRegularSessionBar !== false;
     const useIntradayChange = hasLiveQuote && quoteIsFromCurrentMarketDate;
     const quoteTimestamp = Number(liveQuote?.timestamp);
     const quoteAgeMinutes = Number.isFinite(quoteTimestamp)
       ? Math.max(0, Math.ceil((Date.now() - quoteTimestamp) / 60_000)) : null;
-    const quoteMissing = exchangeTraded && !hasLiveQuote;
-    const quoteStale = exchangeTraded && hasLiveQuote && quoteIsFromCurrentMarketDate
+    const marketSessionOpenNow = liveQuote?.isRegularSessionNow === true;
+    const quoteStale = exchangeTraded && hasLiveQuote && marketSessionOpenNow
       && (quoteAgeMinutes === null || quoteAgeMinutes > 30);
+    const quoteMissing = exchangeTraded && (!hasLiveQuote
+      || marketSessionOpenNow && !quoteIsFromCurrentMarketDate);
+    const quoteMissingReason = !hasLiveQuote
+      ? 'piyasa kotasyonu alınmadı; son fiyat korunuyor'
+      : 'seans açık ama bugünün kotasyonu henüz gelmedi';
     const dailyReferencePrice = useIntradayChange ? liveQuote.previousClose : previousPrice;
     const hasPreviousPrice = !noDailyChange && hasSitePrice
       && (useIntradayChange || recentQuote && previousIndex >= 0)
@@ -175,6 +182,7 @@ export function addSiteMarketMetrics(positions) {
       quoteDate: hasLiveQuote ? liveQuote.date : quoteDate,
       quoteSource: hasLiveQuote ? liveQuote.source : 'site',
       quoteMissing,
+      quoteMissingReason,
       quoteStale,
       quoteAgeMinutes,
       noDailyChange,

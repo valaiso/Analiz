@@ -47,13 +47,13 @@ Pozisyonlar tablosunda “Adet” veya “Miktar” sütunu görünüyorsa açı
 ve sembol yerel portföy hesapları için okunur; günlük/toplam getiri hücreleri kullanılmaz.
 
 Analiz açıkken eklenti, açık pozisyonların piyasa kotasyonlarını dakikada bir alır.
-Kotasyonun piyasa tarihi bugünkü piyasa tarihiyle aynıysa günlük getiride bu kotasyon
-ve önceki kapanış kullanılır. Yeni piyasa tarihli kotasyon gelene kadar son fiyat
-portföy değerinde korunur; eski seansın günlük hareketi yeni güne taşınmaz.
-BIST hisseleri ve işlem gören ETF'lerde güncel piyasa gününe ait kotasyon 30 dakikadan
-eskiyse günlük kazanç hesabına katılmaz, toplam değer için son fiyat saklanır ve panelde
-sembol ile kotasyon yaşı gösterilir. BIST hisseleri ve işlem gören ETF'ler
-son kotasyonla; TEFAS fonları site havuzundaki son yayımlanmış fiyatla değerlenir.
+BIST ve ABD kotasyonları ayrı ayrı kendi piyasa tarihine ve sağlayıcının bildirdiği
+normal seans aralığına göre değerlendirilir; saatler koda sabit yazılmaz. Güncel seans kotasyonu varsa günlük getiri önceki
+kapanıştan hesaplanır. Önceki seans fiyatı toplam değerlemede korunur, ancak eski
+seansın günlük hareketi yeni güne taşınmaz. Seans açıkken kotasyon 30 dakikadan eskiyse
+günlük kazanç hesabına katılmaz; toplam değer için son fiyat saklanır ve panelde sembol
+ile kotasyon yaşı gösterilir. TEFAS fonları site havuzundaki son yayımlanmış fiyatla
+değerlenir.
 Kotasyon sağlayıcısı gecikmeli olabilir.
 Miktar, fiyat, tarih ya da sembol güvenle okunamazsa satır içe aktarılmaz. Midas
 arayüzü değişirse içerik okuyucusunun güncellenmesi gerekebilir.

@@ -96,11 +96,21 @@ async function yahooIntradayQuote(code) {
       const previousClose = Number(chart?.meta?.chartPreviousClose ?? chart?.meta?.previousClose);
       if (!(price > 0) || !(previousClose > 0)) continue;
       const timestamp = timestamps[latestIndex] || chart?.meta?.regularMarketTime || Date.now() / 1000;
+      const regularPeriod = chart?.meta?.currentTradingPeriod?.regular;
+      const now = Date.now() / 1000;
+      const isRegularSessionNow = Number.isFinite(regularPeriod?.start)
+        && Number.isFinite(regularPeriod?.end)
+        ? now >= regularPeriod.start && now < regularPeriod.end : null;
+      const isRegularSessionBar = Number.isFinite(regularPeriod?.start)
+        && Number.isFinite(regularPeriod?.end)
+        ? timestamp >= regularPeriod.start && timestamp <= regularPeriod.end : null;
       return {
         code, price, previousClose,
         date: isoDate(timestamp, chart?.meta?.exchangeTimezoneName),
         timestamp: timestamp * 1000,
         exchangeTimezoneName: chart?.meta?.exchangeTimezoneName || 'UTC',
+        isRegularSessionNow,
+        isRegularSessionBar,
         currency: chart?.meta?.currency || (ticker.endsWith('.IS') ? 'TRY' : 'USD'),
         source: 'Yahoo Finance',
       };
