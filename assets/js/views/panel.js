@@ -7,6 +7,7 @@ import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
 import { timingQuality, cashflowCalendar, consistencyChecks } from '../insights.js';
 import { transactions, daysSinceBackup, getMidasAccountSnapshot } from '../store.js';
+import { currentMidasPositions, groupAssetRows } from '../asset-groups.js';
 import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable } from './common.js';
 
 /**
@@ -24,12 +25,19 @@ function fiyatiDurmus(holding) {
 
 export function renderPanel(ctx) {
   const { analysis, navigate } = ctx;
-  const { totals, open, closed, series } = analysis;
+  const { totals, open, series } = analysis;
   const midasSnapshot = getMidasAccountSnapshot();
   const midasSummary = midasSnapshot?.summary;
   const hasMidasTotal = isNum(midasSummary?.totalValue) && midasSummary.totalValue > 0;
   const hasMidasDaily = isNum(midasSummary?.dailyChange);
-  const snapshotPositions = Array.isArray(midasSnapshot?.positions) ? midasSnapshot.positions : [];
+  const snapshotPositions = currentMidasPositions() || [];
+  const snapshotCodes = new Set(snapshotPositions.map((row) => row.code));
+  const localCrypto = hasMidasTotal
+    ? open.filter((row) => DB.byCode.get(row.code)?.kind === 'CRYPTO' && !snapshotCodes.has(row.code)).map((row) => ({
+      ...row, dailyPLTRY: row.dayPL, totalPLTRY: row.totalPL,
+      allocationPct: null, localRecord: true,
+    }))
+    : [];
   const snapshotTime = midasSnapshot?.capturedAt
     ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(midasSnapshot.capturedAt))
     : null;
@@ -117,7 +125,7 @@ export function renderPanel(ctx) {
           class: 'btn btn-sm', type: 'button', onclick: () => navigate('islemler'),
         }, 'İşlemleri aç')),
       h('div', { class: 'dim', style: 'margin-top:6px;font-size:.78rem' },
-        Object.values(gruplar).join(' · '))));
+        `${Object.values(gruplar).join(' · ')} · Bu bölüm geçmiş işlem kayıtlarını denetler; Midas’taki açık pozisyon listesi değildir.`)));
   }
 
   if (hasMidasTotal) {
@@ -192,7 +200,7 @@ export function renderPanel(ctx) {
       const formatted = moneyByCurrency(Math.abs(value), currency);
       return `${value > 0 ? '+' : value < 0 ? '−' : ''}${formatted}`;
     };
-    const table = sortableTable({
+    const positionsTable = (rows) => sortableTable({
       initialSort: { key: 'allocationPct', dir: 'desc' },
       columns: [
         { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', { class: 'code-chip' }, r.code) },
@@ -202,10 +210,28 @@ export function renderPanel(ctx) {
         { key: 'totalPL', label: 'Toplam', render: (r) => h('span', { class: cls(r.totalPL) }, `${signedByCurrency(r.totalPL, r.currency)}${isNum(r.totalPct) ? ` · ${pctSigned(r.totalPct)}` : ''}`) },
         { key: 'allocationPct', label: 'Dağılım', render: (r) => isNum(r.allocationPct) ? pct(r.allocationPct, 2) : '—' },
       ],
-      rows: snapshotPositions,
+      rows,
     });
-    root.append(sectionCard('Midas · Açık Pozisyonlar',
-      `${snapshotPositions.length} varlık · Midas ekranından okundu; adet bilgisi gösterilmiyor`, table.element));
+    const groupTitles = { ETF: 'ETF’ler', Fon: 'Fonlar', Hisse: 'Hisseler', Kripto: 'Kripto', Diğer: 'Diğer Varlıklar' };
+    for (const group of groupAssetRows(snapshotPositions)) {
+      root.append(sectionCard(`Midas · Açık ${groupTitles[group.label] || group.label}`,
+        `${group.rows.length} varlık · Midas ekranından okundu`, positionsTable(group.rows).element));
+    }
+    if (localCrypto.length) {
+      const table = sortableTable({
+        initialSort: { key: 'value', dir: 'desc' },
+        columns: [
+          { key: 'code', label: 'Varlık', render: (row) => h('span', { class: 'code-chip' }, row.code) },
+          { key: 'units', label: 'Adet', render: (row) => fmtUnits(row.units) },
+          { key: 'price', label: 'Fiyat', render: (row) => moneyByCurrency(row.price, row.currency) },
+          { key: 'dailyPLTRY', label: 'Bugünkü K/Z (₺)', render: (row) => h('span', { class: cls(row.dailyPLTRY) }, tlSigned(row.dailyPLTRY)) },
+          { key: 'totalPLTRY', label: 'Toplam K/Z (₺)', render: (row) => h('span', { class: cls(row.totalPLTRY) }, tlSigned(row.totalPLTRY)) },
+        ],
+        rows: localCrypto,
+      });
+      root.append(sectionCard('Kripto · İşlem Kayıtları',
+        'Midas yatırım hesabı pozisyonlarından ayrı; işlem kayıtlarından hesaplanır', table.element));
+    }
   } else if (!hasMidasTotal && open.length) {
     const table = sortableTable({
       initialSort: { key: 'value', dir: 'desc' },
@@ -244,14 +270,29 @@ export function renderPanel(ctx) {
 
   /* ---------------------------------------------------------- zamanlama kalitesi */
 
-  const zamanlama = timingQuality(txs);
+  const activeCodes = hasMidasTotal
+    ? new Set([...snapshotPositions, ...localCrypto].map((position) => position.code)) : null;
+  const zamanlama = timingQuality(txs).filter((row) => !activeCodes || activeCodes.has(row.code));
   if (zamanlama.length) {
     const agirlik = zamanlama.reduce((s2, z) => s2 + z.invested, 0);
     const ortalama = agirlik > 0
       ? zamanlama.reduce((s2, z) => s2 + z.diffPct * z.invested, 0) / agirlik : null;
 
+    const timingTable = (rows) => h('div', { class: 'table-wrap' }, h('table', {},
+      h('thead', {}, h('tr', {},
+        h('th', { style: 'text-align:left' }, 'Varlık'),
+        h('th', {}, 'Ort. alım fiyatın'),
+        h('th', {}, 'Dönemin ort. fiyatı'),
+        h('th', {}, 'Fark'),
+        h('th', {}, 'Yatırdığın'))),
+      h('tbody', {}, rows.map((z) => h('tr', {},
+        h('td', {}, h('span', { class: 'code-chip' }, z.code)),
+        h('td', {}, money(z.avgCost)),
+        h('td', {}, money(z.avgMarket)),
+        h('td', { class: z.diffPct < 0 ? 'up' : 'down' }, pctSigned(z.diffPct, 1)),
+        h('td', {}, tl(z.invested)))))));
     root.append(sectionCard('Zamanlama Kalitesi',
-      'Alım fiyatların, o fonu tuttuğun dönemin ortalama fiyatına göre',
+      hasMidasTotal ? 'Yalnızca Midas’ta şu anda açık görünen varlıklar' : 'Alım fiyatların, tuttuğun varlıkların ortalama piyasa fiyatına göre',
       h('p', { class: 'dim', style: 'margin:0 0 12px;font-size:.85rem' },
         isNum(ortalama)
           ? (ortalama < 0
@@ -260,19 +301,8 @@ export function renderPanel(ctx) {
             : `Ağırlıklı ortalamada, tuttuğun dönemin ortalama fiyatının ${pct(ortalama, 1)} `
               + 'üstünden almışsın.')
           : ''),
-      h('div', { class: 'table-wrap' }, h('table', {},
-        h('thead', {}, h('tr', {},
-          h('th', { style: 'text-align:left' }, 'Fon'),
-          h('th', {}, 'Ort. alım fiyatın'),
-          h('th', {}, 'Dönemin ort. fiyatı'),
-          h('th', {}, 'Fark'),
-          h('th', {}, 'Yatırdığın'))),
-        h('tbody', {}, zamanlama.map((z) => h('tr', {},
-          h('td', {}, h('span', { class: 'code-chip' }, z.code)),
-          h('td', {}, money(z.avgCost)),
-          h('td', {}, money(z.avgMarket)),
-          h('td', { class: z.diffPct < 0 ? 'up' : 'down' }, pctSigned(z.diffPct, 1)),
-          h('td', {}, tl(z.invested)))))))));
+      groupAssetRows(zamanlama).map((group) => sectionCard(group.label,
+        `${group.rows.length} açık varlık · işlem kayıtlarından zamanlama`, timingTable(group.rows)))));
   }
 
   /* --------------------------------------------------------------- nakit akışı */
@@ -301,22 +331,6 @@ export function renderPanel(ctx) {
           h('td', { class: cls(y.amount) }, tlSigned(y.amount)))))))));
   }
 
-  if (closed.length) {
-    const rows = closed.map((c) => h('tr', {},
-      h('td', {}, h('span', { class: 'code-chip' }, c.code)),
-      h('td', { class: 'name', style: 'text-align:left' }, c.name),
-      h('td', {}, tl(c.bought)),
-      h('td', {}, tl(c.sold)),
-      h('td', { class: cls(c.realized) }, tlSigned(c.realized))));
-
-    root.append(sectionCard('Kapanmış Pozisyonlar', 'Tamamı satılmış fonlar',
-      h('div', { class: 'table-wrap' }, h('table', {},
-        h('thead', {}, h('tr', {},
-          h('th', {}, 'Fon'), h('th', { style: 'text-align:left' }, 'Ünvan'),
-          h('th', {}, 'Alım Tutarı'), h('th', {}, 'Satış Tutarı'),
-          h('th', {}, 'Gerçekleşen K/Z'))),
-        h('tbody', {}, rows)))));
-  }
 
   if (analysis.preRange) {
     root.append(h('div', { class: 'notice' },
@@ -326,8 +340,8 @@ export function renderPanel(ctx) {
       + 'fiyatlarınla yapılıyor, etkilenmiyor.'));
   }
 
-  const durmus = open.filter(fiyatiDurmus);
-  const fiyatYok = open.filter((holding) => holding.missingPrice || holding.missingFx);
+  const durmus = hasMidasTotal ? [] : open.filter(fiyatiDurmus);
+  const fiyatYok = hasMidasTotal ? [] : open.filter((holding) => holding.missingPrice || holding.missingFx);
   if (fiyatYok.length) {
     root.append(h('div', { class: 'notice warn' },
       `${fiyatYok.map((holding) => holding.code).join(', ')} için fiyat geçmişi bulunamadı. `
@@ -343,7 +357,7 @@ export function renderPanel(ctx) {
       + 'Bu pozisyonların değeri son bilinen fiyattan hesaplanıyor, yani güncel değil.'));
   }
 
-  const oversold = analysis.holdings.filter((x) => x.oversold);
+  const oversold = hasMidasTotal ? [] : analysis.holdings.filter((x) => x.oversold);
   if (oversold.length) {
     root.append(h('div', { class: 'notice warn' },
       `Dikkat: ${oversold.map((x) => x.code).join(', ')} için elde olandan fazla satış girilmiş. `
