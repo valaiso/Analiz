@@ -35,10 +35,7 @@ export function currentMidasPositions() {
       allocationPct: Number.isFinite(row.allocationPct) ? row.allocationPct : null,
       value: Number.isFinite(row.allocationPct) ? row.allocationPct : 0,
       weight: Number.isFinite(row.allocationPct) ? row.allocationPct : 0,
-      // Midas'ın getiri hücrelerini kullanmıyoruz: arayüz yapısı değiştiğinde
-      // yanlış sütunlar okunabiliyor. K/Z, site fiyat geçmişiyle hesaplanır.
-      totalPLTRY: null,
-      dailyPLTRY: null,
+      // Midas'ın anlık pozisyon fiyatı ve getiri alanları eşitleme anında gelir.
       closed: false,
     };
   });
@@ -83,12 +80,15 @@ export function addSiteMarketMetrics(positions) {
       }
     }
     const quoteDate = quoteIndex >= 0 ? DB.calendar[quoteIndex] : DB.byCode.get(position.code)?.date || null;
-    const price = Number.isFinite(priceFromHistory) ? priceFromHistory
+    // Midas eşitlemesi pozisyon satırındaki güncel fiyatı da taşır. Panelde adet ×
+    // anlık Midas fiyatı kullan; geçmiş kapanış sadece Midas fiyatı yoksa yedektir.
+    const price = Number.isFinite(position.price) && position.price > 0 ? position.price
+      : Number.isFinite(priceFromHistory) ? priceFromHistory
       : (Number.isFinite(DB.byCode.get(position.code)?.price) ? DB.byCode.get(position.code).price
-        : (Number.isFinite(position.price) && position.price > 0 ? position.price : null));
+        : null);
     const avgCost = Number.isFinite(position.avgCost) && position.avgCost > 0
       ? position.avgCost : null;
-    const fx = fxToTRY(position.code, quoteIndex >= 0 ? quoteIndex : latestIndex);
+    const fx = fxToTRY(position.code, latestIndex);
     const previousFx = fxToTRY(position.code, previousIndex);
     const hasSitePrice = Number.isFinite(price) && Number.isFinite(fx);
     // ABD fon/hisselerinin kapanışı Türkiye takviminde çoğunlukla bir gün geridedir.
@@ -98,23 +98,27 @@ export function addSiteMarketMetrics(positions) {
     const noDailyChange = NO_DAILY_CHANGE_CODES.has(position.code);
     const hasPreviousPrice = !noDailyChange && hasSitePrice && recentQuote && previousIndex >= 0
       && Number.isFinite(previousPrice) && Number.isFinite(previousFx);
-    const dailyPLTRY = noDailyChange ? 0 : hasPreviousPrice
-      ? units * (price * fx - previousPrice * previousFx) : null;
-    const dailyPct = noDailyChange ? 0 : hasPreviousPrice && previousPrice > 0
-      ? ((price / previousPrice) - 1) * 100 : null;
-    const totalPLTRY = noDailyChange ? 0 : hasSitePrice && Number.isFinite(avgCost)
-      ? units * (price - avgCost) * fx : null;
-    const totalPLNative = noDailyChange ? 0 : hasSitePrice && Number.isFinite(avgCost)
-      ? units * (price - avgCost) : null;
-    const totalPct = noDailyChange ? 0 : hasSitePrice && Number.isFinite(avgCost) && avgCost > 0
-      ? ((price / avgCost) - 1) * 100 : null;
+    const dailyPLNative = noDailyChange ? 0
+      : Number.isFinite(position.dailyPL) ? position.dailyPL
+        : hasPreviousPrice ? units * (price - previousPrice) : null;
+    const dailyPLTRY = noDailyChange ? 0 : Number.isFinite(dailyPLNative) ? dailyPLNative * fx : null;
+    const dailyPct = noDailyChange ? 0
+      : Number.isFinite(position.dailyPct) ? position.dailyPct
+        : hasPreviousPrice && previousPrice > 0 ? ((price / previousPrice) - 1) * 100 : null;
+    const totalPLNative = noDailyChange ? 0
+      : Number.isFinite(position.totalPL) ? position.totalPL
+        : hasSitePrice && Number.isFinite(avgCost) ? units * (price - avgCost) : null;
+    const totalPLTRY = noDailyChange ? 0 : Number.isFinite(totalPLNative) ? totalPLNative * fx : null;
+    const totalPct = noDailyChange ? 0
+      : Number.isFinite(position.totalPct) ? position.totalPct
+        : hasSitePrice && Number.isFinite(avgCost) && avgCost > 0 ? ((price / avgCost) - 1) * 100 : null;
     return {
       ...position,
       price,
       units,
       avgCost,
       dailyPLTRY,
-      dailyPLNative: noDailyChange ? 0 : hasPreviousPrice ? units * (price - previousPrice) : null,
+      dailyPLNative,
       dailyPct,
       totalPLTRY,
       totalPLNative,

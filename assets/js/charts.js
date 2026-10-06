@@ -406,33 +406,30 @@ export function monthlyReturnTable(aylik, yillik = []) {
       : `color-mix(in srgb, var(--down) ${yogunluk * 100}%, transparent)`;
   };
 
-  const veri = new Map();
-  for (const a of aylik) veri.set(`${a.year}-${a.month}`, a.ret);
-  const yillar = [...new Set(aylik.map((a) => a.year))].sort((a, b) => b - a);
   const yilToplam = new Map(yillik.map((y) => [y.year, y.ret]));
 
   const bicim = (v) => (isNum(v)
     ? `${v < 0 ? '-' : ''}%${Math.abs(v).toFixed(1).replace('.', ',')}` : '');
 
-  return h('div', { class: 'table-wrap' }, h('table', {},
+  const rows = [...aylik].sort((a, b) => b.year - a.year || b.month - a.month);
+  return h('div', { class: 'table-wrap', style: 'max-height:620px;overflow:auto' }, h('table', {},
     h('thead', {}, h('tr', {},
       h('th', { style: 'text-align:left' }, 'Yıl'),
-      AY_KISA.map((a) => h('th', { style: 'text-align:center' }, a)),
-      h('th', { style: 'text-align:center' }, 'Yıl'))),
-    h('tbody', {}, yillar.map((yil) => h('tr', {},
-      h('td', { style: 'font-weight:600' }, String(yil)),
-      AY_KISA.map((_, i) => {
-        const v = veri.get(`${yil}-${i + 1}`);
-        return h('td', {
-          class: 'heat-cell',
-          style: `background:${renk(v)};text-align:center`,
-          title: isNum(v) ? `${AY_KISA[i]} ${yil}: ${bicim(v)}` : null,
-        }, bicim(v) || '·');
-      }),
+      h('th', { style: 'text-align:left' }, 'Ay'),
+      h('th', { style: 'text-align:right' }, 'Aylık getiri'),
+      h('th', { style: 'text-align:right' }, 'Yıllık getiri'))),
+    h('tbody', {}, rows.map((item) => h('tr', {},
+      h('td', { style: 'font-weight:600' }, String(item.year)),
+      h('td', { style: 'text-align:left' }, AY_KISA[item.month - 1] || '—'),
       h('td', {
         class: 'heat-cell',
-        style: `background:${renk(yilToplam.get(yil))};text-align:center;font-weight:650`,
-      }, bicim(yilToplam.get(yil)) || '·'))))));
+        style: `background:${renk(item.ret)};text-align:right`,
+        title: `${AY_KISA[item.month - 1] || ''} ${item.year}: ${bicim(item.ret)}`,
+      }, bicim(item.ret)),
+      h('td', {
+        class: 'heat-cell',
+        style: `background:${renk(yilToplam.get(item.year))};text-align:right`,
+      }, bicim(yilToplam.get(item.year)) || '·'))))));
 }
 
 /* ------------------------------------------------------ yığılmış alan grafiği */

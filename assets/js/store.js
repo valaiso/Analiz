@@ -159,7 +159,7 @@ export function transactions(profileId = state.activeProfile) {
 
 function transactionFingerprint(tx) {
   return [tx.date, String(tx.code || '').trim().toLocaleUpperCase('tr'), tx.type,
-    Number(tx.units), Number(tx.price), Number(tx.fee || 0)].join('|');
+    Number(tx.units), Number(tx.price), Number(tx.fee || 0), Number(tx.withholdingTax || 0)].join('|');
 }
 
 function transactionCoreFingerprint(tx) {
@@ -196,6 +196,7 @@ export function addMidasTransactions(rows) {
       units: Number(tx.units),
       price: Number(tx.price),
       fee: Number(tx.fee || 0),
+      withholdingTax: Number(tx.withholdingTax || 0),
       note: tx.note || 'Midas aktarımı',
     };
     if (!record.date || !record.code || !(record.units > 0) || !(record.price > 0)) { skipped += 1; continue; }
@@ -206,7 +207,7 @@ export function addMidasTransactions(rows) {
       batchIds.add(record.sourceId);
       const existing = importedById.get(record.sourceId);
       if (existing) {
-        const changed = ['date', 'code', 'type', 'units', 'price', 'fee'].some((key) => existing[key] !== record[key]);
+        const changed = ['date', 'code', 'type', 'units', 'price', 'fee', 'withholdingTax'].some((key) => existing[key] !== record[key]);
         if (changed) {
           Object.assign(existing, record, { id: existing.id, profile: existing.profile });
           updated += 1;
@@ -217,7 +218,8 @@ export function addMidasTransactions(rows) {
       const sameCore = importedWithoutIdByCore.get(transactionCoreFingerprint(record)) || [];
       if (sameCore.length === 1) {
         const existing = sameCore[0];
-        const changed = existing.price !== record.price || existing.fee !== record.fee;
+        const changed = existing.price !== record.price || existing.fee !== record.fee
+          || Number(existing.withholdingTax || 0) !== record.withholdingTax;
         if (changed) {
           Object.assign(existing, record, { id: existing.id, profile: existing.profile });
           updated += 1;
@@ -245,6 +247,7 @@ export function addTransaction(tx) {
     units: Number(tx.units),
     price: Number(tx.price),
     fee: Number(tx.fee || 0),
+    withholdingTax: Number(tx.withholdingTax || 0),
   };
   state.tx.push(record);
   persist();
@@ -258,6 +261,7 @@ export function updateTransaction(id, patch) {
   t.units = Number(t.units);
   t.price = Number(t.price);
   t.fee = Number(t.fee || 0);
+  t.withholdingTax = Number(t.withholdingTax || 0);
   if (t.source === 'midas') persistMidasTransactions();
   else persist();
   return true;

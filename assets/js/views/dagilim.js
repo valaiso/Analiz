@@ -88,7 +88,7 @@ export function renderDagilim(ctx) {
         ? `Dağılım grafiği bekletiliyor: Midas adedi/fiyatı okunamayan varlıklar: ${missingPositionValue.map((row) => row.code).join(', ')}. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`
         : `Dağılım grafiği bekletiliyor: pozisyon fiyatlarından hesaplanan ${tl(securitiesValue)} değeri Midas hesap toplamı ${tl(midasTotal)} ile uyuşmuyor. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`));
     root.append(h('div', { class: 'notice' },
-      `ETF, fon ve hisse değerleri Midas’tan okunan adetlerle sitenin fiyat geçmişinden hesaplanır; ${live.filter((row) => row.marketValueTRY > 0).length}/${live.length} açık varlık grafiğe girdi. THF ve TP2 günlük değişimi %0 kabul edilir; değerleri portföye dahildir.`));
+      `Portföy değeri Midas’tan okunan adet × güncel fiyat × kur ile hesaplanır; ${live.filter((row) => row.marketValueTRY > 0).length}/${live.length} açık varlığın değeri doğrulandı. Günlük toplam Midas hesabından okunur; THF ve TP2 günlük değişimi %0 kabul edilir.`));
     const sortedGroups = groupAssetRows(positions).map((group) => ({
       ...group,
       groupValue: group.rows.reduce((sum, row) => sum + (row.marketValueTRY || 0), 0),
@@ -110,7 +110,8 @@ export function renderDagilim(ctx) {
           h('td', { class: cls2(row.totalPLTRY) }, liveValuesReconcile && isNum(row.totalPLNative) ? `${signedCurrency(row.totalPLNative, row.currency)}${isNum(row.totalPct) ? ` · ${pctSigned(row.totalPct)}` : ''}` : '—'),
           h('td', { class: cls2(row.dailyPLNative) }, liveValuesReconcile && isNum(row.dailyPLNative) ? `${signedCurrency(row.dailyPLNative, row.currency)}${isNum(row.dailyPct) ? ` · ${pctSigned(row.dailyPct)}` : ''}` : '—'))))));
       root.append(sectionCard(localOnly ? 'Kripto' : group.label,
-        localOnly ? 'Bitcoin elle manuel eklenmelidir.' : null, table));
+        localOnly ? 'Bitcoin elle manuel eklenmelidir.'
+          : 'Portföy değeri = Midas adedi × güncel fiyat × güncel kur', table));
     }
   } else {
     const byFund = open.filter((row) => row.value > 0)
@@ -128,9 +129,10 @@ export function renderDagilim(ctx) {
       }))));
   }
 
-  /* Kâr/zarar katkısı, Midas pozisyon kodları + site fiyatı + Midas adetlerinden hesaplanır. */
+  /* Toplam K/Z katkısı yalnız fon ve BIST hisseleri için gösterilir. */
   if (usingMidas) {
     for (const group of groupAssetRows(live)) {
+      if (!['Fon', 'Hisse'].includes(group.label)) continue;
       const currencies = [...new Set(group.rows.map((row) => row.currency === 'USD' ? 'USD' : 'TRY'))];
       for (const currency of currencies) {
         const rows = group.rows.filter((row) => liveValuesReconcile && (row.currency === 'USD' ? 'USD' : 'TRY') === currency
@@ -146,25 +148,11 @@ export function renderDagilim(ctx) {
             h('td', { class: cls2(row.totalPLNative) }, signedCurrency(row.totalPLNative, currency)),
             h('td', { class: cls2(row.totalPct) }, isNum(row.totalPct) ? pctSigned(row.totalPct, 2) : '—'))))));
         root.append(sectionCard(`${group.label} · Kâr/Zarar Katkısı (${currency})`,
-          'Açık pozisyonlarda site fiyatı ile Midas’ın ortalama maliyet ve adedinden hesaplanır', box, table));
+          'Açık pozisyonlarda Midas’ın güncel fiyatı, ortalama maliyeti ve adediyle hesaplanır', box, table));
         barChart(box, { items: rows.map((row) => ({ label: row.code, value: row.totalPLNative })),
           format: (value) => signedCurrency(value, currency) });
       }
 
-      const currenciesWithDaily = [...new Set(group.rows.filter((row) => liveValuesReconcile && isNum(row.dailyPLNative)
-        && Math.abs(row.dailyPLNative) > 0.005).map((row) => row.currency === 'USD' ? 'USD' : 'TRY'))];
-      for (const currency of currenciesWithDaily) {
-        const rows = group.rows.filter((row) => (row.currency === 'USD' ? 'USD' : 'TRY') === currency
-          && isNum(row.dailyPLNative) && Math.abs(row.dailyPLNative) > 0.005)
-          .sort((a, b) => b.dailyPLNative - a.dailyPLNative);
-        const box = h('div');
-        root.append(sectionCard(`${group.label} · Bugünkü Katkı (${currency})`,
-          'Açık pozisyonlardaki site kapanış fiyatı değişimi; THF ve TP2 %0 kabul edilir', box));
-        barChart(box, {
-          items: rows.map((row) => ({ label: row.code, value: row.dailyPLNative })),
-          format: (value) => signedCurrency(value, currency),
-        });
-      }
     }
     if (localCrypto.length) {
       const rows = localCrypto.filter((row) => isNum(row.totalPLTRY));
@@ -172,12 +160,6 @@ export function renderDagilim(ctx) {
         const box = h('div');
         root.append(sectionCard('Kripto · Kâr/Zarar Katkısı', 'Yerel işlem ve fiyat kayıtlarından; Midas yatırım toplamına dahil değil', box));
         barChart(box, { items: rows.map((row) => ({ label: row.code, value: row.totalPLTRY })), format: tlSigned });
-      }
-      const dailyCrypto = localCrypto.filter((row) => isNum(row.dailyPLTRY) && Math.abs(row.dailyPLTRY) > 0.005);
-      if (dailyCrypto.length) {
-        const box = h('div');
-        root.append(sectionCard('Kripto · Bugünkü Katkı', 'Yerel işlem ve fiyat kayıtlarından hesaplanır', box));
-        barChart(box, { items: dailyCrypto.map((row) => ({ label: row.code, value: row.dailyPLTRY })), format: tlSigned });
       }
     }
   } else {
@@ -197,13 +179,6 @@ export function renderDagilim(ctx) {
             h('td', { class: cls2(item.amount) }, tlSigned(item.amount)),
             h('td', { class: cls2(item.points) }, `${pctSigned(item.points, 2)} puan`))))))));
       barChart(box, { items: katkilar.map((item) => ({ label: item.code, value: item.points })), format: (v) => `${pctSigned(v, 2)} puan` });
-    }
-    const daily = open.filter((row) => isNum(row.dayPL) && Math.abs(row.dayPL) > 0.005)
-      .sort((a, b) => b.dayPL - a.dayPL).map((row) => ({ label: row.code, value: row.dayPL }));
-    if (daily.length) {
-      const box = h('div');
-      root.append(sectionCard('Bugünkü Katkı', `Toplam ${tlSigned(totals.dayPL)} · işlem geçmişi tahmini`, box));
-      barChart(box, { items: daily, format: tlSigned });
     }
   }
 

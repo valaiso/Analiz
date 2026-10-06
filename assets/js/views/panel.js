@@ -40,32 +40,22 @@ export function renderPanel(ctx) {
   const rawSnapshotPositions = currentMidasPositions() || [];
   const snapshotPositions = addSiteMarketMetrics(rawSnapshotPositions);
   const snapshotCodes = new Set(snapshotPositions.map((row) => row.code));
-  const pricedSnapshotPositions = snapshotPositions.filter((row) => isNum(row.dailyPLTRY));
-  const missingDailyCodes = snapshotPositions.filter((row) => !isNum(row.dailyPLTRY)
-    || !isNum(row.marketValueTRY)).map((row) => {
-    if (!(row.units > 0)) return `${row.code} (adet okunamadı)`;
-    if (!row.siteDataAvailable) return `${row.code} (fiyat geçmişi yok)`;
-    return `${row.code} (son kapanış değişimi yok)`;
-  });
   const localCrypto = hasMidasTotal
     ? open.filter((row) => DB.byCode.get(row.code)?.kind === 'CRYPTO' && !snapshotCodes.has(row.code)).map((row) => ({
       ...row, dailyPLTRY: row.dayPL, totalPLTRY: row.totalPL,
       allocationPct: null, localRecord: true,
     }))
     : [];
-  const siteDailyPL = pricedSnapshotPositions.reduce((sum, row) => sum + row.dailyPLTRY, 0)
-    + localCrypto.reduce((sum, row) => sum + (row.dailyPLTRY || 0), 0);
-  const siteDailyBase = pricedSnapshotPositions.reduce((sum, row) =>
-    sum + (row.marketValuePrevTRY || 0), 0)
-    + localCrypto.reduce((sum, row) => sum + (row.prevValue || 0), 0);
   const calculatedPositionsValue = snapshotPositions.reduce((sum, row) =>
     sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0);
   const accountValueConsistent = !hasMidasTotal || calculatedPositionsValue <= midasSummary.totalValue * 1.1;
   const positionSnapshotConsistent = accountValueConsistent
     && snapshotPositions.every((row) => isNum(row.marketValueTRY));
-  const dailyDataComplete = snapshotPositions.length > 0
-    && pricedSnapshotPositions.length === snapshotPositions.length
-    && positionSnapshotConsistent;
+  const midasDailyChange = hasMidasTotal && isNum(midasSummary.dailyChange)
+    ? midasSummary.dailyChange : null;
+  const midasDailyPct = isNum(midasSummary?.dailyPct) ? midasSummary.dailyPct
+    : isNum(midasDailyChange) && midasSummary.totalValue - midasDailyChange > 0
+      ? midasDailyChange / (midasSummary.totalValue - midasDailyChange) * 100 : null;
   const snapshotTime = midasSnapshot?.capturedAt
     ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(midasSnapshot.capturedAt))
     : null;
@@ -95,17 +85,15 @@ export function renderPanel(ctx) {
     plCard({
       label: 'Günlük Kazanç',
       amount: hasMidasTotal
-        ? (dailyDataComplete ? siteDailyPL : null) : totals.dayPL,
+        ? midasDailyChange : totals.dayPL,
       pct: hasMidasTotal
-        ? (dailyDataComplete && siteDailyBase > 0 ? (siteDailyPL / siteDailyBase) * 100 : null) : totals.dayPct,
+        ? midasDailyPct : totals.dayPct,
       formatMoney: tlSigned,
       formatPct: pctSigned,
       hint: hasMidasTotal
-        ? (!accountValueConsistent
-          ? `Günlük hesap bekletiliyor · Midas pozisyonlarından hesaplanan ${tl(calculatedPositionsValue)}, hesap toplamı ${tl(midasSummary.totalValue)} ile uyuşmuyor. Midas aktarımını yenileyip sütun tanısını kontrol et; adet/fiyat alanı yanlış okunuyor olabilir.`
-          : dailyDataComplete
-          ? 'Her varlığın sitedeki son iki kapanış fiyatına göre; adet Midas’tan alınır'
-          : `Günlük toplam bekletiliyor · ${missingDailyCodes.join(', ') || 'hesap verisi eksik'}`)
+        ? (isNum(midasDailyChange)
+          ? 'Midas günlük değişimi · eşitleme yenilendikçe güncellenir, yeni işlem gününde yeniden başlar'
+          : 'Midas ekranında günlük değişim bulunamadı · Midas aktarımını yenile')
         : `${fmtDate(totals.prevDate)} kapanışına göre`,
     }),
     plCard({
@@ -117,11 +105,6 @@ export function renderPanel(ctx) {
       hint: totals.realized !== 0
         ? `${tlSigned(totals.unrealized)} açık · ${tlSigned(totals.realized)} gerçekleşmiş`
         : 'Geçmiş alış/satış kayıtlarından hesaplanır',
-    }),
-    kpiCard({
-      label: 'İşlem Kayıtlarına Göre Net Yatırılan',
-      value: tl(totals.netInvested),
-      sub: 'Alımlar − satışlar (masraflar dahil)',
     }),
     kpiCard({
       label: 'İşlem Kayıtlarına Göre XIRR',
@@ -136,6 +119,35 @@ export function renderPanel(ctx) {
     })));
 
   const txs = transactions();
+
+  const stopajByCode = new Map();
+  for (const tx of txs) {
+    const tax = Number(tx.withholdingTax) || 0;
+    if (!(tax > 0)) continue;
+    const current = stopajByCode.get(tx.code) || { code: tx.code, amount: 0, count: 0 };
+    current.amount += tax;
+    current.count += 1;
+    stopajByCode.set(tx.code, current);
+  }
+  const stopajRows = [...stopajByCode.values()].sort((a, b) => b.amount - a.amount);
+  const stopajTable = h('table', {},
+    h('thead', {}, h('tr', {},
+      h('th', { style: 'text-align:left' }, 'Varlık'),
+      h('th', {}, 'Kayıt sayısı'),
+      h('th', {}, 'Toplam stopaj'))),
+    h('tbody', {}, stopajRows.map((row) => h('tr', {},
+      h('td', { style: 'text-align:left' }, h('span', { class: 'code-chip' }, row.code)),
+      h('td', {}, String(row.count)),
+      h('td', {}, tl(row.amount))))));
+  const stopajContent = stopajRows.length
+    ? h('div', { class: 'stack' },
+      h('div', { class: 'table-wrap' }, stopajTable),
+      h('p', { class: 'dim', style: 'margin:0' },
+        `Genel toplam: ${tl(stopajRows.reduce((sum, row) => sum + row.amount, 0))}`))
+    : h('p', { class: 'dim', style: 'margin:0' },
+      'Henüz stopaj tutarı kaydedilmedi. Yeni işlemde stopajı girebilir veya Midas aktarımında Stopaj alanı bulunuyorsa eşitleyebilirsin.');
+  root.append(sectionCard('Stopaj Kesintileri',
+    'Midas aktarımında okunan veya işlem kaydına girilen gerçek stopaj tutarları', stopajContent));
 
   if (txs.length >= 5 && daysSinceBackup() === null) {
     root.append(h('div', { class: 'notice' },
@@ -215,7 +227,7 @@ export function renderPanel(ctx) {
     })).sort((a, b) => b.groupValue - a.groupValue);
     for (const group of positionGroups) {
       root.append(sectionCard(groupTitles[group.label] || group.label,
-        null, positionsTable(group.rows).element));
+        'Portföy değeri = Midas adedi × güncel fiyat × güncel kur', positionsTable(group.rows).element));
     }
     if (localCrypto.length) {
       const table = sortableTable({

@@ -643,9 +643,15 @@ function readAccountSummary() {
         return null;
       };
       const dailyLine = lines.find((line) => /günlük/i.test(line));
+      const dailyMoney = String(dailyLine || '').match(/([−-])?\s*(?:₺|\$|€|TRY|USD)\s*([−-]?\s*[\d.,]+)/i);
+      const dailyPctMatch = String(dailyLine || '').match(/([−-])?\s*%\s*([\d.,]+)|([−-])?\s*([\d.,]+)\s*%/);
+      const dailyPctValue = dailyPctMatch
+        ? parseLocaleNumber(dailyPctMatch[2] || dailyPctMatch[4]) : null;
       return {
         totalValue: valueLine ? parseLocaleNumber(valueLine) : null,
-        dailyChange: dailyLine ? parseLocaleNumber(dailyLine) : null,
+        dailyChange: dailyMoney ? parseLocaleNumber(dailyMoney[0]) : null,
+        dailyPct: dailyPctValue === null ? null
+          : (dailyPctMatch[1] || dailyPctMatch[3] ? -Math.abs(dailyPctValue) : Math.abs(dailyPctValue)),
         tryBuyingPower: amountAfter(/alım gücü/i),
         tryCash: amountAfter(/nakit bakiye/i),
         trySettlement: amountAfter(/takas bekleyen bakiye/i),
@@ -730,6 +736,10 @@ function normalizeRow(row) {
   const amount = parseLocaleNumber(getLabel(/işlem tutarı|gerçekleşen tutar|toplam tutar|tutar/i, 'işlem tutarı|gerçekleşen tutar|toplam tutar|tutar'));
   if (!(price > 0) && amount > 0 && units > 0) price = amount / units;
   const fee = parseLocaleNumber(getLabel(/komisyon|masraf|ücret/i, 'komisyon|masraf|ücret')) || 0;
+  const taxValue = valueByHeader(/stopaj|vergi kesintisi/i)
+    || getLabel(/stopaj|vergi kesintisi/i, 'stopaj|vergi kesintisi');
+  const taxMoney = String(taxValue || '').match(/(?:₺|TRY)\s*([\d.,]+)/i)?.[0];
+  const withholdingTax = Math.max(0, parseLocaleNumber(taxMoney || taxValue) || 0);
 
   const missing = [];
   if (!date) missing.push('tarih');
@@ -739,7 +749,7 @@ function normalizeRow(row) {
   if (!(price > 0)) missing.push('fiyat');
   const fieldDump = headers.map((header, index) => `${header}=${cells[index] || '—'}`).join(' | ');
   return {
-    date, type, code, units, price, fee, sourceId: row.sourceId, rawText: text, missing,
+    date, type, code, units, price, fee, withholdingTax, sourceId: row.sourceId, rawText: text, missing,
     diagnostic: `Alanlar: ${fieldDump}. Ayrıştırılan: kod=${code || '—'}, yön=${type || '—'}, tarih=${date || '—'}, miktar=${units > 0 ? units : '—'}, fiyat=${price > 0 ? price : '—'}. ${!code ? `Sembol ipuçları: ${(row.codeHints || []).slice(0, 6).join(' / ') || 'bulunamadı'}. ` : ''}Eksik=${missing.join(',') || 'yok'}`,
   };
 }

@@ -147,6 +147,8 @@ async function readMidas(ctx, button) {
       throw new Error('Tamamlanmış emir satırı bulunamadı. Midas “Emir geçmişi” tablosunda “Gerçekleşti/Tamamlandı” durumundaki kayıtları göster; bekleyen ve iptal emirleri aktarılmaz.');
     }
     const valid = rows.filter((row) => !row.missing?.length);
+    const importedStopaj = rows.reduce((sum, row) => sum + (Number(row.withholdingTax) || 0), 0);
+    if (importedStopaj > 0) logMidas(`Midas işlem geçmişinden ${tl(importedStopaj)} stopaj okundu.`);
     if (result.positions?.length) {
       const withUnits = result.positions.filter((position) => Number.isFinite(position.units) && position.units > 0).length;
       logMidas(`Midas Pozisyonlar tablosundan ${result.positions.length} açık varlık kaydı okundu; ${withUnits} kayıtta adet bilgisi var.`);
@@ -238,6 +240,10 @@ function transactionForm({ existing, onDone, prefillCode }) {
     type: 'number', step: 'any', min: '0', placeholder: '0',
     value: existing?.fee ? String(existing.fee) : '',
   });
+  const taxInput = h('input', {
+    type: 'number', step: 'any', min: '0', placeholder: '0',
+    value: existing?.withholdingTax ? String(existing.withholdingTax) : '',
+  });
   const noteInput = h('input', { type: 'text', placeholder: 'İsteğe bağlı', value: existing?.note || '' });
 
   const priceHint = h('div', { class: 'hint', text: 'Varlık kodu ve tarih seçince otomatik dolar' });
@@ -316,14 +322,17 @@ function transactionForm({ existing, onDone, prefillCode }) {
     const code = picker.get();
     const qty = Number(unitsInput.value);
     const price = Number(priceInput.value);
+    const withholdingTax = Number(taxInput.value) || 0;
     if (!DB.byCode.get(code)) { error.textContent = 'Geçerli bir varlık kodu seç.'; return; }
     if (!(qty > 0)) { error.textContent = 'Adet sıfırdan büyük olmalı.'; return; }
     if (!(price > 0)) { error.textContent = 'Birim fiyat sıfırdan büyük olmalı.'; return; }
+    if (!(withholdingTax >= 0)) { error.textContent = 'Stopaj sıfır veya daha büyük olmalı.'; return; }
     if (!dateInput.value) { error.textContent = 'Tarih seç.'; return; }
 
     const payload = {
       code, type: typeSel.value, date: dateInput.value,
-      units: qty, price, fee: Number(feeInput.value) || 0, note: noteInput.value.trim(),
+      units: qty, price, fee: Number(feeInput.value) || 0,
+      withholdingTax, note: noteInput.value.trim(),
     };
     if (isEdit) {
       updateTransaction(existing.id, payload);
@@ -350,6 +359,7 @@ function transactionForm({ existing, onDone, prefillCode }) {
       fieldWithLabel(amountLabel, amountInput, h('div', { class: 'hint', text: 'Adet otomatik hesaplanır' })),
       field('Adet', unitsInput, h('div', { class: 'hint', text: 'Tutar otomatik hesaplanır' })),
       fieldWithLabel(feeLabel, feeInput),
+      field('Stopaj (₺)', taxInput, h('div', { class: 'hint', text: 'Midas/ekstrede görünen gerçek kesintiyi gir' })),
       field('Not', noteInput)),
     error,
     h('div', { class: 'btn-row', style: 'justify-content:flex-end' },
@@ -427,6 +437,7 @@ export function renderIslemler(ctx) {
       h('td', {}, fmtUnits(t.units)),
       h('td', {}, `${money(t.price)} ${sym}`),
       h('td', {}, `${sym}${money(finalAmount)}`),
+      h('td', {}, Number(t.withholdingTax) > 0 ? tl(t.withholdingTax) : '—'),
       h('td', { style: 'text-align:right;white-space:nowrap' },
         h('button', {
           class: 'btn btn-sm', type: 'button', title: 'Düzenle',
@@ -458,6 +469,7 @@ export function renderIslemler(ctx) {
         h('th', {}, 'Adet'),
         h('th', {}, 'Birim Fiyat'),
         h('th', {}, 'Tutar'),
+        h('th', {}, 'Stopaj'),
         h('th', { style: 'text-align:right' }, ''))),
       h('tbody', {}, rows)))));
 

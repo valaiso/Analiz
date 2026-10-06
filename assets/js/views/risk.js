@@ -1,9 +1,9 @@
 /* Risk: oynaklık, Sharpe, düşüşler, tutarlılık ve çeşitlendirme. */
 
 import { h, pct, pctSigned, num, cls, isNum, fmtDate } from '../util.js';
-import { DB, cachedHistory, priceAtIndex, lastIndex } from '../data.js';
-import { lineChart, correlationTable, monthlyReturnTable } from '../charts.js';
-import { riskSummary, dailyReturns, correlation } from '../portfolio.js';
+import { DB } from '../data.js';
+import { lineChart, monthlyReturnTable } from '../charts.js';
+import { riskSummary } from '../portfolio.js';
 import {
   monthlyReturns, yearlyFromMonthly, drawdownEpisodes, rollingReturns, diversification,
 } from '../insights.js';
@@ -214,48 +214,6 @@ export function renderRisk(ctx) {
             + `yaklaşık ${num(cesit.effN, 1)} bağımsız bahis gibi davranıyorlar. `
             + 'Çeşitlendirme beklediğin kadar koruma sağlamıyor olabilir.'
           : 'Fonların büyük ölçüde birbirinden bağımsız hareket ediyor.')));
-  }
-
-  /* --------------------------------------------------------------- korelasyon */
-
-  const codes = open.filter((x) => x.value > 0).map((x) => x.code).slice(0, 12);
-  if (codes.length >= 2) {
-    const end = lastIndex();
-    const start = Math.max(0, end - 260);
-    const returnsByCode = codes.map((code) => {
-      const hist = cachedHistory(code);
-      const prices = [];
-      for (let i = start; i <= end; i++) prices.push(priceAtIndex(hist, i));
-      return dailyReturns(prices);
-    });
-    const matrix = codes.map((_, i) => codes.map((__, j) => (
-      i === j ? 1 : correlation(returnsByCode[i], returnsByCode[j])
-    )));
-
-    root.append(sectionCard('Fonlar Arası Korelasyon',
-      'Son 1 yıl · 1\'e yakın = birlikte hareket eder, 0\'a yakın = bağımsız',
-      correlationTable(codes, matrix)));
-  }
-
-  /* ------------------------------------------------------------- fon bazlı risk */
-
-  const rows = open
-    .map((holding) => DB.byCode.get(holding.code))
-    .filter(Boolean)
-    .map((fund) => h('tr', {},
-      h('td', {}, h('span', { class: 'code-chip' }, fund.code)),
-      h('td', { class: 'name', style: 'text-align:left' }, fund.name),
-      h('td', {}, isNum(fund.vol) ? pct(fund.vol, 1) : '—'),
-      h('td', { class: 'down' }, isNum(fund.mdd) ? pct(fund.mdd, 1) : '—'),
-      h('td', { class: cls(fund.ret?.['1y']) }, pctSigned(fund.ret?.['1y'], 1))));
-
-  if (rows.length) {
-    root.append(sectionCard('Fon Bazlı Risk', 'Son 1 yıllık veriye göre',
-      h('div', { class: 'table-wrap' }, h('table', {},
-        h('thead', {}, h('tr', {},
-          h('th', {}, 'Fon'), h('th', { style: 'text-align:left' }, 'Ünvan'),
-          h('th', {}, 'Oynaklık'), h('th', {}, 'Maks. Düşüş'), h('th', {}, '1 Yıl Getiri'))),
-        h('tbody', {}, rows)))));
   }
 
   return root;

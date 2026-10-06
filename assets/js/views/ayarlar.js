@@ -43,7 +43,7 @@ function gecerliTarih(iso) {
   return d.getUTCFullYear() === y && d.getUTCMonth() === a - 1 && d.getUTCDate() === g;
 }
 
-/** "kod;tarih;tür;adet;fiyat;masraf" satırlarını işleme alır. */
+/** "kod;tarih;tür;adet;fiyat;masraf;stopaj" satırlarını işleme alır. */
 function parseCSV(text) {
   const rows = [];
   const errors = [];
@@ -57,7 +57,7 @@ function parseCSV(text) {
     const parts = line.split(ayrac).map((s) => s.trim());
     if (parts.length < 5) { errors.push(`${i + 1}. satır: en az 5 sütun olmalı`); return; }
 
-    const [rawCode, rawDate, rawType, rawUnits, rawPrice, rawFee] = parts;
+    const [rawCode, rawDate, rawType, rawUnits, rawPrice, rawFee, rawTax] = parts;
     const code = rawCode.toLocaleUpperCase('tr');
     if (!DB.byCode.get(code)) { errors.push(`${i + 1}. satır: ${code} bulunamadı`); return; }
 
@@ -77,11 +77,13 @@ function parseCSV(text) {
     const units = parseNumber(rawUnits);
     const price = parseNumber(rawPrice);
     const fee = parseNumber(rawFee || '0') || 0;
+    const withholdingTax = parseNumber(rawTax || '0') || 0;
     if (!(units > 0)) { errors.push(`${i + 1}. satır: adet geçersiz (${rawUnits})`); return; }
     if (!(price > 0)) { errors.push(`${i + 1}. satır: fiyat geçersiz (${rawPrice})`); return; }
     if (!(fee >= 0)) { errors.push(`${i + 1}. satır: masraf geçersiz (${rawFee})`); return; }
+    if (!(withholdingTax >= 0)) { errors.push(`${i + 1}. satır: stopaj geçersiz (${rawTax})`); return; }
 
-    rows.push({ code, date, type, units, price, fee });
+    rows.push({ code, date, type, units, price, fee, withholdingTax });
   });
 
   return { rows, errors };
@@ -133,7 +135,7 @@ function csvImportDialog({ onImported, onClose }) {
 
   return h('div', { class: 'stack' },
     h('p', { class: 'dim', style: 'margin:0' },
-      'Her satır bir işlem: fon kodu; tarih; tür (AL/SAT); adet; birim fiyat; masraf. '
+      'Her satır bir işlem: fon kodu; tarih; tür (AL/SAT); adet; birim fiyat; masraf; stopaj (isteğe bağlı). '
       + 'Ayraç olarak noktalı virgül veya sekme kullan - virgül Türkçe sayılarda '
       + 'ondalık ayracı olduğu için ayraç olarak güvenli değildir. '
       + "Excel'den kopyalayıp doğrudan yapıştırabilirsin."),
