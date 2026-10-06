@@ -80,12 +80,11 @@ export function addSiteMarketMetrics(positions) {
       }
     }
     const quoteDate = quoteIndex >= 0 ? DB.calendar[quoteIndex] : DB.byCode.get(position.code)?.date || null;
-    // Midas eşitlemesi pozisyon satırındaki güncel fiyatı da taşır. Panelde adet ×
-    // anlık Midas fiyatı kullan; geçmiş kapanış sadece Midas fiyatı yoksa yedektir.
-    const price = Number.isFinite(position.price) && position.price > 0 ? position.price
-      : Number.isFinite(priceFromHistory) ? priceFromHistory
+    // Günlük ve toplam getiride Midas'ın aktarım anındaki fiyatını değil,
+    // uygulamanın yayımlanmış fiyat havuzundaki son fiyatı esas al.
+    const price = Number.isFinite(priceFromHistory) ? priceFromHistory
       : (Number.isFinite(DB.byCode.get(position.code)?.price) ? DB.byCode.get(position.code).price
-        : null);
+        : Number.isFinite(position.price) && position.price > 0 ? position.price : null);
     const avgCost = Number.isFinite(position.avgCost) && position.avgCost > 0
       ? position.avgCost : null;
     const fx = fxToTRY(position.code, latestIndex);
@@ -99,19 +98,18 @@ export function addSiteMarketMetrics(positions) {
     const hasPreviousPrice = !noDailyChange && hasSitePrice && recentQuote && previousIndex >= 0
       && Number.isFinite(previousPrice) && Number.isFinite(previousFx);
     const dailyPLNative = noDailyChange ? 0
-      : Number.isFinite(position.dailyPL) ? position.dailyPL
-        : hasPreviousPrice ? units * (price - previousPrice) : null;
-    const dailyPLTRY = noDailyChange ? 0 : Number.isFinite(dailyPLNative) ? dailyPLNative * fx : null;
+      : hasPreviousPrice ? units * (price - previousPrice) : null;
+    const dailyPLTRY = noDailyChange ? 0
+      : hasPreviousPrice ? units * (price * fx - previousPrice * previousFx) : null;
     const dailyPct = noDailyChange ? 0
-      : Number.isFinite(position.dailyPct) ? position.dailyPct
-        : hasPreviousPrice && previousPrice > 0 ? ((price / previousPrice) - 1) * 100 : null;
+      : hasPreviousPrice && previousPrice > 0 ? ((price / previousPrice) - 1) * 100 : null;
     const totalPLNative = noDailyChange ? 0
-      : Number.isFinite(position.totalPL) ? position.totalPL
-        : hasSitePrice && Number.isFinite(avgCost) ? units * (price - avgCost) : null;
+      : hasSitePrice && Number.isFinite(avgCost) ? units * (price - avgCost)
+        : Number.isFinite(position.totalPL) ? position.totalPL : null;
     const totalPLTRY = noDailyChange ? 0 : Number.isFinite(totalPLNative) ? totalPLNative * fx : null;
     const totalPct = noDailyChange ? 0
-      : Number.isFinite(position.totalPct) ? position.totalPct
-        : hasSitePrice && Number.isFinite(avgCost) && avgCost > 0 ? ((price / avgCost) - 1) * 100 : null;
+      : hasSitePrice && Number.isFinite(avgCost) && avgCost > 0 ? ((price / avgCost) - 1) * 100
+        : Number.isFinite(position.totalPct) ? position.totalPct : null;
     return {
       ...position,
       price,

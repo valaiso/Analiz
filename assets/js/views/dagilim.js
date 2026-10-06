@@ -1,10 +1,11 @@
 /* Dağılım: Midas canlı pozisyonları veya işlem geçmişinden türetilen dağılım. */
 
 import { h, tl, tlSigned, pct, pctSigned, colorAt, isNum, units as fmtUnits } from '../util.js';
-import { donutWithLegend, barChart, stackedAreaChart } from '../charts.js';
+import { donutWithLegend, barChart, stackedAreaChart, lineChart } from '../charts.js';
 import { weightHistory, attribution } from '../insights.js';
 import { transactions, getMidasAccountSnapshot } from '../store.js';
 import { currentMidasPositions, addSiteMarketMetrics, groupAssetRows, assetType } from '../asset-groups.js';
+import { sliceLastDays } from '../portfolio.js';
 import { sectionCard, emptyState } from './common.js';
 
 const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
@@ -41,6 +42,49 @@ export function renderDagilim(ctx) {
   }
 
   const root = h('div', { class: 'stack' });
+  if (analysis.series.dates.length) {
+    const series = analysis.series;
+    let rangeKey = 'year';
+    const chartBox = h('div', { class: 'chart' });
+    const drawPortfolioChart = () => {
+      const days = ({ week: 7, month: 30, year: 365 })[rangeKey];
+      const value = sliceLastDays(series.dates, series.value, days);
+      const invested = sliceLastDays(series.dates, series.invested, days);
+      lineChart(chartBox, {
+        dates: value.dates,
+        height: 300,
+        yFormat: (amount) => tl(amount, { compact: true }),
+        valueFormat: tl,
+        series: [
+          { name: 'Portföy değeri', values: value.values, color: 'var(--accent)', width: 2.4, fill: true },
+          { name: 'Yatırılan para', values: invested.values, color: 'var(--text-dim)', dashed: true, width: 1.5 },
+        ],
+      });
+    };
+    const rangeControls = h('div', { class: 'seg' });
+    const ranges = [
+      { key: 'week', label: 'Haftalık' },
+      { key: 'month', label: 'Aylık' },
+      { key: 'year', label: 'Yıllık' },
+    ];
+    for (const range of ranges) rangeControls.append(h('button', {
+      type: 'button', 'aria-pressed': String(range.key === rangeKey),
+      onclick: () => {
+        rangeKey = range.key;
+        rangeControls.querySelectorAll('button').forEach((button) =>
+          button.setAttribute('aria-pressed', String(button.textContent === range.label)));
+        drawPortfolioChart();
+      },
+    }, range.label));
+    root.append(sectionCard('Portföy Değeri ve Yatırılan Para',
+      'Mavi çizgi portföy değerini, kesikli çizgi işlem kayıtlarına göre yatırılan tutarı gösterir',
+      rangeControls, chartBox));
+    drawPortfolioChart();
+  } else {
+    root.append(sectionCard('Portföy Değeri ve Yatırılan Para',
+      'Grafik için işlem geçmişi gerekir',
+      h('p', { class: 'dim' }, 'Midas’tan aktarılan veya elle girilen alış/satış kayıtları bu grafiği oluşturur.')));
+  }
   if (usingMidas) {
     const priced = [
       ...live.filter((row) => row.marketValueTRY > 0)
@@ -88,7 +132,7 @@ export function renderDagilim(ctx) {
         ? `Dağılım grafiği bekletiliyor: Midas adedi/fiyatı okunamayan varlıklar: ${missingPositionValue.map((row) => row.code).join(', ')}. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`
         : `Dağılım grafiği bekletiliyor: pozisyon fiyatlarından hesaplanan ${tl(securitiesValue)} değeri Midas hesap toplamı ${tl(midasTotal)} ile uyuşmuyor. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`));
     root.append(h('div', { class: 'notice' },
-      `Portföy değeri Midas’tan okunan adet × güncel fiyat × kur ile hesaplanır; ${live.filter((row) => row.marketValueTRY > 0).length}/${live.length} açık varlığın değeri doğrulandı. Günlük toplam Midas hesabından okunur; THF ve TP2 günlük değişimi %0 kabul edilir.`));
+      `Portföy değeri kayıtlı adet × sitenin son fiyatı × güncel kur ile hesaplanır; ${live.filter((row) => row.marketValueTRY > 0).length}/${live.length} açık varlığın değeri doğrulandı. Günlük değişim de sitenin her varlık için son iki fiyat noktasından hesaplanır; THF ve TP2 %0 kabul edilir.`));
     const sortedGroups = groupAssetRows(positions).map((group) => ({
       ...group,
       groupValue: group.rows.reduce((sum, row) => sum + (row.marketValueTRY || 0), 0),

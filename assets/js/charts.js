@@ -411,25 +411,27 @@ export function monthlyReturnTable(aylik, yillik = []) {
   const bicim = (v) => (isNum(v)
     ? `${v < 0 ? '-' : ''}%${Math.abs(v).toFixed(1).replace('.', ',')}` : '');
 
-  const rows = [...aylik].sort((a, b) => b.year - a.year || b.month - a.month);
-  return h('div', { class: 'table-wrap', style: 'max-height:620px;overflow:auto' }, h('table', {},
+  const monthMap = new Map(aylik.map((item) => [`${item.year}-${item.month}`, item.ret]));
+  const years = [...new Set(aylik.map((item) => item.year))].sort((a, b) => b - a);
+  return h('div', { class: 'table-wrap', style: 'overflow-x:auto' }, h('table', {},
     h('thead', {}, h('tr', {},
       h('th', { style: 'text-align:left' }, 'Yıl'),
-      h('th', { style: 'text-align:left' }, 'Ay'),
-      h('th', { style: 'text-align:right' }, 'Aylık getiri'),
-      h('th', { style: 'text-align:right' }, 'Yıllık getiri'))),
-    h('tbody', {}, rows.map((item) => h('tr', {},
-      h('td', { style: 'font-weight:600' }, String(item.year)),
-      h('td', { style: 'text-align:left' }, AY_KISA[item.month - 1] || '—'),
+      ...AY_KISA.map((month) => h('th', { style: 'text-align:right' }, month)),
+      h('th', { style: 'text-align:right' }, 'Yıl toplamı'))),
+    h('tbody', {}, years.map((year) => h('tr', {},
+      h('td', { style: 'font-weight:600' }, String(year)),
+      ...AY_KISA.map((month, index) => {
+        const value = monthMap.get(`${year}-${index + 1}`);
+        return h('td', {
+          class: 'heat-cell',
+          style: `background:${renk(value)};text-align:right;min-width:58px`,
+          title: `${month} ${year}: ${bicim(value) || 'veri yok'}`,
+        }, bicim(value) || '·');
+      }),
       h('td', {
         class: 'heat-cell',
-        style: `background:${renk(item.ret)};text-align:right`,
-        title: `${AY_KISA[item.month - 1] || ''} ${item.year}: ${bicim(item.ret)}`,
-      }, bicim(item.ret)),
-      h('td', {
-        class: 'heat-cell',
-        style: `background:${renk(yilToplam.get(item.year))};text-align:right`,
-      }, bicim(yilToplam.get(item.year)) || '·'))))));
+        style: `background:${renk(yilToplam.get(year))};text-align:right;font-weight:600`,
+      }, bicim(yilToplam.get(year)) || '·'))))));
 }
 
 /* ------------------------------------------------------ yığılmış alan grafiği */

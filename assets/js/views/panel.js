@@ -51,11 +51,14 @@ export function renderPanel(ctx) {
   const accountValueConsistent = !hasMidasTotal || calculatedPositionsValue <= midasSummary.totalValue * 1.1;
   const positionSnapshotConsistent = accountValueConsistent
     && snapshotPositions.every((row) => isNum(row.marketValueTRY));
-  const midasDailyChange = hasMidasTotal && isNum(midasSummary.dailyChange)
-    ? midasSummary.dailyChange : null;
-  const midasDailyPct = isNum(midasSummary?.dailyPct) ? midasSummary.dailyPct
-    : isNum(midasDailyChange) && midasSummary.totalValue - midasDailyChange > 0
-      ? midasDailyChange / (midasSummary.totalValue - midasDailyChange) * 100 : null;
+  const dailyRows = [...snapshotPositions, ...localCrypto];
+  const dailyComplete = dailyRows.length > 0 && dailyRows.every((row) => isNum(row.dailyPLTRY));
+  const siteDailyChange = dailyComplete
+    ? dailyRows.reduce((sum, row) => sum + row.dailyPLTRY, 0) : null;
+  const siteDailyBase = dailyComplete
+    ? dailyRows.reduce((sum, row) => sum + (isNum(row.marketValuePrevTRY) ? row.marketValuePrevTRY : 0), 0)
+    : 0;
+  const siteDailyPct = siteDailyBase > 0 ? siteDailyChange / siteDailyBase * 100 : null;
   const snapshotTime = midasSnapshot?.capturedAt
     ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(midasSnapshot.capturedAt))
     : null;
@@ -85,15 +88,15 @@ export function renderPanel(ctx) {
     plCard({
       label: 'Günlük Kazanç',
       amount: hasMidasTotal
-        ? midasDailyChange : totals.dayPL,
+        ? siteDailyChange : totals.dayPL,
       pct: hasMidasTotal
-        ? midasDailyPct : totals.dayPct,
+        ? siteDailyPct : totals.dayPct,
       formatMoney: tlSigned,
       formatPct: pctSigned,
       hint: hasMidasTotal
-        ? (isNum(midasDailyChange)
-          ? 'Midas günlük değişimi · eşitleme yenilendikçe güncellenir, yeni işlem gününde yeniden başlar'
-          : 'Midas ekranında günlük değişim bulunamadı · Midas aktarımını yenile')
+        ? (isNum(siteDailyChange)
+          ? `Sitenin son fiyat verilerine göre · ${fmtDate(DB.meta.lastDataDate)} verisi`
+          : 'Günlük hesap için fiyat havuzunda en az iki fiyat noktası gereken varlıklar bulunuyor')
         : `${fmtDate(totals.prevDate)} kapanışına göre`,
     }),
     plCard({
