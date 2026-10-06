@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Analiz · Midas işlem aktarımı",
-  "version": "0.14.0",
+  "version": "0.15.0",
   "description": "Açık Midas işlem geçmişini kullanıcı isteğiyle Analiz'e yerel olarak aktarır.",
   "icons": {
     "16": "iconV1.png",

@@ -14,7 +14,7 @@ function textOf(element) {
 
 function multilineTextOf(element) {
   return (element.innerText || element.textContent || '')
-    .split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join('\n');
+    .split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }
 
 function directCellElements(row) {
