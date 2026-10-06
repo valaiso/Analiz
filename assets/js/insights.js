@@ -435,7 +435,7 @@ export function consistencyChecks(txs) {
       if (sapma > FIYAT_SAPMA_ESIGI) {
         uyarilar.push({ type: 'fiyat', code: t.code, date: t.date, entered: t.price,
           actual: gercek, deviation: sapma * 100,
-          message: `${t.code} · ${t.date}: girdiğin fiyat ${t.price}, TEFAS fiyatı `
+        message: `${t.code} · ${t.date}: girdiğin işlem fiyatı ${t.price}, ${DB.byCode.get(t.code)?.catSrc === 'Yahoo Finance' || DB.byCode.get(t.code)?.catSrc === 'ekstra' ? 'piyasa' : 'TEFAS'} fiyatı `
             + `${gercek}. Yazım hatası olabilir.` });
       }
     }

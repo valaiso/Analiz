@@ -53,6 +53,10 @@ function canonicalHeader(value) {
   if (/^toplam$/.test(text)) return 'Toplam';
   if (/^fiyat$/.test(text)) return 'Fiyat';
   if (/^(emir tarihi|işlem tarihi)$/.test(text)) return 'Emir tarihi';
+  if (/^(ort\.?\s*maliyet|ortalama maliyet)$/.test(text)) return 'Ort. Maliyet';
+  if (/^dağılım$/.test(text)) return 'Dağılım';
+  if (/^günlük getiri$/.test(text)) return 'Günlük getiri';
+  if (/^toplam getiri$/.test(text)) return 'Toplam getiri';
   return '';
 }
 
@@ -79,6 +83,129 @@ function isOrderHeader(element) {
   const cells = headerCells(element);
   const required = ['Varlık', 'Durum', 'Emir tipi', 'Alış/satış', 'Adet', 'Fiyat', 'Emir tarihi'];
   return required.every((label) => cells.includes(label));
+}
+
+function isPositionsHeader(element) {
+  const cells = headerCells(element);
+  return ['Varlık', 'Fiyat', 'Ort. Maliyet', 'Dağılım', 'Günlük getiri', 'Toplam getiri']
+    .every((label) => cells.includes(label));
+}
+
+function positionsRoot() {
+  const headings = [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div')]
+    .filter((element) => isVisible(element) && /^pozisyonlar$/iu.test(textOf(element)))
+    .sort((a, b) => textOf(a).length - textOf(b).length);
+  for (const heading of headings) {
+    for (let scope = heading.parentElement, depth = 0; scope && depth < 12; scope = scope.parentElement, depth += 1) {
+      const hasPositionsHeader = [...scope.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
+        .some((element) => isVisible(element) && isPositionsHeader(element));
+      if (hasPositionsHeader) return scope;
+    }
+  }
+  return null;
+}
+
+function positionSnapshotRows() {
+  const root = positionsRoot();
+  if (!root) return [];
+  const headerRow = [...root.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
+    .filter((element) => isVisible(element) && isPositionsHeader(element))
+    .sort((a, b) => textOf(a).length - textOf(b).length)[0];
+  if (!headerRow) return [];
+  const headers = headerCellItems(headerRow);
+  const col = (label) => headers.findIndex((item) => item.label === label);
+  const ix = {
+    code: col('Varlık'), price: col('Fiyat'), avg: col('Ort. Maliyet'),
+    allocation: col('Dağılım'), daily: col('Günlük getiri'), total: col('Toplam getiri'),
+  };
+  if (Object.values(ix).some((value) => value < 0)) return [];
+  const rowNodes = [...root.querySelectorAll('tr, [role="row"], [class*="row" i], li, div')]
+    .filter((element) => element !== headerRow && isVisible(element))
+    .map((element) => ({ element, text: textOf(element) }))
+    .filter(({ text }) => text.length > 0 && text.length < 400 && /[₺$€]/.test(text) && /%/.test(text))
+    .sort((a, b) => a.text.length - b.text.length);
+  const found = new Map();
+  const moneyFrom = (value) => {
+    const match = String(value || '').match(/([−-])?\s*(?:₺|\$|€|USD|TRY)\s*([\d.,]+)/i);
+    if (!match) return parseLocaleNumber(value);
+    const amount = parseLocaleNumber(match[2]);
+    return amount === null ? null : (match[1] ? -amount : amount);
+  };
+  const percentFrom = (value) => {
+    const text = String(value || '').replace(/[()]/g, ' ');
+    const matches = [...text.matchAll(/([−+-])?\s*%\s*([\d.,]+)|([−+-])?\s*([\d.,]+)\s*%/g)];
+    const match = matches.at(-1);
+    if (!match) return null;
+    const sign = match[1] || match[3] || '';
+    const number = parseLocaleNumber(match[2] || match[4]);
+    return number === null ? null : (sign === '-' || sign === '−' ? -number : number);
+  };
+  for (const { element } of rowNodes) {
+    const containers = [element, ...element.querySelectorAll('tr, [role="row"], [class*="row" i], li, div')]
+      .filter((container) => isVisible(container) && container.children.length >= 4 && container.children.length <= 12)
+      .sort((a, b) => textOf(a).length - textOf(b).length);
+    let cells = null;
+    let rowElement = element;
+    for (const container of containers) {
+      const cellElements = directCellElements(container).filter(isVisible);
+      if (cellElements.length < 4 || cellElements.length > 12) continue;
+      const raw = cellElements.map(textOf);
+      const aligned = raw.length === headers.length ? raw : headers.map(({ box }) => {
+        const x = (box.left + box.right) / 2;
+        const nearest = cellElements.reduce((best, candidate) => {
+          const rect = candidate.getBoundingClientRect();
+          const distance = Math.abs((rect.left + rect.right) / 2 - x);
+          return !best || distance < best.distance ? { candidate, distance } : best;
+        }, null);
+        return nearest ? textOf(nearest.candidate) : '';
+      });
+      const code = assetCodeAtRow(root, container, headers[ix.code]);
+      if (code && moneyFrom(aligned[ix.price]) !== null && moneyFrom(aligned[ix.avg]) !== null) {
+        cells = aligned;
+        rowElement = container;
+        break;
+      }
+      if (raw.length > 1 && raw.every((value) => value === raw[0])) {
+        const code = assetCodeAtRow(root, container, headers[ix.code]);
+        const moneyValues = [...raw[0].matchAll(/([−-])?\s*(?:₺|\$|€|USD|TRY)\s*([\d.,]+)/gi)]
+          .map((match) => {
+            const amount = parseLocaleNumber(match[2]);
+            return amount === null ? null : (match[1] ? -amount : amount);
+          }).filter((value) => value !== null);
+        if (code && moneyValues.length >= 2) {
+          const symbol = raw[0].match(/\$|€|USD|TRY|₺/i)?.[0] || '₺';
+          const percents = [...raw[0].matchAll(/([−+-])?\s*%\s*([\d.,]+)|([−+-])?\s*([\d.,]+)\s*%/g)]
+            .map((match) => `${match[1] || match[3] || ''}${match[2] || match[4]}%`);
+          cells = Array(headers.length).fill('');
+          cells[ix.code] = code;
+          cells[ix.price] = `${symbol}${Math.abs(moneyValues[0])}`;
+          cells[ix.avg] = `${symbol}${Math.abs(moneyValues[1])}`;
+          cells[ix.daily] = `${moneyValues[2] < 0 ? '-' : ''}${symbol}${Math.abs(moneyValues[2] || 0)} ${percents[1] || ''}`;
+          cells[ix.total] = `${moneyValues[3] < 0 ? '-' : ''}${symbol}${Math.abs(moneyValues[3] || 0)} ${percents[2] || ''}`;
+          cells[ix.allocation] = percents[0] || '';
+          rowElement = container;
+          break;
+        }
+      }
+    }
+    if (!cells) continue;
+    const code = assetCodeAtRow(root, rowElement, headers[ix.code]);
+    if (!code || found.has(code)) continue;
+    const text = cells.join(' ');
+    const fields = {
+      code,
+      price: moneyFrom(cells[ix.price]) ?? moneyFrom(text),
+      avgCost: moneyFrom(cells[ix.avg]) ?? null,
+      allocationPct: percentFrom(cells[ix.allocation]) ?? null,
+      dailyPL: moneyFrom(cells[ix.daily]) ?? null,
+      dailyPct: percentFrom(cells[ix.daily]) ?? null,
+      totalPL: moneyFrom(cells[ix.total]) ?? null,
+      totalPct: percentFrom(cells[ix.total]) ?? null,
+      currency: /\$|USD/i.test(text) ? 'USD' : 'TRY',
+    };
+    if (fields.price > 0 && fields.avgCost > 0) found.set(code, fields);
+  }
+  return [...found.values()];
 }
 
 function assetHintsFor(element, root) {
@@ -414,7 +541,12 @@ async function collectCompletedHistory() {
 
 function parseLocaleNumber(value) {
   if (!value) return null;
-  let s = String(value).match(/[+-]?\d[\d.,]*/)?.[0] || '';
+  const raw = String(value).trim();
+  const signBeforeCurrency = /(?:^|[\s(])[-−]\s*(?:(?:₺|\$|€|USD|TRY)\s*)?\d/i.test(raw)
+    || /(?:₺|\$|€|USD|TRY)\s*[-−]\s*\d/i.test(raw);
+  const signBeforeNumber = /(?:^|[\s(])\+\s*(?:(?:₺|\$|€|USD|TRY)\s*)?\d/i.test(raw)
+    || /(?:₺|\$|€|USD|TRY)\s*\+\s*\d/i.test(raw);
+  let s = raw.match(/\d[\d.,]*/)?.[0] || '';
   if (!s) return null;
   if (s.includes(',') && s.includes('.')) {
     s = s.lastIndexOf(',') > s.lastIndexOf('.')
@@ -422,7 +554,7 @@ function parseLocaleNumber(value) {
       : s.replace(/,/g, '');
   } else if (s.includes(',')) s = s.replace(',', '.');
   const n = Number(s);
-  return Number.isFinite(n) ? n : null;
+  return Number.isFinite(n) ? (signBeforeCurrency ? -Math.abs(n) : signBeforeNumber ? Math.abs(n) : n) : null;
 }
 
 function parseDate(text) {
@@ -536,11 +668,16 @@ function normalizeRow(row) {
   const priceValue = valueByHeader(/birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat/i)
     || getLabel(/birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat/i, 'birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat');
   let price = parseLocaleNumber(priceValue);
+  const currencyValues = [...text.matchAll(/(?:₺|\$|€|USD|TRY)\s*([+-]?\d[\d.,]*)/gi)]
+    .map((match) => parseLocaleNumber(match[1])).filter((value) => value > 0);
   const repeatedCellText = cells.length > 1 && cells.every((cell) => cell === cells[0]);
-  if (repeatedCellText || priceValue === text || price === units) {
-    const currencyValues = [...text.matchAll(/(?:₺|\$|€|USD|TRY)\s*([+-]?\d[\d.,]*)/gi)]
-      .map((match) => parseLocaleNumber(match[1])).filter((value) => value > 0);
-    if (currencyValues.length) price = currencyValues[currencyValues.length - 1];
+  // Midas görsel satırlarında başlığa göre eşleşen hücre bazen adet sütununa
+  // düşebiliyor. İşlem satırında hem toplam hem birim fiyat para birimiyle
+  // gösterildiğinden son para tutarı birim fiyattır; hücre haritasını düzeltir.
+  if (currencyValues.length >= 2) {
+    price = currencyValues[currencyValues.length - 1];
+  } else if (repeatedCellText || priceValue === text || price === units) {
+    if (currencyValues.length && units > 0) price = currencyValues[0] / units;
   }
   const totalValue = parseLocaleNumber(valueByHeader(/^toplam$/i));
   if (!(price > 0) && totalValue > 0 && units > 0) price = totalValue / units;
@@ -574,7 +711,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({ ok: false, accountSummary: readAccountSummary(), error: `Midas yatırım hesabı sayfasında tamamlanmış işlem satırı okunamadı. ${pageCount + 1} sayfa tarandı. ${start ? `Başlangıç sayfası: ${start}. ` : ''}${paginationStop ? `Sayfalama: ${paginationStop} ` : ''}${headers} ${rowStats} ${evidence} Yalnızca “Emir geçmişi” tablosu tarandı; kripto geçmişi dahil edilmedi.` });
       return;
     }
-    sendResponse({ ok: true, rows: normalized, scannedPages: pageCount + 1, unmatchedCount: normalized.length - ready.length, accountSummary: readAccountSummary() });
+    sendResponse({ ok: true, rows: normalized, scannedPages: pageCount + 1,
+      unmatchedCount: normalized.length - ready.length, accountSummary: readAccountSummary(),
+      positions: positionSnapshotRows() });
   }).catch((error) => {
     sendResponse({ ok: false, error: error.message || 'Midas emir geçmişi okunamadı.' });
   });

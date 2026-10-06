@@ -6,6 +6,7 @@
 const KEY = 'tefas-portfoy-v1';
 // Midas'tan içe aktarılan işlemler yerel kalır; getState() / Supabase durumuna girmez.
 const MIDAS_KEY = 'tefas-midas-import-v1';
+const MIDAS_SNAPSHOT_KEY = 'tefas-midas-account-snapshot-v1';
 const listeners = new Set();
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -41,6 +42,7 @@ function migrate(raw) {
 
 let state = load();
 let midasTx = loadMidasTransactions();
+let midasSnapshot = loadMidasSnapshot();
 
 function loadMidasTransactions() {
   try {
@@ -48,6 +50,31 @@ function loadMidasTransactions() {
     return Array.isArray(value) ? value : [];
   } catch {
     return [];
+  }
+}
+
+function loadMidasSnapshot() {
+  try {
+    const value = JSON.parse(localStorage.getItem(MIDAS_SNAPSHOT_KEY));
+    return value && typeof value === 'object' ? value : null;
+  } catch {
+    return null;
+  }
+}
+
+export const getMidasAccountSnapshot = () => midasSnapshot;
+
+export function saveMidasAccountSnapshot(snapshot) {
+  if (!snapshot || typeof snapshot !== 'object') return;
+  midasSnapshot = {
+    capturedAt: snapshot.capturedAt || new Date().toISOString(),
+    summary: snapshot.summary || null,
+    positions: Array.isArray(snapshot.positions) ? snapshot.positions : [],
+  };
+  try {
+    localStorage.setItem(MIDAS_SNAPSHOT_KEY, JSON.stringify(midasSnapshot));
+  } catch (err) {
+    console.error('Midas pozisyon özeti bu tarayıcıya kaydedilemedi', err);
   }
 }
 
@@ -135,17 +162,28 @@ function transactionFingerprint(tx) {
     Number(tx.units), Number(tx.price), Number(tx.fee || 0)].join('|');
 }
 
+function transactionCoreFingerprint(tx) {
+  return [tx.date, String(tx.code || '').trim().toLocaleUpperCase('tr'), tx.type,
+    Number(tx.units)].join('|');
+}
+
 /** Midas işlemlerini ayrı localStorage anahtarında saklar; Supabase state'ine eklemez. */
 export function addMidasTransactions(rows) {
   const manualFingerprints = new Set(state.tx.map(transactionFingerprint));
-  const importedIds = new Set(midasTx.map((t) => t.sourceId).filter(Boolean));
+  const importedById = new Map(midasTx.filter((t) => t.sourceId).map((t) => [t.sourceId, t]));
+  const importedWithoutIdByCore = new Map();
+  for (const tx of midasTx.filter((t) => !t.sourceId)) {
+    const key = transactionCoreFingerprint(tx);
+    if (!importedWithoutIdByCore.has(key)) importedWithoutIdByCore.set(key, []);
+    importedWithoutIdByCore.get(key).push(tx);
+  }
   const importedFingerprintsWithoutId = new Set(
     midasTx.filter((t) => !t.sourceId).map(transactionFingerprint),
   );
   const batchIds = new Set();
   const batchFingerprintsWithoutId = new Set();
   const profile = state.activeProfile === 'ALL' ? state.profiles[0].id : state.activeProfile;
-  let added = 0;
+  let added = 0, updated = 0, skipped = 0;
   for (const tx of rows || []) {
     const record = {
       id: `midas-${uid()}`,
@@ -160,23 +198,42 @@ export function addMidasTransactions(rows) {
       fee: Number(tx.fee || 0),
       note: tx.note || 'Midas aktarımı',
     };
-    if (!record.date || !record.code || !(record.units > 0) || !(record.price > 0)) continue;
+    if (!record.date || !record.code || !(record.units > 0) || !(record.price > 0)) { skipped += 1; continue; }
     const fingerprint = transactionFingerprint(record);
-    if (manualFingerprints.has(fingerprint)) continue;
+    if (manualFingerprints.has(fingerprint)) { skipped += 1; continue; }
     if (record.sourceId) {
-      if (importedIds.has(record.sourceId) || batchIds.has(record.sourceId)) continue;
+      if (batchIds.has(record.sourceId)) { skipped += 1; continue; }
       batchIds.add(record.sourceId);
-      importedIds.add(record.sourceId);
+      const existing = importedById.get(record.sourceId);
+      if (existing) {
+        const changed = ['date', 'code', 'type', 'units', 'price', 'fee'].some((key) => existing[key] !== record[key]);
+        if (changed) {
+          Object.assign(existing, record, { id: existing.id, profile: existing.profile });
+          updated += 1;
+        } else skipped += 1;
+        continue;
+      }
     } else {
-      if (importedFingerprintsWithoutId.has(fingerprint) || batchFingerprintsWithoutId.has(fingerprint)) continue;
+      const sameCore = importedWithoutIdByCore.get(transactionCoreFingerprint(record)) || [];
+      if (sameCore.length === 1) {
+        const existing = sameCore[0];
+        const changed = existing.price !== record.price || existing.fee !== record.fee;
+        if (changed) {
+          Object.assign(existing, record, { id: existing.id, profile: existing.profile });
+          updated += 1;
+        } else skipped += 1;
+        continue;
+      }
+      if (sameCore.length > 1 || importedFingerprintsWithoutId.has(fingerprint)
+        || batchFingerprintsWithoutId.has(fingerprint)) { skipped += 1; continue; }
       batchFingerprintsWithoutId.add(fingerprint);
       importedFingerprintsWithoutId.add(fingerprint);
     }
     midasTx.push(record);
     added += 1;
   }
-  if (added) persistMidasTransactions();
-  return added;
+  if (added || updated) persistMidasTransactions();
+  return { added, updated, skipped };
 }
 
 export function addTransaction(tx) {

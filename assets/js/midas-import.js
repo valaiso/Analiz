@@ -24,6 +24,7 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], timeoutMs
         scannedPages: data.response.scannedPages || 1,
         unmatchedCount: data.response.unmatchedCount || 0,
         accountSummary: data.response.accountSummary || null,
+        positions: data.response.positions || [],
         marketData: data.response.marketData || {},
         marketErrors: data.response.marketErrors || {},
       });

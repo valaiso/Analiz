@@ -6,7 +6,7 @@ import { DB } from '../data.js';
 import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
 import { timingQuality, cashflowCalendar, consistencyChecks } from '../insights.js';
-import { transactions, daysSinceBackup } from '../store.js';
+import { transactions, daysSinceBackup, getMidasAccountSnapshot } from '../store.js';
 import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable } from './common.js';
 
 /**
@@ -25,8 +25,16 @@ function fiyatiDurmus(holding) {
 export function renderPanel(ctx) {
   const { analysis, navigate } = ctx;
   const { totals, open, closed, series } = analysis;
+  const midasSnapshot = getMidasAccountSnapshot();
+  const midasSummary = midasSnapshot?.summary;
+  const hasMidasTotal = isNum(midasSummary?.totalValue) && midasSummary.totalValue > 0;
+  const hasMidasDaily = isNum(midasSummary?.dailyChange);
+  const snapshotPositions = Array.isArray(midasSnapshot?.positions) ? midasSnapshot.positions : [];
+  const snapshotTime = midasSnapshot?.capturedAt
+    ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(midasSnapshot.capturedAt))
+    : null;
 
-  if (!open.length && !closed.length) {
+  if (!open.length && !closed.length && !snapshotPositions.length && !hasMidasTotal) {
     return emptyState(
       'Henüz işlem yok',
       'Portföyünü görmek için önce fon alım işlemlerini gir. Fon kodunu ve tarihi seçince '
@@ -43,34 +51,40 @@ export function renderPanel(ctx) {
   root.append(h('div', { class: 'grid grid-kpi' },
     kpiCard({
       label: 'Toplam Değer',
-      value: tl(totals.value),
-      sub: `${totals.fundCount} fon · ${fmtDate(totals.lastDate)}`,
+      value: tl(hasMidasTotal ? midasSummary.totalValue : totals.value),
+      sub: hasMidasTotal
+        ? `Midas yatırım hesabı · ${snapshotTime || 'son aktarım'}`
+        : `${totals.fundCount} varlık · ${fmtDate(totals.lastDate)}`,
     }),
     plCard({
       label: 'Günlük Kazanç',
-      amount: totals.dayPL,
-      pct: totals.dayPct,
+      amount: hasMidasDaily ? midasSummary.dailyChange : totals.dayPL,
+      pct: hasMidasDaily && hasMidasTotal && midasSummary.totalValue !== midasSummary.dailyChange
+        ? (midasSummary.dailyChange / (midasSummary.totalValue - midasSummary.dailyChange)) * 100
+        : totals.dayPct,
       formatMoney: tlSigned,
       formatPct: pctSigned,
-      hint: `${fmtDate(totals.prevDate)} kapanışına göre`,
+      hint: hasMidasDaily
+        ? `Midas günlük değişimi · ${snapshotTime || 'son aktarım'}`
+        : `${fmtDate(totals.prevDate)} kapanışına göre`,
     }),
     plCard({
-      label: 'Toplam Kazanç',
+      label: 'İşlem Kayıtlarına Göre K/Z',
       amount: totals.totalPL,
       pct: totals.totalPct,
       formatMoney: tlSigned,
       formatPct: pctSigned,
       hint: totals.realized !== 0
         ? `${tlSigned(totals.unrealized)} açık · ${tlSigned(totals.realized)} gerçekleşmiş`
-        : 'Tümü açık pozisyonlardan',
+        : 'Geçmiş alış/satış kayıtlarından hesaplanır',
     }),
     kpiCard({
-      label: 'Net Yatırılan',
+      label: 'İşlem Kayıtlarına Göre Net Yatırılan',
       value: tl(totals.netInvested),
       sub: 'Alımlar − satışlar (masraflar dahil)',
     }),
     kpiCard({
-      label: 'Yıllık Getiri (XIRR)',
+      label: 'İşlem Kayıtlarına Göre XIRR',
       value: isNum(analysis.xirr) ? pctSigned(analysis.xirr, 1) : '—',
       valueClass: cls(analysis.xirr),
       sub: 'Para ağırlıklı yıllık bileşik getiri',
@@ -87,7 +101,7 @@ export function renderPanel(ctx) {
   const uyarilar = consistencyChecks(txs);
   if (uyarilar.length) {
     const gruplar = {
-      fiyat: 'Girilen fiyat TEFAS fiyatından farklı',
+      fiyat: 'Girilen işlem fiyatı piyasa verisinden farklı',
       mukerrer: 'Aynı işlem iki kez girilmiş olabilir',
       erken: 'Fonun o tarihte fiyatı yok',
     };
@@ -104,6 +118,13 @@ export function renderPanel(ctx) {
         }, 'İşlemleri aç')),
       h('div', { class: 'dim', style: 'margin-top:6px;font-size:.78rem' },
         Object.values(gruplar).join(' · '))));
+  }
+
+  if (hasMidasTotal) {
+    root.append(h('div', { class: snapshotPositions.length ? 'notice' : 'notice warn' },
+      snapshotPositions.length
+        ? `Toplam değer ve açık varlık satırları Midas ekranından ${snapshotTime || 'son aktarımda'} okundu. Kâr/zarar geçmiş işlem kayıtlarından hesaplanır.`
+        : `Midas hesap toplamı ${snapshotTime || 'son aktarımda'} okundu, ancak açık Pozisyonlar tablosu okunamadı. Aşağıdaki işlem geçmişi portföyü bu nedenle güncel Midas pozisyonu sayılmaz.`));
   }
 
   if (txs.length >= 5 && daysSinceBackup() === null) {
@@ -139,8 +160,8 @@ export function renderPanel(ctx) {
 
   const head = h('div', { class: 'card-head' },
     h('div', {},
-      h('h2', {}, 'Portföy Değeri'),
-      h('span', { class: 'sub' }, 'Kesikli çizgi yatırdığın net anaparadır; aradaki fark kazancındır.')),
+      h('h2', {}, 'İşlem Kayıtlarına Göre Portföy Değeri'),
+      h('span', { class: 'sub' }, 'Geçmiş alım/satımlardan modellenir; Midas canlı hesabı değildir.')),
     rangeSelector(rangeKey, (r) => {
       rangeKey = r.key;
       head.querySelectorAll('.seg button').forEach((b) => {
@@ -149,12 +170,43 @@ export function renderPanel(ctx) {
       drawChart();
     }));
 
-  root.append(h('section', { class: 'card' }, head, chartBox));
-  drawChart();
+  if (hasMidasTotal) {
+    root.append(h('div', { class: 'notice' },
+      'Geçmiş portföy grafiği, alınan ve satılan işlemlerden hesaplanır. Midas geçmişi tam olmadığı için bu grafiği göstermiyorum; güncel toplam ve pozisyonlar Midas ekranından alınır.'));
+  } else {
+    root.append(h('section', { class: 'card' }, head, chartBox));
+    drawChart();
+  }
 
   /* ---------------------------------------------------------------- pozisyonlar */
 
-  if (open.length) {
+  if (hasMidasTotal && snapshotPositions.length) {
+    const moneyByCurrency = (value, currency) => {
+      if (!isNum(value)) return '—';
+      return new Intl.NumberFormat('tr-TR', {
+        style: 'currency', currency: currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2,
+      }).format(value);
+    };
+    const signedByCurrency = (value, currency) => {
+      if (!isNum(value)) return '—';
+      const formatted = moneyByCurrency(Math.abs(value), currency);
+      return `${value > 0 ? '+' : value < 0 ? '−' : ''}${formatted}`;
+    };
+    const table = sortableTable({
+      initialSort: { key: 'allocationPct', dir: 'desc' },
+      columns: [
+        { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', { class: 'code-chip' }, r.code) },
+        { key: 'price', label: 'Fiyat', render: (r) => moneyByCurrency(r.price, r.currency) },
+        { key: 'avgCost', label: 'Ort. Maliyet', render: (r) => moneyByCurrency(r.avgCost, r.currency) },
+        { key: 'dailyPL', label: 'Günlük', render: (r) => h('span', { class: cls(r.dailyPL) }, `${signedByCurrency(r.dailyPL, r.currency)}${isNum(r.dailyPct) ? ` · ${pctSigned(r.dailyPct)}` : ''}`) },
+        { key: 'totalPL', label: 'Toplam', render: (r) => h('span', { class: cls(r.totalPL) }, `${signedByCurrency(r.totalPL, r.currency)}${isNum(r.totalPct) ? ` · ${pctSigned(r.totalPct)}` : ''}`) },
+        { key: 'allocationPct', label: 'Dağılım', render: (r) => isNum(r.allocationPct) ? pct(r.allocationPct, 2) : '—' },
+      ],
+      rows: snapshotPositions,
+    });
+    root.append(sectionCard('Midas · Açık Pozisyonlar',
+      `${snapshotPositions.length} varlık · Midas ekranından okundu; adet bilgisi gösterilmiyor`, table.element));
+  } else if (!hasMidasTotal && open.length) {
     const table = sortableTable({
       initialSort: { key: 'value', dir: 'desc' },
       onRowClick: (row) => ctx.showFund(row.code),

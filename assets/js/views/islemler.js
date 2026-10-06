@@ -6,7 +6,7 @@ import {
 import { DB, priceOnDate, lastDate, indexForDate, addLocalMarketAssets } from '../data.js';
 import {
   transactions, addTransaction, updateTransaction, removeTransaction,
-  activeProfileId, profiles, addMidasTransactions,
+  activeProfileId, profiles, addMidasTransactions, saveMidasAccountSnapshot,
 } from '../store.js';
 import { sectionCard, fundPicker } from './common.js';
 import { requestMidasHistory } from '../midas-import.js';
@@ -98,10 +98,12 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}) {
     h('button', {
       class: 'btn btn-primary', type: 'button', disabled: !ready.length || unknownCodes.length > 0,
       onclick: () => {
-        const count = addMidasTransactions(ready);
-        logMidas(`${count} işlem yerel tarayıcıya eklendi; ${ready.length - count} tekrar olduğu için atlandı.`);
+        const result = addMidasTransactions(ready);
+        logMidas(`${result.added} yeni işlem eklendi, ${result.updated} mevcut Midas işlemi güncellendi, ${result.skipped} kayıt atlandı.`);
         close();
-        toast(count ? `${count} Midas işlemi yerel olarak eklendi` : 'Bu işlemler zaten kayıtlı');
+        toast(result.added || result.updated
+          ? `${result.added} yeni, ${result.updated} güncellenmiş Midas işlemi kaydedildi`
+          : 'Bu işlemler zaten kayıtlı');
         ctx.refresh();
       },
     }, unknownCodes.length ? 'Fiyat geçmişi tamamlanınca aktar' : `${ready.length} işlemi içe aktar`));
@@ -129,6 +131,11 @@ async function readMidas(ctx, button) {
       DB.funds.filter((fund) => fund.localMarketData)
         .map((fund) => ({ code: fund.code, source: fund.catSrc })),
     );
+    saveMidasAccountSnapshot({
+      capturedAt: new Date().toISOString(),
+      summary: result.accountSummary,
+      positions: result.positions,
+    });
     if (result.accountSummary) {
       logMidasAccount(result.accountSummary);
       accountLogged = true;
@@ -138,6 +145,11 @@ async function readMidas(ctx, button) {
       throw new Error('Tamamlanmış emir satırı bulunamadı. Midas “Emir geçmişi” tablosunda “Gerçekleşti/Tamamlandı” durumundaki kayıtları göster; bekleyen ve iptal emirleri aktarılmaz.');
     }
     const valid = rows.filter((row) => !row.missing?.length);
+    if (result.positions?.length) {
+      logMidas(`Midas Pozisyonlar tablosundan ${result.positions.length} açık varlık kaydı okundu.`);
+    } else {
+      logMidas('Midas toplam hesabı okundu; ancak Pozisyonlar tablosundaki açık varlıklar okunamadı. Panelde eski işlem kayıtlarından türetilmiş pozisyonlar kullanılmayacak.');
+    }
     logMidas(`${result.scannedPages} sayfa tarandı; ${rows.length} satır okundu, ${valid.length} satır aktarılabilir, ${rows.length - valid.length} satır eksik bilgi içeriyor.`);
     if (rows.length && !valid.length) {
       const missingCounts = new Map();
