@@ -134,6 +134,16 @@ async function readMidas(ctx, button) {
     const valid = rows.filter((row) => !row.missing?.length);
     const unknownCodes = [...new Set(valid.filter((row) => !DB.byCode.has(row.code)).map((row) => row.code))];
     logMidas(`${result.scannedPages} sayfa tarandı; ${rows.length} satır okundu, ${valid.length} satır aktarılabilir, ${rows.length - valid.length} satır eksik bilgi içeriyor.`);
+    if (rows.length && !valid.length) {
+      const missingCounts = new Map();
+      for (const row of rows) for (const field of row.missing || []) {
+        missingCounts.set(field, (missingCounts.get(field) || 0) + 1);
+      }
+      logMidas(`Eksik alan dağılımı: ${[...missingCounts].map(([field, count]) => `${field} ${count}`).join(' · ') || 'belirlenemedi'}.`);
+      for (const [index, row] of rows.slice(0, 2).entries()) {
+        if (row.diagnostic) logMidas(`Satır tanısı ${index + 1}: ${row.diagnostic}`);
+      }
+    }
     if (unknownCodes.length) logMidas(`Fiyat verisi bulunmayan semboller: ${unknownCodes.join(', ')}. İşlemleri yine de aktarabilirsiniz; portföyde geçici olarak “fiyat yok” görünür.`);
     showMidasPreview(rows, result, ctx);
   } catch (error) {

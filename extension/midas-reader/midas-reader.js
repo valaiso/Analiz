@@ -427,9 +427,11 @@ function normalizeRow(row) {
     const i = headers.findIndex((header) => pattern.test(header));
     return i >= 0 ? cells[i] || '' : '';
   };
-  const side = valueByHeader(/alış\s*\/\s*satış|işlem yönü|yön/) || text;
+  const sideValue = valueByHeader(/alış\s*\/\s*satış|işlem yönü|yön/);
+  const side = sideValue || text;
   const type = /satış|satım|sell/i.test(side) ? 'SAT' : /alış|alım|buy/i.test(side) ? 'AL' : '';
-  const date = parseDate(valueByHeader(/emir tarihi|işlem tarihi|tarih/) || text);
+  const dateValue = valueByHeader(/emir tarihi|işlem tarihi|tarih/);
+  const date = parseDate(dateValue || text);
   const fieldByHeader = (pattern) => {
     const i = headers.findIndex((header) => pattern.test(header));
     return i >= 0 ? cells[i] : '';
@@ -444,7 +446,8 @@ function normalizeRow(row) {
       return '';
     })();
 
-  let code = (valueByHeader(/varlık|sembol|fon kodu|hisse kodu/i)
+  const codeValue = valueByHeader(/varlık|sembol|fon kodu|hisse kodu/i);
+  let code = (codeValue
     || getLabel(/sembol|varlık|fon kodu|hisse kodu/i, 'sembol|varlık|fon kodu|hisse kodu'))
     .match(/[A-Z][A-Z0-9.-]{1,9}/)?.[0] || '';
   if (!code) {
@@ -452,16 +455,20 @@ function normalizeRow(row) {
     code = text.match(/\b[A-Z][A-Z0-9.-]{1,6}\b/g)?.find((token) => !excluded.has(token)) || '';
   }
 
-  let units = parseLocaleNumber(valueByHeader(/gerçekleşen miktar|gerçekleşen adet|adet|miktar|lot/i)
-    || getLabel(/miktar|adet|lot|gerçekleşen miktar|gerçekleşen adet/i, 'miktar|adet|lot|gerçekleşen miktar|gerçekleşen adet'));
+  const unitsValue = valueByHeader(/gerçekleşen miktar|gerçekleşen adet|adet|miktar|lot/i)
+    || getLabel(/miktar|adet|lot|gerçekleşen miktar|gerçekleşen adet/i, 'miktar|adet|lot|gerçekleşen miktar|gerçekleşen adet');
+  let units = parseLocaleNumber(unitsValue);
   if (!(units > 0)) {
     const match = text.match(/([\d.,]+)\s*(?:adet|lot|pay|hisse)\b/i)
       || text.match(/(?:adet|lot|pay|hisse)\s*[:：]?\s*([\d.,]+)/i);
     units = match ? parseLocaleNumber(match[1]) : null;
   }
 
-  let price = parseLocaleNumber(valueByHeader(/birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat/i)
-    || getLabel(/birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat/i, 'birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat'));
+  const priceValue = valueByHeader(/birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat/i)
+    || getLabel(/birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat/i, 'birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat');
+  let price = parseLocaleNumber(priceValue);
+  const totalValue = parseLocaleNumber(valueByHeader(/^toplam$/i));
+  if (!(price > 0) && totalValue > 0 && units > 0) price = totalValue / units;
   const amount = parseLocaleNumber(getLabel(/işlem tutarı|gerçekleşen tutar|toplam tutar|tutar/i, 'işlem tutarı|gerçekleşen tutar|toplam tutar|tutar'));
   if (!(price > 0) && amount > 0 && units > 0) price = amount / units;
   const fee = parseLocaleNumber(getLabel(/komisyon|masraf|ücret/i, 'komisyon|masraf|ücret')) || 0;
@@ -472,7 +479,11 @@ function normalizeRow(row) {
   if (!code) missing.push('sembol');
   if (!(units > 0)) missing.push('miktar');
   if (!(price > 0)) missing.push('fiyat');
-  return { date, type, code, units, price, fee, sourceId: row.sourceId, rawText: text, missing };
+  const fieldDump = headers.map((header, index) => `${header}=${cells[index] || '—'}`).join(' | ');
+  return {
+    date, type, code, units, price, fee, sourceId: row.sourceId, rawText: text, missing,
+    diagnostic: `Alanlar: ${fieldDump}. Ayrıştırılan: kod=${code || '—'}, yön=${type || '—'}, tarih=${date || '—'}, miktar=${units > 0 ? units : '—'}, fiyat=${price > 0 ? price : '—'}. Eksik=${missing.join(',') || 'yok'}`,
+  };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
