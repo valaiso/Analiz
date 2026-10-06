@@ -81,6 +81,19 @@ function isOrderHeader(element) {
   return required.every((label) => cells.includes(label));
 }
 
+function assetHintsFor(element) {
+  const hints = [];
+  for (const node of [element, ...element.querySelectorAll('*')]) {
+    for (const attribute of [...(node.attributes || [])]) {
+      if (!/aria-label|title|alt|symbol|ticker|asset|code|href/i.test(attribute.name)) continue;
+      const value = String(attribute.value || '').trim();
+      if (value && value.length <= 100 && !hints.includes(value)) hints.push(value);
+      if (hints.length >= 20) return hints;
+    }
+  }
+  return hints;
+}
+
 function orderHistoryRoot() {
   const headings = [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div')]
     .filter((element) => isVisible(element) && /^emir\s+geçmişi$/iu.test(textOf(element)))
@@ -172,6 +185,7 @@ function candidateElements(root, scanStats) {
     const row = {
       text, headers, cells,
       sourceId: element.getAttribute('data-order-id') || element.getAttribute('data-id') || '',
+      codeHints: assetHintsFor(element),
     };
     const key = row.sourceId || text.replace(/\s+/g, ' ').trim();
     if (key && !uniqueRows.has(key)) uniqueRows.set(key, row);
@@ -450,9 +464,13 @@ function normalizeRow(row) {
   let code = (codeValue
     || getLabel(/sembol|varlık|fon kodu|hisse kodu/i, 'sembol|varlık|fon kodu|hisse kodu'))
     .match(/[A-Z][A-Z0-9.-]{1,9}/)?.[0] || '';
+  const codeExcluded = new Set(['AL', 'SAT', 'ALIŞ', 'ALIM', 'SATIŞ', 'SATIM', 'BUY', 'SELL', 'USD', 'TRY', 'TL', 'ADET', 'LOT', 'FON', 'PIYASA', 'LIMIT', 'GERCEKLESTI', 'TAMAMLANDI']);
   if (!code) {
-    const excluded = new Set(['AL', 'SAT', 'ALIŞ', 'ALIM', 'SATIŞ', 'SATIM', 'BUY', 'SELL', 'USD', 'TRY', 'TL', 'ADET', 'LOT', 'FON']);
-    code = text.match(/\b[A-Z][A-Z0-9.-]{1,6}\b/g)?.find((token) => !excluded.has(token)) || '';
+    const hintText = (row.codeHints || []).join(' ');
+    code = hintText.match(/\b[A-Z][A-Z0-9.-]{1,9}\b/g)?.find((token) => !codeExcluded.has(token)) || '';
+  }
+  if (!code) {
+    code = text.match(/\b[A-Z][A-Z0-9.-]{1,9}\b/g)?.find((token) => !codeExcluded.has(token)) || '';
   }
 
   const unitsValue = valueByHeader(/gerçekleşen miktar|gerçekleşen adet|adet|miktar|lot/i)
@@ -467,6 +485,12 @@ function normalizeRow(row) {
   const priceValue = valueByHeader(/birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat/i)
     || getLabel(/birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat/i, 'birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat');
   let price = parseLocaleNumber(priceValue);
+  const repeatedCellText = cells.length > 1 && cells.every((cell) => cell === cells[0]);
+  if (repeatedCellText || priceValue === text || price === units) {
+    const currencyValues = [...text.matchAll(/(?:₺|\$|€|USD|TRY)\s*([+-]?\d[\d.,]*)/gi)]
+      .map((match) => parseLocaleNumber(match[1])).filter((value) => value > 0);
+    if (currencyValues.length) price = currencyValues[currencyValues.length - 1];
+  }
   const totalValue = parseLocaleNumber(valueByHeader(/^toplam$/i));
   if (!(price > 0) && totalValue > 0 && units > 0) price = totalValue / units;
   const amount = parseLocaleNumber(getLabel(/işlem tutarı|gerçekleşen tutar|toplam tutar|tutar/i, 'işlem tutarı|gerçekleşen tutar|toplam tutar|tutar'));
@@ -482,7 +506,7 @@ function normalizeRow(row) {
   const fieldDump = headers.map((header, index) => `${header}=${cells[index] || '—'}`).join(' | ');
   return {
     date, type, code, units, price, fee, sourceId: row.sourceId, rawText: text, missing,
-    diagnostic: `Alanlar: ${fieldDump}. Ayrıştırılan: kod=${code || '—'}, yön=${type || '—'}, tarih=${date || '—'}, miktar=${units > 0 ? units : '—'}, fiyat=${price > 0 ? price : '—'}. Eksik=${missing.join(',') || 'yok'}`,
+    diagnostic: `Alanlar: ${fieldDump}. Ayrıştırılan: kod=${code || '—'}, yön=${type || '—'}, tarih=${date || '—'}, miktar=${units > 0 ? units : '—'}, fiyat=${price > 0 ? price : '—'}. ${!code ? `Sembol ipuçları: ${(row.codeHints || []).slice(0, 6).join(' / ') || 'bulunamadı'}. ` : ''}Eksik=${missing.join(',') || 'yok'}`,
   };
 }
 
