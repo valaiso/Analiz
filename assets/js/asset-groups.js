@@ -4,6 +4,14 @@ import { getMidasAccountSnapshot } from './store.js';
 const GROUP_ORDER = ['ETF', 'Fon', 'Hisse', 'Kripto', 'Diğer'];
 const NO_DAILY_CHANGE_CODES = new Set(['THF', 'TP2']);
 
+function marketDateInTimezone(timeZone) {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 export function assetType(code, suppliedKind = '', suppliedCategory = '') {
   const kind = String(suppliedKind || DB.byCode.get(code)?.kind || '').toUpperCase();
   const category = String(suppliedCategory || DB.byCode.get(code)?.cat || DB.byCode.get(code)?.category || '').toLocaleLowerCase('tr');
@@ -43,6 +51,7 @@ export function currentMidasPositions() {
 
 /** Midas'ın açık sembollerini site fiyat geçmişi ve yerel işlem adetleriyle birleştir. */
 export function addSiteMarketMetrics(positions) {
+  const liveQuotes = getMidasAccountSnapshot()?.liveQuotes || {};
   return (positions || []).map((position) => {
     // Midas canlı pozisyonlarında adet yalnızca Midas tablosundan gelmeli.
     // Eski işlem kayıtları açık adetle uyuşmayabilir ve günlük katkıyı büyütür.
@@ -80,9 +89,15 @@ export function addSiteMarketMetrics(positions) {
       }
     }
     const quoteDate = quoteIndex >= 0 ? DB.calendar[quoteIndex] : DB.byCode.get(position.code)?.date || null;
-    // Günlük ve toplam getiride Midas'ın aktarım anındaki fiyatını değil,
-    // uygulamanın yayımlanmış fiyat havuzundaki son fiyatı esas al.
-    const price = Number.isFinite(priceFromHistory) ? priceFromHistory
+    const meta = DB.byCode.get(position.code) || {};
+    const kind = String(meta.kind || position.kind || '').toUpperCase();
+    const canUseIntraday = ['US_ETF', 'BIST_ETF', 'BYF', 'HISSE', 'BIST_STOCK', 'BIST_HISSE', 'US_STOCK'].includes(kind);
+    const liveQuote = canUseIntraday ? liveQuotes[position.code] : null;
+    const hasLiveQuote = Number.isFinite(liveQuote?.price) && liveQuote.price > 0
+      && Number.isFinite(liveQuote?.previousClose) && liveQuote.previousClose > 0;
+    // Midas aktarımındaki fiyat yerine piyasa fiyat havuzunu; varsa en güncel
+    // tarayıcı kotasyonunu kullan.
+    const price = hasLiveQuote ? liveQuote.price : Number.isFinite(priceFromHistory) ? priceFromHistory
       : (Number.isFinite(DB.byCode.get(position.code)?.price) ? DB.byCode.get(position.code).price
         : Number.isFinite(position.price) && position.price > 0 ? position.price : null);
     const avgCost = Number.isFinite(position.avgCost) && position.avgCost > 0
@@ -94,15 +109,32 @@ export function addSiteMarketMetrics(positions) {
     // Her varlığı kendi son iki gerçek kapanışından hesapla; global TEFAS tarihiyle
     // birebir eşitlik aramak geçerli fiyatları yanlışlıkla eksik sayıyordu.
     const recentQuote = quoteIndex >= 0 && latestIndex - quoteIndex <= 1;
+    const firstTrackedPoint = !hasLiveQuote && quoteIndex >= 0 && hist?.i === quoteIndex
+      && Boolean(meta.startDate);
     const noDailyChange = NO_DAILY_CHANGE_CODES.has(position.code);
-    const hasPreviousPrice = !noDailyChange && hasSitePrice && recentQuote && previousIndex >= 0
-      && Number.isFinite(previousPrice) && Number.isFinite(previousFx);
+    // Kapanış saati varsaymak yerine, kotasyonun piyasa tarihini bugünkü piyasa
+    // tarihiyle karşılaştır. Yeni tarihli kotasyon yoksa son fiyat değerlemede
+    // kalır; önceki seansın günlük hareketi bugüne kopyalanmaz.
+    const exchangeTraded = canUseIntraday;
+    const defaultTimezone = ['US_ETF', 'US_STOCK'].includes(kind) ? 'America/New_York' : 'Europe/Istanbul';
+    const marketToday = exchangeTraded
+      ? marketDateInTimezone(liveQuote?.exchangeTimezoneName || defaultTimezone) : null;
+    const quoteIsFromCurrentMarketDate = hasLiveQuote && liveQuote.date === marketToday;
+    const useIntradayChange = hasLiveQuote && quoteIsFromCurrentMarketDate;
+    const dailyReferencePrice = useIntradayChange ? liveQuote.previousClose : previousPrice;
+    const hasPreviousPrice = !noDailyChange && hasSitePrice
+      && (useIntradayChange || recentQuote && previousIndex >= 0)
+      && Number.isFinite(dailyReferencePrice) && dailyReferencePrice > 0
+      && Number.isFinite(previousFx);
     const dailyPLNative = noDailyChange ? 0
-      : hasPreviousPrice ? units * (price - previousPrice) : null;
+      : exchangeTraded && hasLiveQuote && !useIntradayChange ? 0
+        : hasPreviousPrice ? units * (price - dailyReferencePrice) : firstTrackedPoint ? 0 : null;
     const dailyPLTRY = noDailyChange ? 0
-      : hasPreviousPrice ? units * (price * fx - previousPrice * previousFx) : null;
+      : exchangeTraded && hasLiveQuote && !useIntradayChange ? 0
+        : hasPreviousPrice ? units * (price * fx - dailyReferencePrice * previousFx) : firstTrackedPoint ? 0 : null;
     const dailyPct = noDailyChange ? 0
-      : hasPreviousPrice && previousPrice > 0 ? ((price / previousPrice) - 1) * 100 : null;
+      : exchangeTraded && hasLiveQuote && !useIntradayChange ? 0
+        : hasPreviousPrice ? ((price / dailyReferencePrice) - 1) * 100 : firstTrackedPoint ? 0 : null;
     const totalPLNative = noDailyChange ? 0
       : hasSitePrice && Number.isFinite(avgCost) ? units * (price - avgCost)
         : Number.isFinite(position.totalPL) ? position.totalPL : null;
@@ -110,6 +142,10 @@ export function addSiteMarketMetrics(positions) {
     const totalPct = noDailyChange ? 0
       : hasSitePrice && Number.isFinite(avgCost) && avgCost > 0 ? ((price / avgCost) - 1) * 100
         : Number.isFinite(position.totalPct) ? position.totalPct : null;
+    const marketValuePrevTRY = ((exchangeTraded && hasLiveQuote && !useIntradayChange) || noDailyChange)
+      ? (hasSitePrice ? units * price * fx : null)
+      : hasPreviousPrice ? units * dailyReferencePrice * previousFx
+        : firstTrackedPoint ? units * price * fx : null;
     return {
       ...position,
       price,
@@ -122,11 +158,10 @@ export function addSiteMarketMetrics(positions) {
       totalPLNative,
       totalPct,
       marketValueTRY: hasSitePrice ? units * price * fx : null,
-      marketValuePrevTRY: noDailyChange && hasSitePrice
-        ? units * price * fx
-        : hasPreviousPrice ? units * previousPrice * previousFx : null,
+      marketValuePrevTRY,
       siteDataAvailable: hasSitePrice,
-      quoteDate,
+      quoteDate: hasLiveQuote ? liveQuote.date : quoteDate,
+      quoteSource: hasLiveQuote ? liveQuote.source : 'site',
       noDailyChange,
     };
   });

@@ -34,3 +34,27 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
     window.postMessage({ channel: CHANNEL, type: 'READ', requestId, knownCodes, localAssets, fundCodes }, location.origin);
   });
 }
+
+/** Fetch fresh intraday quotes through the installed extension, without a Midas tab. */
+export function requestMidasLiveQuotes(codes = [], timeoutMs = 20_000) {
+  const requestId = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      window.removeEventListener('message', receive);
+      reject(new Error('Canlı fiyat isteği zaman aşımına uğradı.'));
+    }, timeoutMs);
+
+    function receive(event) {
+      if (event.source !== window || event.origin !== location.origin) return;
+      const data = event.data;
+      if (data?.channel !== CHANNEL || data.type !== 'LIVE_QUOTES_RESULT' || data.requestId !== requestId) return;
+      clearTimeout(timer);
+      window.removeEventListener('message', receive);
+      if (!data.response?.ok) reject(new Error(data.response?.error || 'Canlı fiyatlar alınamadı.'));
+      else resolve(data.response.quotes || {});
+    }
+
+    window.addEventListener('message', receive);
+    window.postMessage({ channel: CHANNEL, type: 'LIVE_QUOTES', requestId, codes }, location.origin);
+  });
+}

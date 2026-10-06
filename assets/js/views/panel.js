@@ -53,6 +53,11 @@ export function renderPanel(ctx) {
     && snapshotPositions.every((row) => isNum(row.marketValueTRY));
   const dailyRows = [...snapshotPositions, ...localCrypto];
   const dailyComplete = dailyRows.length > 0 && dailyRows.every((row) => isNum(row.dailyPLTRY));
+  const dailyMissing = dailyRows.filter((row) => !isNum(row.dailyPLTRY)).map((row) => {
+    if (!(row.units > 0)) return `${row.code} (adet yok)`;
+    if (!row.siteDataAvailable) return `${row.code} (fiyat yok)`;
+    return `${row.code} (önceki fiyat yok)`;
+  });
   const siteDailyChange = dailyComplete
     ? dailyRows.reduce((sum, row) => sum + row.dailyPLTRY, 0) : null;
   const siteDailyBase = dailyComplete
@@ -95,8 +100,8 @@ export function renderPanel(ctx) {
       formatPct: pctSigned,
       hint: hasMidasTotal
         ? (isNum(siteDailyChange)
-          ? `Sitenin son fiyat verilerine göre · ${fmtDate(DB.meta.lastDataDate)} verisi`
-          : 'Günlük hesap için fiyat havuzunda en az iki fiyat noktası gereken varlıklar bulunuyor')
+          ? `Hisse/ETF: piyasa tarihli kotasyon · fon: son yayımlanan fiyat · ${fmtDate(DB.meta.lastDataDate)} fiyat havuzu`
+          : `Günlük hesap eksikleri: ${dailyMissing.join(', ') || 'açık pozisyon fiyatı bulunamadı'}`)
         : `${fmtDate(totals.prevDate)} kapanışına göre`,
     }),
     plCard({

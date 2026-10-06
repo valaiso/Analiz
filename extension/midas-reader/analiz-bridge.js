@@ -3,24 +3,25 @@
 window.addEventListener('message', async (event) => {
   if (event.source !== window || event.origin !== location.origin) return;
   const request = event.data;
-  if (request?.channel !== 'ANALIZ_MIDAS_EXTENSION' || request.type !== 'READ') return;
+  if (request?.channel !== 'ANALIZ_MIDAS_EXTENSION'
+    || !['READ', 'LIVE_QUOTES'].includes(request.type)) return;
 
   try {
     const response = await chrome.runtime.sendMessage({
-      type: 'ANALIZ_READ_MIDAS_HISTORY',
-      knownCodes: request.knownCodes || [], localAssets: request.localAssets || [],
-      fundCodes: request.fundCodes || [],
+      type: request.type === 'LIVE_QUOTES' ? 'ANALIZ_FETCH_LIVE_QUOTES' : 'ANALIZ_READ_MIDAS_HISTORY',
+      codes: request.codes || [], knownCodes: request.knownCodes || [],
+      localAssets: request.localAssets || [], fundCodes: request.fundCodes || [],
     });
     window.postMessage({
       channel: 'ANALIZ_MIDAS_EXTENSION',
-      type: 'RESULT',
+      type: request.type === 'LIVE_QUOTES' ? 'LIVE_QUOTES_RESULT' : 'RESULT',
       requestId: request.requestId,
       response,
     }, location.origin);
   } catch (error) {
     window.postMessage({
       channel: 'ANALIZ_MIDAS_EXTENSION',
-      type: 'RESULT',
+      type: request.type === 'LIVE_QUOTES' ? 'LIVE_QUOTES_RESULT' : 'RESULT',
       requestId: request.requestId,
       response: { ok: false, error: 'Eklenti yanıt vermedi. Eklentiyi yenileyip yeniden deneyin.' },
     }, location.origin);

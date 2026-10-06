@@ -80,6 +80,22 @@ export function saveMidasAccountSnapshot(snapshot) {
   }
 }
 
+/** Store recent market quotes separately from the last Midas account snapshot. */
+export function saveMidasLiveQuotes(quotes) {
+  if (!midasSnapshot || !quotes || typeof quotes !== 'object') return false;
+  midasSnapshot = {
+    ...midasSnapshot,
+    liveQuotes: { ...(midasSnapshot.liveQuotes || {}), ...quotes },
+    liveQuotesCapturedAt: new Date().toISOString(),
+  };
+  try {
+    localStorage.setItem(MIDAS_SNAPSHOT_KEY, JSON.stringify(midasSnapshot));
+  } catch (err) {
+    console.error('Piyasa fiyatları bu tarayıcıya kaydedilemedi', err);
+  }
+  return true;
+}
+
 function persistMidasTransactions() {
   try {
     localStorage.setItem(MIDAS_KEY, JSON.stringify(midasTx));

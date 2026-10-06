@@ -6,7 +6,9 @@ import { analyze } from './portfolio.js';
 import {
   transactions, profiles, activeProfileId, setActiveProfile, activeProfileName,
   settings, setSetting, subscribe, getState, importJSON, getMidasAccountSnapshot,
+  saveMidasLiveQuotes,
 } from './store.js';
+import { requestMidasLiveQuotes } from './midas-import.js';
 import { supabase } from './supabase-client.js';
 import { renderPanel } from './views/panel.js';
 import { renderDagilim } from './views/dagilim.js';
@@ -38,6 +40,8 @@ let saveTimer = null;
 let pollTimer = null;
 let saveQueue = Promise.resolve();
 let startingSession = null;
+let intradayQuoteTimer = null;
+let intradayQuoteBusy = false;
 
 /* ---------------------------------------------------------------- eşitleme */
 
@@ -63,8 +67,10 @@ function showAuthStyles() {
 
 function showLogin(message = '') {
   clearInterval(pollTimer);
+  clearInterval(intradayQuoteTimer);
   clearTimeout(saveTimer);
   pollTimer = null;
+  intradayQuoteTimer = null;
   saveTimer = null;
   cloudReady = false;
   sessionUser = null;
@@ -264,6 +270,9 @@ async function startAuthenticatedSession(user) {
       pollTimer = setInterval(pullCloudChanges, 15000);
       window.addEventListener('focus', pullCloudChanges);
       document.addEventListener('visibilitychange', pullCloudChanges);
+      clearInterval(intradayQuoteTimer);
+      void refreshIntradayQuotes();
+      intradayQuoteTimer = setInterval(refreshIntradayQuotes, 60_000);
     } catch (error) {
       console.error(error);
       cloudReady = false;
@@ -320,6 +329,26 @@ function updateDataStatus() {
     + `${DB.meta.fundCount ?? DB.funds.length} fon kapsanıyor`;
   const disclaimer = document.querySelector('.disclaimer');
   if (disclaimer) disclaimer.textContent = 'Bu araç kişisel takip amaçlıdır, yatırım tavsiyesi değildir. Fiyat verileri TEFAS ve açık piyasa kaynaklarından alınır. Portföy işlemleri Supabase hesabınla eşitlenir; erişim kullanıcı hesabı ve veritabanı kurallarıyla sınırlandırılır.';
+}
+
+async function refreshIntradayQuotes() {
+  if (intradayQuoteBusy || document.visibilityState === 'hidden') return;
+  const positions = getMidasAccountSnapshot()?.positions || [];
+  const codes = [...new Set(positions.filter((position) => {
+    const kind = String(DB.byCode.get(position.code)?.kind || position.kind || '').toUpperCase();
+    return !['YAT', 'EMK', 'GYF', 'GSYF', 'CRYPTO'].includes(kind)
+      && (kind || position.currency === 'USD');
+  }).map((position) => position.code).filter(Boolean))].slice(0, 40);
+  if (!codes.length) return;
+  intradayQuoteBusy = true;
+  try {
+    const received = await requestMidasLiveQuotes(codes);
+    if (Object.keys(received).length && saveMidasLiveQuotes(received)) await render({ preserveScroll: true });
+  } catch {
+    // Keep the last site prices when the optional browser extension is unavailable.
+  } finally {
+    intradayQuoteBusy = false;
+  }
 }
 
 /* ------------------------------------------------------------------ yenileme */
@@ -394,9 +423,10 @@ function navigate(view, opts = {}) {
 
 /* -------------------------------------------------------------------- çizim */
 
-async function render() {
+async function render({ preserveScroll = false } = {}) {
   if (rendering || !cloudReady) return;
   rendering = true;
+  const previousScrollY = window.scrollY;
   const view = VIEWS[currentView] || VIEWS.panel;
   try {
     const ctx = {
@@ -423,7 +453,7 @@ async function render() {
     const warning = stalenessNotice();
     app.replaceChildren(...(warning ? [warning, node] : [node]));
     prefillCode = null;
-    window.scrollTo({ top: 0, behavior: 'auto' });
+    window.scrollTo({ top: preserveScroll ? previousScrollY : 0, behavior: 'auto' });
   } catch (error) {
     console.error(error);
     app.replaceChildren(h('div', { class: 'card empty' },

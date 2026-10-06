@@ -1,11 +1,11 @@
 /* Dağılım: Midas canlı pozisyonları veya işlem geçmişinden türetilen dağılım. */
 
 import { h, tl, tlSigned, pct, pctSigned, colorAt, isNum, units as fmtUnits } from '../util.js';
+import { DB } from '../data.js';
 import { donutWithLegend, barChart, stackedAreaChart, lineChart } from '../charts.js';
 import { weightHistory, attribution } from '../insights.js';
 import { transactions, getMidasAccountSnapshot } from '../store.js';
 import { currentMidasPositions, addSiteMarketMetrics, groupAssetRows, assetType } from '../asset-groups.js';
-import { sliceLastDays } from '../portfolio.js';
 import { sectionCard, emptyState } from './common.js';
 
 const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
@@ -48,16 +48,26 @@ export function renderDagilim(ctx) {
     const chartBox = h('div', { class: 'chart' });
     const drawPortfolioChart = () => {
       const days = ({ week: 7, month: 30, year: 365 })[rangeKey];
-      const value = sliceLastDays(series.dates, series.value, days);
-      const invested = sliceLastDays(series.dates, series.invested, days);
+      const endDate = DB.calendar.at(-1);
+      const cutoffDate = new Date(`${endDate}T00:00:00`);
+      cutoffDate.setDate(cutoffDate.getDate() - days + 1);
+      const cutoff = `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}-${String(cutoffDate.getDate()).padStart(2, '0')}`;
+      const dates = DB.calendar.filter((date) => date >= cutoff);
+      const seriesIndexes = new Map(series.dates.map((date, index) => [date, index]));
+      const firstInvestedDate = series.dates[0];
+      const align = (values) => dates.map((date) => {
+        const index = seriesIndexes.get(date);
+        if (index !== undefined) return values[index];
+        return firstInvestedDate && date < firstInvestedDate ? 0 : null;
+      });
       lineChart(chartBox, {
-        dates: value.dates,
+        dates,
         height: 300,
         yFormat: (amount) => tl(amount, { compact: true }),
         valueFormat: tl,
         series: [
-          { name: 'Portföy değeri', values: value.values, color: 'var(--accent)', width: 2.4, fill: true },
-          { name: 'Yatırılan para', values: invested.values, color: 'var(--text-dim)', dashed: true, width: 1.5 },
+          { name: 'Portföy değeri', values: align(series.value), color: 'var(--accent)', width: 2.4, fill: true },
+          { name: 'Yatırılan para', values: align(series.invested), color: 'var(--text-dim)', dashed: true, width: 1.5 },
         ],
       });
     };
