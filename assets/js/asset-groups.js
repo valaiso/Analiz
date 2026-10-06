@@ -1,4 +1,4 @@
-import { DB } from './data.js';
+import { DB, cachedHistory, priceAtIndex, lastIndex, fxToTRY } from './data.js';
 import { getMidasAccountSnapshot } from './store.js';
 
 const GROUP_ORDER = ['ETF', 'Fon', 'Hisse', 'Kripto', 'Diğer'];
@@ -48,38 +48,44 @@ export function addSiteMarketMetrics(positions, localHoldings = []) {
   const holdings = new Map((localHoldings || []).map((row) => [row.code, row]));
   return (positions || []).map((position) => {
     const holding = holdings.get(position.code);
-    if (!holding || !(holding.units > 0)) return {
-      ...position,
-      dailyPLTRY: null,
-      dailyPct: null,
-      totalPLTRY: null,
-      totalPct: null,
-      marketValueTRY: null,
-      marketValuePrevTRY: null,
-      siteDataAvailable: false,
+    const units = Number.isFinite(position.units) && position.units > 0
+      ? position.units : holding?.units;
+    if (!(units > 0)) return {
+      ...position, units: null, dailyPLTRY: null, dailyPct: null, totalPLTRY: null,
+      totalPct: null, marketValueTRY: null, marketValuePrevTRY: null, siteDataAvailable: false,
     };
-    const price = Number.isFinite(holding.price) ? holding.price : null;
+    const latestIndex = Math.max(0, lastIndex());
+    const previousIndex = Math.max(0, latestIndex - 1);
+    const hist = cachedHistory(position.code);
+    const price = Number.isFinite(holding?.price) ? holding.price
+      : (Number.isFinite(DB.byCode.get(position.code)?.price) ? DB.byCode.get(position.code).price : null);
+    const previousPrice = Number.isFinite(holding?.pricePrev) ? holding.pricePrev
+      : priceAtIndex(hist, previousIndex);
     const avgCost = Number.isFinite(position.avgCost) && position.avgCost > 0
-      ? position.avgCost : holding.avgCost;
-    const fx = Number.isFinite(holding.fxRate) ? holding.fxRate : 1;
-    const hasSitePrice = Number.isFinite(price) && !holding.missingFx;
-    const dailyPLTRY = hasSitePrice && Number.isFinite(holding.dayPct) && Number.isFinite(holding.dayPL)
-      ? holding.dayPL : null;
+      ? position.avgCost : holding?.avgCost;
+    const fx = Number.isFinite(holding?.fxRate) ? holding.fxRate : fxToTRY(position.code, latestIndex);
+    const previousFx = Number.isFinite(holding?.fxRatePrev) ? holding.fxRatePrev : fxToTRY(position.code, previousIndex);
+    const hasSitePrice = Number.isFinite(price) && Number.isFinite(fx);
+    const hasPreviousPrice = hasSitePrice && Number.isFinite(previousPrice) && Number.isFinite(previousFx);
+    const dailyPLTRY = hasPreviousPrice
+      ? units * (price * fx - previousPrice * previousFx) : null;
+    const dailyPct = hasPreviousPrice && previousPrice * previousFx > 0
+      ? ((price * fx) / (previousPrice * previousFx) - 1) * 100 : null;
     const totalPLTRY = hasSitePrice && Number.isFinite(avgCost)
-      ? holding.units * (price - avgCost) * fx : null;
+      ? units * (price - avgCost) * fx : null;
     const totalPct = hasSitePrice && Number.isFinite(avgCost) && avgCost > 0
       ? ((price / avgCost) - 1) * 100 : null;
     return {
       ...position,
       price,
-      units: holding.units,
+      units,
       avgCost,
       dailyPLTRY,
-      dailyPct: holding.dayPct,
+      dailyPct,
       totalPLTRY,
       totalPct,
-      marketValueTRY: hasSitePrice && Number.isFinite(holding.value) ? holding.value : null,
-      marketValuePrevTRY: dailyPLTRY !== null && Number.isFinite(holding.prevValue) ? holding.prevValue : null,
+      marketValueTRY: hasSitePrice ? units * price * fx : null,
+      marketValuePrevTRY: hasPreviousPrice ? units * previousPrice * previousFx : null,
       siteDataAvailable: hasSitePrice,
     };
   });

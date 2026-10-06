@@ -175,6 +175,7 @@ export function renderPanel(ctx) {
       initialSort: { key: 'marketValueTRY', dir: 'desc' },
       columns: [
         { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', { class: 'code-chip' }, r.code) },
+        { key: 'units', label: 'Adet', render: (r) => fmtUnits(r.units) },
         { key: 'marketValueTRY', label: 'Portföy Değeri', render: (r) => isNum(r.marketValueTRY) ? tl(r.marketValueTRY) : '—' },
         { key: 'price', label: 'Site Fiyatı', render: (r) => moneyByCurrency(r.price, r.currency) },
         { key: 'avgCost', label: 'Ort. Maliyet', render: (r) => moneyByCurrency(r.avgCost, r.currency) },

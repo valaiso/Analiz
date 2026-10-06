@@ -116,9 +116,9 @@ function positionSnapshotRows() {
   const col = (label) => headers.findIndex((item) => item.label === label);
   const ix = {
     code: col('Varlık'), price: col('Fiyat'), avg: col('Ort. Maliyet'),
-    allocation: col('Dağılım'), daily: col('Günlük getiri'), total: col('Toplam getiri'),
+    units: col('Adet'), allocation: col('Dağılım'), daily: col('Günlük getiri'), total: col('Toplam getiri'),
   };
-  if (Object.values(ix).some((value) => value < 0)) return [];
+  if ([ix.code, ix.price, ix.avg, ix.allocation, ix.daily, ix.total].some((value) => value < 0)) return [];
   const rowNodes = [...root.querySelectorAll('tr, [role="row"], [class*="row" i], li, div')]
     .filter((element) => element !== headerRow && isVisible(element))
     .map((element) => ({ element, text: textOf(element) }))
@@ -194,6 +194,7 @@ function positionSnapshotRows() {
     const text = cells.join(' ');
     const fields = {
       code,
+      units: ix.units >= 0 ? parseLocaleNumber(cells[ix.units]) : null,
       price: moneyFrom(cells[ix.price]) ?? moneyFrom(text),
       avgCost: moneyFrom(cells[ix.avg]) ?? null,
       allocationPct: percentFrom(cells[ix.allocation]) ?? null,

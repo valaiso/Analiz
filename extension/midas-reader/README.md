@@ -39,6 +39,8 @@ Eklenti yalnızca emir tablosunda durumu **Gerçekleşti/Tamamlandı** olan sat�
 bekleyen, iptal edilmiş ve kısmi emirleri atlar. Eklenti yalnızca sayfalama oklarını
 kullanır; alım/satım emirlerine dokunmaz. Midas'ın açık olan tablo aralığındaki tüm
 sayfalar taranır.
+Pozisyonlar tablosunda “Adet” veya “Miktar” sütunu görünüyorsa açık adet, ortalama maliyet
+ve sembol yerel portföy hesapları için okunur; günlük/toplam getiri hücreleri kullanılmaz.
 Miktar, fiyat, tarih ya da sembol güvenle okunamazsa satır içe aktarılmaz. Midas
 arayüzü değişirse içerik okuyucusunun güncellenmesi gerekebilir.
 Fiyat kaynağında 3 yıllık geçmiş bulunmayan yeni semboller aktarım önizlemesini

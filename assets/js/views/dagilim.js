@@ -1,6 +1,6 @@
 /* Dağılım: Midas canlı pozisyonları veya işlem geçmişinden türetilen dağılım. */
 
-import { h, tl, tlSigned, pct, pctSigned, colorAt, isNum } from '../util.js';
+import { h, tl, tlSigned, pct, pctSigned, colorAt, isNum, units as fmtUnits } from '../util.js';
 import { donutWithLegend, barChart, stackedAreaChart } from '../charts.js';
 import { weightHistory, attribution } from '../insights.js';
 import { transactions } from '../store.js';
@@ -30,43 +30,48 @@ export function renderDagilim(ctx) {
 
   const root = h('div', { class: 'stack' });
   if (usingMidas) {
-    const priced = open.filter((row) => row.value > 0
-      && (liveCodes.has(row.code) || localCrypto.some((crypto) => crypto.code === row.code)));
+    const priced = [
+      ...live.filter((row) => row.marketValueTRY > 0)
+        .map((row) => ({ ...row, pieValue: row.marketValueTRY })),
+      ...localCrypto.filter((row) => row.value > 0)
+        .map((row) => ({ ...row, pieValue: row.value })),
+    ];
     const byTypeMap = new Map();
     for (const row of priced) {
-      if (!(row.value > 0)) continue;
+      if (!(row.pieValue > 0)) continue;
       const baseType = assetType(row.code, row.kind);
       const type = baseType === 'Hisse' && row.currency !== 'USD' ? 'BIST Hisse' : baseType;
-      byTypeMap.set(type, (byTypeMap.get(type) || 0) + row.value);
+      byTypeMap.set(type, (byTypeMap.get(type) || 0) + row.pieValue);
     }
     const byType = [...byTypeMap.entries()].sort((a, b) => b[1] - a[1])
       .map(([label, value], index) => ({ label, value, color: colorAt(index) }));
     const bistRows = priced.filter((row) => assetType(row.code, row.kind) === 'Hisse'
       && row.currency !== 'USD' && row.kind !== 'US_ETF' && row.kind !== 'CRYPTO');
-    const bistSlices = bistRows.filter((row) => row.value > 0)
-      .sort((a, b) => b.value - a.value)
-      .map((row, index) => ({ label: row.code, value: row.value, color: colorAt(index) }));
+    const bistSlices = bistRows.filter((row) => row.pieValue > 0)
+      .sort((a, b) => b.pieValue - a.pieValue)
+      .map((row, index) => ({ label: row.code, value: row.pieValue, color: colorAt(index) }));
     root.append(h('div', { class: 'grid grid-2' },
       sectionCard('Portföy Dağılımı', 'ETF · Fon · BIST hissesi · yabancı hisse · Kripto', donutWithLegend(byType, {
-        centerTop: tl(priced.reduce((sum, row) => sum + (row.value || 0), 0), { compact: true }),
+        centerTop: tl(priced.reduce((sum, row) => sum + (row.pieValue || 0), 0), { compact: true }),
         centerBottom: 'fiyat bulunanlar',
       })),
       sectionCard('BIST Hisseleri', 'Açık BIST hisselerinin kendi içindeki dağılımı', donutWithLegend(bistSlices, {
-        centerTop: tl(bistRows.reduce((sum, row) => sum + (row.value || 0), 0), { compact: true }),
+        centerTop: tl(bistRows.reduce((sum, row) => sum + (row.pieValue || 0), 0), { compact: true }),
         centerBottom: 'BIST toplamı',
       }))));
     root.append(h('div', { class: 'notice' },
-      `Grafikler sitenin fiyat geçmişi ve kayıtlı işlem adetleriyle hesaplanır; ${priced.length}/${positions.length} açık varlık için adet ve fiyat bulundu. Eksik adetli varlıklar parasal pasta dilimlerine katılmaz. Midas’ın günlük/toplam getiri hücreleri kullanılmaz.`));
+      `ETF, fon ve hisse değerleri Midas’tan okunan adetlerle sitenin fiyat geçmişinden hesaplanır; ${priced.length}/${positions.length} açık varlık grafiğe girdi. Kripto, yerel işlem kayıtlarına dayanır. Midas’ın günlük/toplam getiri hücreleri kullanılmaz.`));
     for (const group of groupAssetRows(positions)) {
       const localOnly = group.label === 'Kripto';
       const rows = [...group.rows].sort((a, b) => (b.marketValueTRY || 0) - (a.marketValueTRY || 0));
       const table = h('div', { class: 'table-wrap' }, h('table', {},
         h('thead', {}, h('tr', {},
           h('th', { style: 'text-align:left' }, 'Varlık'),
-          h('th', {}, 'Portföy Değeri'), h('th', {}, 'Site Fiyatı'), h('th', {}, 'Ort. Maliyet'), h('th', {}, 'Dağılım'),
+          h('th', {}, 'Adet'), h('th', {}, 'Portföy Değeri'), h('th', {}, 'Site Fiyatı'), h('th', {}, 'Ort. Maliyet'), h('th', {}, 'Dağılım'),
           h('th', {}, 'Ort. Maliyete Göre K/Z'), h('th', {}, 'Günlük · Site'))),
         h('tbody', {}, rows.map((row) => h('tr', {},
           h('td', {}, h('span', { class: 'code-chip' }, row.code)),
+          h('td', {}, fmtUnits(row.units)),
           h('td', {}, isNum(row.marketValueTRY) ? tl(row.marketValueTRY) : '—'),
           h('td', {}, `${row.price == null ? '—' : new Intl.NumberFormat('tr-TR', { style: 'currency', currency: row.currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2 }).format(row.price)}`),
           h('td', {}, `${row.avgCost == null ? '—' : new Intl.NumberFormat('tr-TR', { style: 'currency', currency: row.currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2 }).format(row.avgCost)}`),

@@ -146,7 +146,8 @@ async function readMidas(ctx, button) {
     }
     const valid = rows.filter((row) => !row.missing?.length);
     if (result.positions?.length) {
-      logMidas(`Midas Pozisyonlar tablosundan ${result.positions.length} açık varlık kaydı okundu.`);
+      const withUnits = result.positions.filter((position) => Number.isFinite(position.units) && position.units > 0).length;
+      logMidas(`Midas Pozisyonlar tablosundan ${result.positions.length} açık varlık kaydı okundu; ${withUnits} kayıtta adet bilgisi var.`);
     } else {
       logMidas('Midas toplam hesabı okundu; ancak Pozisyonlar tablosundaki açık varlıklar okunamadı. Panelde eski işlem kayıtlarından türetilmiş pozisyonlar kullanılmayacak.');
     }
