@@ -10,7 +10,10 @@
        para koyduğunu dikkate alır.
 */
 
-import { DB, loadHistories, cachedHistory, priceAtIndex, indexForDate, lastIndex } from './data.js';
+import {
+  DB, loadHistories, cachedHistory, priceAtIndex, indexForDate, lastIndex,
+  currencyForCode, fxToTRY,
+} from './data.js';
 import { isNum } from './util.js';
 
 const EPS = 1e-9;
@@ -21,7 +24,7 @@ export function buildPositions(txs) {
   const get = (code) => {
     if (!pos.has(code)) {
       pos.set(code, {
-        code, units: 0, cost: 0, realized: 0, fees: 0,
+        code, units: 0, cost: 0, nativeCost: 0, realized: 0, fees: 0,
         bought: 0, sold: 0, firstDate: null, lastDate: null, oversold: false,
       });
     }
@@ -32,23 +35,29 @@ export function buildPositions(txs) {
     if (!t.code || !isNum(t.units) || !isNum(t.price) || t.units <= 0) continue;
     const p = get(t.code);
     const fee = Number(t.fee) || 0;
+    const tradeIndex = Math.max(0, indexForDate(t.date));
+    const fx = fxToTRY(t.code, tradeIndex);
+    if (!isNum(fx)) throw new Error(`USD/TRY kuru bulunamadı: ${t.date} tarihli ${t.code} işlemi.`);
     p.firstDate = p.firstDate || t.date;
     p.lastDate = t.date;
-    p.fees += fee;
+    p.fees += fee * fx;
 
     if (t.type === 'SAT') {
       // Elde olandan fazla satış girilmişse eldekiyle sınırla ve işaretle.
       const qty = Math.min(t.units, p.units);
       if (t.units > p.units + EPS) p.oversold = true;
       const avg = p.units > EPS ? p.cost / p.units : 0;
-      p.realized += qty * t.price - fee - qty * avg;
+      const nativeAvg = p.units > EPS ? p.nativeCost / p.units : 0;
+      p.realized += (qty * t.price - fee) * fx - qty * avg;
       p.cost = Math.max(0, p.cost - qty * avg);
+      p.nativeCost = Math.max(0, p.nativeCost - qty * nativeAvg);
       p.units = Math.max(0, p.units - qty);
-      p.sold += qty * t.price - fee;
+      p.sold += (qty * t.price - fee) * fx;
     } else {
-      p.cost += t.units * t.price + fee;
+      p.cost += (t.units * t.price + fee) * fx;
+      p.nativeCost += t.units * t.price + fee;
       p.units += t.units;
-      p.bought += t.units * t.price + fee;
+      p.bought += (t.units * t.price + fee) * fx;
     }
   }
   return pos;
@@ -101,21 +110,26 @@ export async function analyze(txs) {
     const hist = cachedHistory(p.code);
     const price = priceAtIndex(hist, last);
     const pricePrev = priceAtIndex(hist, prev);
+    const fxRate = fxToTRY(p.code, last);
+    const fxRatePrev = fxToTRY(p.code, prev);
+    const currency = currencyForCode(p.code);
+    const currencySymbol = currency === 'USD' ? '$' : '₺';
 
     if (p.units <= EPS) {
       // Kapanmış pozisyon: sadece gerçekleşmiş kâr/zarara katkı verir.
       holdings.push({
         ...p, closed: true, name: meta?.name || p.code, cat: meta?.cat || '—',
-        price, value: 0, avgCost: 0, unrealized: 0, unrealizedPct: null,
+        price, currency, currencySymbol, value: 0, avgCost: 0, unrealized: 0, unrealizedPct: null,
         dayPL: 0, dayPct: null, totalPL: p.realized, weight: 0,
       });
       continue;
     }
 
     const hasPrice = isNum(price);
-    const holdingValue = hasPrice ? p.units * price : 0;
-    const avgCost = p.cost / p.units;
-    const unrealized = hasPrice ? holdingValue - p.cost : 0;
+    const hasFx = isNum(fxRate);
+    const holdingValue = hasPrice && hasFx ? p.units * price * fxRate : 0;
+    const avgCost = p.nativeCost / p.units;
+    const unrealized = hasPrice && hasFx ? holdingValue - p.cost : 0;
 
     value += holdingValue;
     cost += p.cost;
@@ -126,15 +140,17 @@ export async function analyze(txs) {
       name: meta?.name || p.code,
       cat: meta?.cat || '—',
       alloc: meta?.alloc || {},
+      currency, currencySymbol, fxRate, fxRatePrev,
       // Fonun TEFAS'ta son fiyat yayımladığı gün; kapanmış fonları ayırt etmek için.
       lastPriceDate: meta?.date || null,
       price,
       pricePrev,
       missingPrice: !hasPrice,
+      missingFx: !hasFx,
       value: holdingValue,
       avgCost,
       unrealized,
-      unrealizedPct: p.cost > EPS ? (unrealized / p.cost) * 100 : null,
+      unrealizedPct: p.cost > EPS && hasPrice && hasFx ? (unrealized / p.cost) * 100 : null,
       dayPL: 0,          // aşağıda dolduruluyor
       dayPct: isNum(price) && isNum(pricePrev) && pricePrev > 0
         ? (price / pricePrev - 1) * 100 : null,
@@ -151,10 +167,15 @@ export async function analyze(txs) {
   for (const holding of holdings) {
     if (holding.closed) continue;
     const units = unitsAtPrev.get(holding.code) || 0;
-    if (units > EPS && isNum(holding.price) && isNum(holding.pricePrev)) {
-      holding.dayPL = units * (holding.price - holding.pricePrev);
+    if (units > EPS && isNum(holding.price) && isNum(holding.fxRate)
+      && isNum(holding.pricePrev) && isNum(holding.fxRatePrev)) {
+      holding.dayPL = units * (holding.price * holding.fxRate
+        - holding.pricePrev * holding.fxRatePrev);
       dayPL += holding.dayPL;
-      prevValue += units * holding.pricePrev;
+      prevValue += units * holding.pricePrev * holding.fxRatePrev;
+      holding.dayPct = holding.pricePrev * holding.fxRatePrev > 0
+        ? ((holding.price * holding.fxRate) / (holding.pricePrev * holding.fxRatePrev) - 1) * 100
+        : null;
     }
   }
 
@@ -237,10 +258,10 @@ export function buildSeries(txs) {
       if (t.type === 'SAT') {
         const qty = Math.min(t.units, cur);
         units.set(t.code, cur - qty);
-        cashFlow -= qty * t.price - (Number(t.fee) || 0);
+        cashFlow -= (qty * t.price - (Number(t.fee) || 0)) * fxToTRY(t.code, idx);
       } else {
         units.set(t.code, cur + t.units);
-        cashFlow += t.units * t.price + (Number(t.fee) || 0);
+        cashFlow += (t.units * t.price + (Number(t.fee) || 0)) * fxToTRY(t.code, idx);
       }
     }
     cumInvested += cashFlow;
@@ -249,7 +270,8 @@ export function buildSeries(txs) {
     for (const [code, qty] of units) {
       if (qty <= EPS) continue;
       const price = priceAtIndex(cachedHistory(code), idx);
-      if (isNum(price)) total += qty * price;
+      const fx = fxToTRY(code, idx);
+      if (isNum(price) && isNum(fx)) total += qty * price * fx;
     }
 
     // Zaman ağırlıklı getiri: nakit akışının etkisini arındır.
@@ -301,9 +323,10 @@ function xirrFromTx(txs, currentValue, valuationDate) {
     .map((t) => ({
       date: t.date,
       // Alış = para çıkışı (negatif), satış = para girişi (pozitif).
-      amount: t.type === 'SAT'
+      amount: (t.type === 'SAT'
         ? t.units * t.price - (Number(t.fee) || 0)
-        : -(t.units * t.price + (Number(t.fee) || 0)),
+        : -(t.units * t.price + (Number(t.fee) || 0)))
+        * fxToTRY(t.code, Math.max(0, indexForDate(t.date))),
     }))
     .sort((a, b) => (a.date < b.date ? -1 : 1));
   if (currentValue > EPS) flows.push({ date: valuationDate, amount: currentValue });

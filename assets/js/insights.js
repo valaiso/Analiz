@@ -6,7 +6,7 @@
    portfolio.js pozisyon ve getiri çekirdeğini tutar; bu modül onun üzerine
    kurulan ikincil analizleri barındırır. */
 
-import { DB, cachedHistory, priceAtIndex, exactPriceAtIndex, indexForDate, lastIndex }
+import { DB, cachedHistory, priceAtIndex, exactPriceAtIndex, indexForDate, lastIndex, fxToTRY }
   from './data.js';
 import { isNum } from './util.js';
 import { correlation, dailyReturns } from './portfolio.js';
@@ -135,10 +135,12 @@ export function timingQuality(txs) {
   const fonlar = new Map();
   for (const t of txs) {
     if (t.type === 'SAT' || !isNum(t.units) || !isNum(t.price)) continue;
-    const f = fonlar.get(t.code) || { adet: 0, tutar: 0, ilkIdx: Infinity };
+    const f = fonlar.get(t.code) || { adet: 0, tutar: 0, invested: 0, ilkIdx: Infinity };
     f.adet += t.units;
     f.tutar += t.units * t.price;
-    f.ilkIdx = Math.min(f.ilkIdx, Math.max(0, indexForDate(t.date)));
+    const tradeIdx = Math.max(0, indexForDate(t.date));
+    f.invested += (t.units * t.price + (Number(t.fee) || 0)) * fxToTRY(t.code, tradeIdx);
+    f.ilkIdx = Math.min(f.ilkIdx, tradeIdx);
     fonlar.set(t.code, f);
   }
 
@@ -161,7 +163,7 @@ export function timingQuality(txs) {
       avgCost: ortalamaMaliyet,
       avgMarket: ortalamaPiyasa,
       diffPct: (ortalamaMaliyet / ortalamaPiyasa - 1) * 100,
-      invested: f.tutar,
+      invested: f.invested,
       days: son - f.ilkIdx,
     });
   }
@@ -180,21 +182,23 @@ export function cashflowCalendar(txs) {
     if (!isNum(t.units) || !isNum(t.price)) continue;
     const ay = t.date.slice(0, 7);
     const yil = Number(t.date.slice(0, 4));
-    const masraf = Number(t.fee) || 0;
+    const fx = fxToTRY(t.code, Math.max(0, indexForDate(t.date)));
+    const masraf = (Number(t.fee) || 0) * fx;
+    const tutarTRY = t.units * t.price * fx;
     const p = pozisyon.get(t.code) || { adet: 0, maliyet: 0 };
 
     if (t.type === 'SAT') {
       const miktar = Math.min(t.units, p.adet);
       const ortalama = p.adet > EPS ? p.maliyet / p.adet : 0;
-      const kar = miktar * t.price - masraf - miktar * ortalama;
+      const kar = miktar * t.price * fx - masraf - miktar * ortalama;
       gerceklesenYil.set(yil, (gerceklesenYil.get(yil) || 0) + kar);
       p.maliyet = Math.max(0, p.maliyet - miktar * ortalama);
       p.adet = Math.max(0, p.adet - miktar);
-      aylik.set(ay, (aylik.get(ay) || 0) - (miktar * t.price - masraf));
+      aylik.set(ay, (aylik.get(ay) || 0) - (miktar * t.price * fx - masraf));
     } else {
-      p.maliyet += t.units * t.price + masraf;
+      p.maliyet += tutarTRY + masraf;
       p.adet += t.units;
-      aylik.set(ay, (aylik.get(ay) || 0) + t.units * t.price + masraf);
+      aylik.set(ay, (aylik.get(ay) || 0) + tutarTRY + masraf);
     }
     pozisyon.set(t.code, p);
   }
@@ -235,8 +239,9 @@ export function weightHistory(txs, seriesStart, dates, topN = 6) {
     for (const [code, adet] of adetler) {
       if (adet <= EPS) continue;
       const p = priceAtIndex(cachedHistory(code), idx);
-      if (!isNum(p)) continue;
-      const d = adet * p;
+      const fx = fxToTRY(code, idx);
+      if (!isNum(p) || !isNum(fx)) continue;
+      const d = adet * p * fx;
       degerler.set(code, d);
       toplam += d;
     }
@@ -286,7 +291,11 @@ export function diversification(holdings, pencere = 260) {
   const getiriler = acik.map((h) => {
     const hist = cachedHistory(h.code);
     const fiyatlar = [];
-    for (let i = bas; i <= son; i++) fiyatlar.push(priceAtIndex(hist, i));
+    for (let i = bas; i <= son; i++) {
+      const price = priceAtIndex(hist, i);
+      const fx = fxToTRY(h.code, i);
+      fiyatlar.push(isNum(price) && isNum(fx) ? price * fx : null);
+    }
     return dailyReturns(fiyatlar);
   });
 
@@ -357,14 +366,16 @@ export function counterfactual(txs, benchValues) {
     const idx = Math.max(0, indexForDate(t.date));
     const fiyat = benchValues[idx];
     if (!isNum(fiyat) || fiyat <= 0) continue;
+    const fx = fxToTRY(t.code, idx);
+    if (!isNum(fx)) continue;
     gecerli = true;
-    const masraf = Number(t.fee) || 0;
+    const masraf = (Number(t.fee) || 0) * fx;
     if (t.type === 'SAT') {
-      const tutar = t.units * t.price - masraf;
+      const tutar = t.units * t.price * fx - masraf;
       birim = Math.max(0, birim - tutar / fiyat);
       yatirilan -= tutar;
     } else {
-      const tutar = t.units * t.price + masraf;
+      const tutar = t.units * t.price * fx + masraf;
       birim += tutar / fiyat;
       yatirilan += tutar;
     }

@@ -168,8 +168,8 @@ export function renderPanel(ctx) {
             h('span', { class: 'dim', style: 'font-size:.76rem;max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, r.name)),
         },
         { key: 'units', label: 'Adet', render: (r) => fmtUnits(r.units) },
-        { key: 'avgCost', label: 'Ort. Maliyet', render: (r) => money(r.avgCost) },
-        { key: 'price', label: 'Güncel Fiyat', render: (r) => money(r.price) },
+        { key: 'avgCost', label: 'Ort. Maliyet', render: (r) => `${money(r.avgCost)} ${r.currencySymbol}` },
+        { key: 'price', label: 'Güncel Fiyat', render: (r) => `${money(r.price)} ${r.currencySymbol}` },
         {
           key: 'dayPct', label: 'Günlük',
           render: (r) => h('span', { class: cls(r.dayPct) },

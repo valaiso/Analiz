@@ -147,6 +147,24 @@ export async function priceOnDate(code, iso) {
 export const lastIndex = () => DB.calendar.length - 1;
 export const lastDate = () => DB.calendar[DB.calendar.length - 1];
 
+/** Varlığın işlem/fiyat para birimi. ABD ETF'leri ve kripto USD, diğerleri TRY. */
+export function currencyForCode(code) {
+  const meta = DB.byCode.get(code);
+  return meta?.currency === 'USD' || meta?.kind === 'US_ETF' || meta?.kind === 'CRYPTO'
+    ? 'USD' : 'TRY';
+}
+
+/** Takvim günündeki USD/TRY; seri o güne kadar bilinen son kuru içerir. */
+export function usdTryAtIndex(idx) {
+  const rate = DB.benchmarks?.USDTRY?.values?.[idx];
+  return isNum(rate) && rate > 0 ? rate : null;
+}
+
+/** Varlığın kendi para biriminden raporlama para birimi TRY'ye çeviri katsayısı. */
+export function fxToTRY(code, idx) {
+  return currencyForCode(code) === 'USD' ? usdTryAtIndex(idx) : 1;
+}
+
 /** Fon kodu/ünvanına göre arama (otomatik tamamlama). */
 export function searchFunds(query, limit = 12) {
   const q = (query || '').trim().toLocaleUpperCase('tr');
