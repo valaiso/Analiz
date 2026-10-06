@@ -3,6 +3,7 @@
    istek atılır ve bellekte tutulur. */
 
 import { isNum } from './util.js';
+import { getMarketAssets, saveMarketAssets } from './store.js';
 
 const DATA_URL = new URL('../../data/', import.meta.url).href;
 const LOCAL_ASSET_KEY = 'analiz-local-market-assets-v1';
@@ -51,12 +52,27 @@ export async function loadCore({ bypassCache = false } = {}) {
 }
 
 function readLocalAssets() {
+  let local = [];
   try {
     const value = JSON.parse(localStorage.getItem(LOCAL_ASSET_KEY) || '[]');
-    return Array.isArray(value) ? value.filter((asset) => asset?.code && Array.isArray(asset.prices)) : [];
+    local = Array.isArray(value) ? value.filter((asset) => asset?.code && Array.isArray(asset.prices)) : [];
   } catch {
-    return [];
+    local = [];
   }
+  const merged = new Map();
+  for (const asset of [...(getMarketAssets() || []), ...local]) {
+    if (!asset?.code || !Array.isArray(asset.prices)) continue;
+    const key = String(asset.code).toLocaleUpperCase('tr');
+    const previous = merged.get(key);
+    const points = new Map((previous?.prices || []).map((point) => [point.date, point.price]));
+    for (const point of asset.prices) points.set(point.date, point.price);
+    merged.set(key, {
+      ...(previous || {}), ...asset, code: key,
+      prices: [...points].map(([date, price]) => ({ date, price }))
+        .sort((a, b) => a.date.localeCompare(b.date)),
+    });
+  }
+  return [...merged.values()];
 }
 
 function installAssetInMemory(asset) {
@@ -82,7 +98,7 @@ function installAssetInMemory(asset) {
   };
 }
 
-/** Add fetched market history to this browser's private data pool. */
+/** Add fetched market history to the account-synced market pool and local cache. */
 export function addLocalMarketAssets(assets) {
   const current = new Map(readLocalAssets().map((asset) => [asset.code, asset]));
   let added = 0;
@@ -117,7 +133,11 @@ export function addLocalMarketAssets(assets) {
       added += 1;
     }
   }
-  if (added) localStorage.setItem(LOCAL_ASSET_KEY, JSON.stringify([...current.values()]));
+  if (added) {
+    const pool = [...current.values()];
+    localStorage.setItem(LOCAL_ASSET_KEY, JSON.stringify(pool));
+    saveMarketAssets(pool);
+  }
   return added;
 }
 

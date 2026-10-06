@@ -112,7 +112,7 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}) {
     h('p', { class: 'dim' },
       `${candidates.length} satır okundu (${scanInfo.scannedPages} sayfa). ${ready.length} satır işlem bilgisi açısından tam; `
       + `${unknownCodes.length} kodda 3 yıllık fiyat geçmişi hâlâ eksik, ${unmatched.length} satırda işlem bilgisi eksik. `
-      + 'Aktarım için tüm sembollerin fiyat geçmişi gerekir. Midas’a hiçbir emir gönderilmez; alınan ek fiyat verileri ve işlemler bu tarayıcıda saklanır.'),
+      + 'Aktarım için tüm sembollerin fiyat geçmişi gerekir. Midas’a hiçbir emir gönderilmez; ek fiyat geçmişleri hesabının ortak havuzuna eşitlenir, işlemler bu tarayıcıda kalır.'),
     quoteNotice,
     readyContent,
     unmatchedContent,
@@ -123,7 +123,7 @@ async function readMidas(ctx, button) {
   button.disabled = true;
   button.textContent = 'Midas ve fiyat verileri okunuyor…';
   logMidas('Midas emir geçmişi taraması başlatıldı.');
-  logMidas('Fiyat havuzunda olmayan semboller için otomatik 3 yıllık fiyat geçmişi aranacak; mevcut yerel ek varlıkların fiyatları da yenilenecek.');
+  logMidas('Fiyat havuzunda olmayan semboller için otomatik 3 yıllık fiyat geçmişi aranacak; mevcut ek varlıkların fiyatları da yenilenecek ve hesaba ait ortak havuzla eşitlenecek.');
   let accountLogged = false;
   try {
     const result = await requestMidasHistory(
@@ -179,8 +179,8 @@ async function readMidas(ctx, button) {
     if (fetchedAssets.length) {
       for (const asset of fetchedAssets) {
         logMidas(asset.partial
-          ? `${asset.code}: yerel fiyat geçmişi güncellendi (${asset.prices.length} yeni nokta, kaynak: ${asset.source}).`
-          : `${asset.code}: 3 yıllık fiyat geçmişi alındı (${asset.prices.length} fiyat noktası, kaynak: ${asset.source}); yalnızca bu tarayıcıdaki havuza eklendi.`);
+          ? `${asset.code}: fiyat geçmişi güncellendi (${asset.prices.length} yeni nokta, kaynak: ${asset.source}); hesaba ait ortak havuzla eşitlendi.`
+          : `${asset.code}: 3 yıllık fiyat geçmişi alındı (${asset.prices.length} fiyat noktası, kaynak: ${asset.source}); hesaba ait ortak fiyat havuzuna kaydedildi.`);
       }
       if (storedCount) ctx.refresh();
     }

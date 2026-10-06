@@ -17,6 +17,7 @@ function defaultState() {
     activeProfile: 'ana',
     profiles: [{ id: 'ana', name: 'Portföyüm' }],
     tx: [],
+    marketAssets: [],
     settings: { theme: 'auto', riskFree: 40, costMethod: 'ortalama' },
   };
 }
@@ -31,6 +32,7 @@ function migrate(raw) {
   };
   if (!Array.isArray(state.profiles) || !state.profiles.length) state.profiles = base.profiles;
   if (!Array.isArray(state.tx)) state.tx = [];
+  if (!Array.isArray(state.marketAssets)) state.marketAssets = [];
   // Silinmiş profile bağlı işlemleri ilk profile taşı.
   const ids = new Set(state.profiles.map((p) => p.id));
   for (const t of state.tx) if (!ids.has(t.profile)) t.profile = state.profiles[0].id;
@@ -105,7 +107,15 @@ function persist() {
 }
 
 export const getState = () => state;
+export const getMarketAssets = () => state.marketAssets;
 export const subscribe = (fn) => { listeners.add(fn); return () => listeners.delete(fn); };
+
+/** Store fetched market histories in the account-synced state. */
+export function saveMarketAssets(assets) {
+  state.marketAssets = Array.isArray(assets) ? assets : [];
+  persist();
+  return state.marketAssets.length;
+}
 
 /* ------------------------------------------------------------------ profiller */
 
