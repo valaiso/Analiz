@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Analiz · Midas işlem aktarımı",
-  "version": "0.18.0",
+  "version": "0.19.0",
   "description": "Açık Midas işlem geçmişini kullanıcı isteğiyle Analiz'e yerel olarak aktarır.",
   "icons": {
     "16": "iconV1.png",
@@ -18,7 +18,9 @@
   },
   "host_permissions": [
     "https://atlas.getmidas.com/*",
-    "https://valaiso.github.io/Analiz/*"
+    "https://valaiso.github.io/Analiz/*",
+    "https://query1.finance.yahoo.com/*",
+    "https://www.tefas.gov.tr/*"
   ],
   "background": { "service_worker": "service-worker.js" },
   "content_scripts": [

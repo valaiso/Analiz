@@ -1,7 +1,7 @@
 const CHANNEL = 'ANALIZ_MIDAS_EXTENSION';
 
 /** Installed extension reads the already-open Atlas tab and returns visible rows. */
-export function requestMidasHistory(timeoutMs = 180_000) {
+export function requestMidasHistory(knownCodes = [], localAssets = [], timeoutMs = 600_000) {
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -24,10 +24,12 @@ export function requestMidasHistory(timeoutMs = 180_000) {
         scannedPages: data.response.scannedPages || 1,
         unmatchedCount: data.response.unmatchedCount || 0,
         accountSummary: data.response.accountSummary || null,
+        marketData: data.response.marketData || {},
+        marketErrors: data.response.marketErrors || {},
       });
     }
 
     window.addEventListener('message', receive);
-    window.postMessage({ channel: CHANNEL, type: 'READ', requestId }, location.origin);
+    window.postMessage({ channel: CHANNEL, type: 'READ', requestId, knownCodes, localAssets }, location.origin);
   });
 }

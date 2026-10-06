@@ -5,6 +5,13 @@ yalnızca ekranda görünen işlem geçmişi satırlarını okur. Parolaya, çer
 Midas'ın özel API uçlarına erişmez; ağ isteği ya da emir göndermez.
 Eklenti simgesi proje kökündeki `iconV1.png` görselini kullanır.
 
+Midas satırlarında bulunan ve Analiz'in yayımlanmış fiyat havuzunda olmayan semboller
+için kullanıcı **Midas’tan İşlemleri Oku** dediğinde 3 yıllık günlük fiyat aranır.
+Borsa kodları Yahoo Finance'tan, Midas satırında `Fon` olarak tanınan kayıtlar TEFAS'tan
+alınır. Bulunan geçmiş ve varlık bilgisi yalnızca Analiz'in bu tarayıcıdaki yerel
+havuzuna eklenir; GitHub Pages'teki ortak dosyalar değiştirilmez. Her sembol için geçmiş
+bulunmadan aktarım onayı açılmaz.
+
 ## Kurulum
 
 1. Chrome/Edge'de `chrome://extensions` / `edge://extensions` sayfasını açın.
@@ -15,7 +22,8 @@ Eklenti simgesi proje kökündeki `iconV1.png` görselini kullanır.
 6. Analiz'i ayrı sekmede yenileyin. **İşlemler → Midas Aktarımı → Midas’tan İşlemleri Oku** düğmesine basın.
 7. Önizlemede sembol, alış/satış, tarih, adet ve fiyatı kontrol edip içe aktarımı onaylayın.
 
-Eklenti yalnızca iki site için erişim izni ister: Midas Atlas ve Analiz GitHub Pages adresi.
+Eklenti Midas Atlas ve Analiz GitHub Pages adreslerinin yanı sıra Yahoo Finance ve
+TEFAS fiyat kaynaklarına erişim izni ister.
 İçe aktarılan işlemler `localStorage` içinde ayrı bir anahtarda tutulur; Supabase portföy
 durumuna eklenmez. Uygulamanın diğer portföy verileri, kullanıcı Supabase hesabında oturum
 açtıysa mevcut davranış gereği Supabase'e eşitlenir. Midas kayıtları yedek dışa aktarımına dahil edilir.
@@ -28,3 +36,5 @@ kullanır; alım/satım emirlerine dokunmaz. Midas'ın açık olan tablo aralı�
 sayfalar taranır.
 Miktar, fiyat, tarih ya da sembol güvenle okunamazsa satır içe aktarılmaz. Midas
 arayüzü değişirse içerik okuyucusunun güncellenmesi gerekebilir.
+Fiyat kaynağında 3 yıllık geçmiş bulunmayan yeni semboller aktarım önizlemesini
+tamamlamaz; fonlarda TEFAS'ın ilgili kod için fiyat döndürmesi gerekir.

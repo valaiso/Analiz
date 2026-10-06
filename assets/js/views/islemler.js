@@ -3,7 +3,7 @@
 import {
   h, tl, money, units as fmtUnits, fmtDate, toast, confirmDialog, isNum, openModal,
 } from '../util.js';
-import { DB, priceOnDate, lastDate, indexForDate } from '../data.js';
+import { DB, priceOnDate, lastDate, indexForDate, addLocalMarketAssets } from '../data.js';
 import {
   transactions, addTransaction, updateTransaction, removeTransaction,
   activeProfileId, profiles, addMidasTransactions,
@@ -45,7 +45,7 @@ async function copyMidasLog(field) {
   toast('Aktarım mesajı kopyalandı');
 }
 
-function showMidasPreview(rows, scanInfo, ctx) {
+function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}) {
   const candidates = rows.map((row) => ({
     ...row,
     missing: [...(row.missing || [])],
@@ -81,8 +81,9 @@ function showMidasPreview(rows, scanInfo, ctx) {
 
   const quoteNotice = unknownCodes.length
     ? h('div', { class: 'notice warn' },
-      `İşlemler yine de içe aktarılabilir. ${unknownCodes.join(', ')} kodları uygulamanın fiyat geçmişinde yok; `
-      + 'bu varlıklar işlem geçmişinde ve portföyde “fiyat yok” görünür, güncel değer/kâr-zarar fiyat verisi eklenene kadar hesaplanmaz.')
+      `${unknownCodes.join(', ')} için 3 yıllık fiyat geçmişi alınamadı. Bu kodların işlemleri aktarılmayacak. `
+      + 'Midas kodunun borsa sembolüyle aynı olduğunu kontrol edin; yeni hisse/ETF ve TEFAS fon geçmişi için yeniden deneyin. '
+      + Object.entries(marketErrors).map(([code, error]) => `${code}: ${error}`).join(' · '))
     : null;
 
   const unmatchedContent = unmatched.length
@@ -95,7 +96,7 @@ function showMidasPreview(rows, scanInfo, ctx) {
   const actions = h('div', { class: 'btn-row', style: 'justify-content:flex-end' },
     h('button', { class: 'btn', type: 'button', onclick: () => close() }, 'Vazgeç'),
     h('button', {
-      class: 'btn btn-primary', type: 'button', disabled: !ready.length,
+      class: 'btn btn-primary', type: 'button', disabled: !ready.length || unknownCodes.length > 0,
       onclick: () => {
         const count = addMidasTransactions(ready);
         logMidas(`${count} işlem yerel tarayıcıya eklendi; ${ready.length - count} tekrar olduğu için atlandı.`);
@@ -103,13 +104,13 @@ function showMidasPreview(rows, scanInfo, ctx) {
         toast(count ? `${count} Midas işlemi yerel olarak eklendi` : 'Bu işlemler zaten kayıtlı');
         ctx.refresh();
       },
-    }, `${ready.length} işlemi içe aktar`));
+    }, unknownCodes.length ? 'Fiyat geçmişi tamamlanınca aktar' : `${ready.length} işlemi içe aktar`));
 
   const body = h('div', { class: 'stack' },
     h('p', { class: 'dim' },
-      `${candidates.length} satır okundu (${scanInfo.scannedPages} sayfa). ${ready.length} satır gerekli işlem alanlarıyla içe aktarılabilir; `
-      + `${unknownCodes.length} kodda fiyat geçmişi yok, ${unmatched.length} satırda tarih/kod/miktar/fiyat bilgisi eksik. `
-      + 'Midas’a hiçbir emir gönderilmez. Onaylanan kayıtlar bu tarayıcıda yerel saklanır.'),
+      `${candidates.length} satır okundu (${scanInfo.scannedPages} sayfa). ${ready.length} satır işlem bilgisi açısından tam; `
+      + `${unknownCodes.length} kodda 3 yıllık fiyat geçmişi hâlâ eksik, ${unmatched.length} satırda işlem bilgisi eksik. `
+      + 'Aktarım için tüm sembollerin fiyat geçmişi gerekir. Midas’a hiçbir emir gönderilmez; alınan ek fiyat verileri ve işlemler bu tarayıcıda saklanır.'),
     quoteNotice,
     readyContent,
     unmatchedContent,
@@ -118,11 +119,16 @@ function showMidasPreview(rows, scanInfo, ctx) {
 }
 async function readMidas(ctx, button) {
   button.disabled = true;
-  button.textContent = 'Midas emir geçmişi taranıyor…';
+  button.textContent = 'Midas ve fiyat verileri okunuyor…';
   logMidas('Midas emir geçmişi taraması başlatıldı.');
+  logMidas('Fiyat havuzunda olmayan semboller için otomatik 3 yıllık fiyat geçmişi aranacak; mevcut yerel ek varlıkların fiyatları da yenilenecek.');
   let accountLogged = false;
   try {
-    const result = await requestMidasHistory();
+    const result = await requestMidasHistory(
+      DB.funds.map((fund) => fund.code),
+      DB.funds.filter((fund) => fund.localMarketData)
+        .map((fund) => ({ code: fund.code, source: fund.catSrc })),
+    );
     if (result.accountSummary) {
       logMidasAccount(result.accountSummary);
       accountLogged = true;
@@ -132,7 +138,6 @@ async function readMidas(ctx, button) {
       throw new Error('Tamamlanmış emir satırı bulunamadı. Midas “Emir geçmişi” tablosunda “Gerçekleşti/Tamamlandı” durumundaki kayıtları göster; bekleyen ve iptal emirleri aktarılmaz.');
     }
     const valid = rows.filter((row) => !row.missing?.length);
-    const unknownCodes = [...new Set(valid.filter((row) => !DB.byCode.has(row.code)).map((row) => row.code))];
     logMidas(`${result.scannedPages} sayfa tarandı; ${rows.length} satır okundu, ${valid.length} satır aktarılabilir, ${rows.length - valid.length} satır eksik bilgi içeriyor.`);
     if (rows.length && !valid.length) {
       const missingCounts = new Map();
@@ -144,8 +149,22 @@ async function readMidas(ctx, button) {
         if (row.diagnostic) logMidas(`Satır tanısı ${index + 1}: ${row.diagnostic}`);
       }
     }
-    if (unknownCodes.length) logMidas(`Fiyat verisi bulunmayan semboller: ${unknownCodes.join(', ')}. İşlemleri yine de aktarabilirsiniz; portföyde geçici olarak “fiyat yok” görünür.`);
-    showMidasPreview(rows, result, ctx);
+    const fetchedAssets = Object.values(result.marketData || {});
+    const storedCount = addLocalMarketAssets(fetchedAssets);
+    if (fetchedAssets.length) {
+      for (const asset of fetchedAssets) {
+        logMidas(asset.partial
+          ? `${asset.code}: yerel fiyat geçmişi güncellendi (${asset.prices.length} yeni nokta, kaynak: ${asset.source}).`
+          : `${asset.code}: 3 yıllık fiyat geçmişi alındı (${asset.prices.length} fiyat noktası, kaynak: ${asset.source}); yalnızca bu tarayıcıdaki havuza eklendi.`);
+      }
+      if (storedCount) ctx.refresh();
+    }
+    for (const [code, error] of Object.entries(result.marketErrors || {})) {
+      logMidas(`${code}: ${error}`);
+    }
+    const stillUnknown = [...new Set(valid.filter((row) => !DB.byCode.has(row.code)).map((row) => row.code))];
+    if (stillUnknown.length) logMidas(`3 yıllık fiyat verisi alınamayan semboller: ${stillUnknown.join(', ')}. Bu semboller tamamlanmadan aktarım onayı açılmayacak.`);
+    showMidasPreview(rows, result, ctx, result.marketErrors || {});
   } catch (error) {
     if (!accountLogged && error.accountSummary) logMidasAccount(error.accountSummary);
     logMidas(`HATA: ${error.message}`);

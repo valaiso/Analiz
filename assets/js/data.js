@@ -5,6 +5,7 @@
 import { isNum } from './util.js';
 
 const DATA_URL = new URL('../../data/', import.meta.url).href;
+const LOCAL_ASSET_KEY = 'analiz-local-market-assets-v1';
 
 export const DB = {
   funds: [],            // funds.json içeriği
@@ -36,13 +37,88 @@ export async function loadCore({ bypassCache = false } = {}) {
     getJSON('benchmarks.json', opt).catch(() => ({})),
     getJSON('meta.json', opt).catch(() => ({})),
   ]);
-  DB.funds = funds;
   DB.calendar = calendar;
   DB.benchmarks = benchmarks || {};
   DB.meta = meta || {};
-  DB.byCode = new Map(funds.map((f) => [f.code, f]));
   DB.indexOf = new Map(calendar.map((d, i) => [d, i]));
+  const localAssets = readLocalAssets();
+  const serverCodes = new Set(funds.map((fund) => fund.code));
+  const localFunds = localAssets.filter((asset) => !serverCodes.has(asset.code))
+    .map((asset) => installAssetInMemory(asset)).filter(Boolean);
+  DB.funds = [...funds, ...localFunds];
+  DB.byCode = new Map(DB.funds.map((f) => [f.code, f]));
   return DB;
+}
+
+function readLocalAssets() {
+  try {
+    const value = JSON.parse(localStorage.getItem(LOCAL_ASSET_KEY) || '[]');
+    return Array.isArray(value) ? value.filter((asset) => asset?.code && Array.isArray(asset.prices)) : [];
+  } catch {
+    return [];
+  }
+}
+
+function installAssetInMemory(asset) {
+  const byIndex = new Map();
+  for (const point of asset.prices) {
+    if (!point?.date || !isNum(point.price) || point.price <= 0) continue;
+    const idx = indexForDate(point.date);
+    if (idx >= 0) byIndex.set(idx, point.price);
+  }
+  if (!byIndex.size) return null;
+  const first = Math.min(...byIndex.keys());
+  const end = Math.max(...byIndex.keys());
+  const prices = Array.from({ length: end - first + 1 }, (_, offset) => byIndex.get(first + offset) ?? null);
+  const history = { i: first, p: prices, filled: forwardFill(prices), local: true };
+  historyCache.set(asset.code, history);
+  const latest = asset.prices[asset.prices.length - 1];
+  return {
+    code: asset.code, name: asset.name || asset.code, kind: asset.kind || 'HISSE',
+    cat: asset.category || 'Hisse Senedi', catSrc: asset.source || 'local',
+    currency: asset.currency || 'TRY', price: latest?.price ?? null,
+    date: latest?.date || null, chg: null, ret: {}, vol: null, mdd: null,
+    size: 0, inv: 0, alloc: {}, i0: first, n: prices.length, localMarketData: true,
+  };
+}
+
+/** Add fetched market history to this browser's private data pool. */
+export function addLocalMarketAssets(assets) {
+  const current = new Map(readLocalAssets().map((asset) => [asset.code, asset]));
+  let added = 0;
+  for (const asset of assets || []) {
+    if (!asset?.code || !Array.isArray(asset.prices) || (!asset.partial && asset.prices.length < 20)) continue;
+    const code = String(asset.code).trim().toLocaleUpperCase('tr');
+    const existingMeta = DB.byCode.get(code);
+    if (existingMeta && !existingMeta.localMarketData) continue;
+    const clean = {
+      code, name: String(asset.name || code), kind: String(asset.kind || 'HISSE'),
+      category: String(asset.category || 'Hisse Senedi'), currency: asset.currency === 'USD' ? 'USD' : 'TRY',
+      source: String(asset.source || current.get(code)?.source || 'local'),
+      prices: asset.prices.filter((point) => point?.date && isNum(point.price) && point.price > 0)
+        .map((point) => ({ date: String(point.date).slice(0, 10), price: Number(point.price) }))
+        .sort((a, b) => a.date.localeCompare(b.date)),
+    };
+    const previous = current.get(code);
+    if (asset.partial && previous) {
+      const byDate = new Map(previous.prices.map((point) => [point.date, point.price]));
+      for (const point of clean.prices) byDate.set(point.date, point.price);
+      clean.prices = [...byDate].map(([date, price]) => ({ date, price }))
+        .sort((a, b) => a.date.localeCompare(b.date));
+    }
+    if (clean.prices.length < 20) continue;
+    current.set(code, clean);
+    const fund = installAssetInMemory(clean);
+    if (fund) {
+      const existingIndex = DB.funds.findIndex((entry) => entry.code === code);
+      if (existingIndex >= 0) DB.funds[existingIndex] = fund;
+      else DB.funds.push(fund);
+      DB.byCode.set(code, fund);
+      added += 1;
+    }
+  }
+  if (added) localStorage.setItem(LOCAL_ASSET_KEY, JSON.stringify([...current.values()]));
+  return added;
 }
 
 /** Bir fonun fiyat geçmişini yükler (önbelleklenir). */
