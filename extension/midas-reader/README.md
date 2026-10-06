@@ -6,14 +6,18 @@ Midas'ın özel API uçlarına erişmez; ağ isteği ya da emir göndermez.
 Eklenti simgesi proje kökündeki `iconV1.png` görselini kullanır.
 
 Midas satırlarında bulunan ve Analiz'in yayımlanmış fiyat havuzunda olmayan semboller
-için kullanıcı **Midas’tan İşlemleri Oku** dediğinde 3 yıllık günlük fiyat aranır.
+için kullanıcı **Midas’tan İşlemleri Oku** dediğinde açık alış döneminin başlangıcından
+itibaren günlük fiyat aranır. Bu tarih Midas işlem geçmişinden çıkarılamazsa üç yıllık
+geçmiş kullanılır.
 Borsa kodları Yahoo Finance'tan, Midas satırında `Fon` olarak tanınan kayıtlar TEFAS'tan
 alınır. Bulunan geçmiş ve varlık bilgisi yalnızca Analiz'in bu tarayıcıdaki yerel
 havuzuna eklenir; GitHub Pages'teki ortak dosyalar değiştirilmez. Her sembol için geçmiş
 bulunmadan aktarım onayı açılmaz.
-Yerel havuz, işlem listesinden bağımsızdır: varlık satılsa veya işlem kaydı silinse de
-3 yıllık geçmiş Edge'in bu siteye ait yerel depolamasında kalır. Aynı varlık yeniden
-alındığında geçmiş tekrar indirilmez; Midas eşlemesi sırasında son fiyatı yenilenir.
+Ek fiyat geçmişi hesaba özel havuzda tutulur ve işlem alış tarihinden önceki noktalar
+saklanmaz. Varlık tamamen satıldığında, Midas eşitlemesi bu durumu gördüğünde o varlığa
+ait Midas işlem geçmişini ve hesaba özel ek fiyat geçmişini temizler. Kısmi satışta
+mevcut alış dönemi korunur. Varlık yeniden alınırsa yeni alış tarihiyle yeni dönem başlar.
+Analiz'in GitHub Pages'te yayımlanan genel fiyat dosyaları bu temizlikten etkilenmez.
 Yahoo Finance varlık türü ve şirket/ETF adını sağlarsa yabancı ETF'ler “Yabancı ETF”
 olarak etiketlenir ve ekranda sağlayıcının tam adı kullanılır.
 

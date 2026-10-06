@@ -123,53 +123,6 @@ export function attribution(holdings, netInvested) {
     .sort((a, b) => b.points - a.points);
 }
 
-/* ------------------------------------------------------------ zamanlama kalitesi */
-
-/**
- * Alım fiyatlarını, elde tutulan dönemin ortalama piyasa fiyatıyla karşılaştırır.
- *
- * Negatif fark = ortalamanın altında alım (iyi zamanlama), pozitif = üstünde.
- * Yalnızca alışlar dikkate alınır; dönem, ilk alımdan bugüne kadardır.
- */
-export function timingQuality(txs) {
-  const fonlar = new Map();
-  for (const t of txs) {
-    if (t.type === 'SAT' || !isNum(t.units) || !isNum(t.price)) continue;
-    const f = fonlar.get(t.code) || { adet: 0, tutar: 0, invested: 0, ilkIdx: Infinity };
-    f.adet += t.units;
-    f.tutar += t.units * t.price;
-    const tradeIdx = Math.max(0, indexForDate(t.date));
-    f.invested += (t.units * t.price + (Number(t.fee) || 0)) * fxToTRY(t.code, tradeIdx);
-    f.ilkIdx = Math.min(f.ilkIdx, tradeIdx);
-    fonlar.set(t.code, f);
-  }
-
-  const son = lastIndex();
-  const out = [];
-  for (const [code, f] of fonlar) {
-    if (!(f.adet > EPS) || !Number.isFinite(f.ilkIdx)) continue;
-    const hist = cachedHistory(code);
-    if (!hist) continue;
-    let toplam = 0, sayi = 0;
-    for (let i = f.ilkIdx; i <= son; i++) {
-      const p = priceAtIndex(hist, i);
-      if (isNum(p) && p > 0) { toplam += p; sayi += 1; }
-    }
-    if (sayi < 5) continue;
-    const ortalamaPiyasa = toplam / sayi;
-    const ortalamaMaliyet = f.tutar / f.adet;
-    out.push({
-      code,
-      avgCost: ortalamaMaliyet,
-      avgMarket: ortalamaPiyasa,
-      diffPct: (ortalamaMaliyet / ortalamaPiyasa - 1) * 100,
-      invested: f.invested,
-      days: son - f.ilkIdx,
-    });
-  }
-  return out.sort((a, b) => a.diffPct - b.diffPct);
-}
-
 /* --------------------------------------------------------------- nakit akışı */
 
 /** Ay bazında net yatırılan tutar ve yıl bazında gerçekleşen kâr/zarar. */

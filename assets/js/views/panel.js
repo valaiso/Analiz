@@ -5,7 +5,7 @@ import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, money, cls, isNum, 
 import { DB } from '../data.js';
 import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
-import { timingQuality, cashflowCalendar } from '../insights.js';
+import { cashflowCalendar } from '../insights.js';
 import { transactions, daysSinceBackup, getMidasAccountSnapshot } from '../store.js';
 import { currentMidasPositions, addSiteMarketMetrics, groupAssetRows } from '../asset-groups.js';
 import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable } from './common.js';
@@ -280,43 +280,6 @@ export function renderPanel(ctx) {
 
     root.append(sectionCard('Pozisyonlar', `${open.length} açık fon · satır tıklanabilir`,
       table.element));
-  }
-
-  /* ---------------------------------------------------------- zamanlama kalitesi */
-
-  const activeCodes = hasMidasTotal
-    ? new Set([...snapshotPositions, ...localCrypto].map((position) => position.code)) : null;
-  const zamanlama = timingQuality(txs).filter((row) => !activeCodes || activeCodes.has(row.code));
-  if (zamanlama.length) {
-    const agirlik = zamanlama.reduce((s2, z) => s2 + z.invested, 0);
-    const ortalama = agirlik > 0
-      ? zamanlama.reduce((s2, z) => s2 + z.diffPct * z.invested, 0) / agirlik : null;
-
-    const timingTable = (rows) => h('div', { class: 'table-wrap' }, h('table', {},
-      h('thead', {}, h('tr', {},
-        h('th', { style: 'text-align:left' }, 'Varlık'),
-        h('th', {}, 'Ort. alım fiyatın'),
-        h('th', {}, 'Dönemin ort. fiyatı'),
-        h('th', {}, 'Fark'),
-        h('th', {}, 'Yatırdığın'))),
-      h('tbody', {}, rows.map((z) => h('tr', {},
-        h('td', {}, h('span', { class: 'code-chip' }, z.code)),
-        h('td', {}, money(z.avgCost)),
-        h('td', {}, money(z.avgMarket)),
-        h('td', { class: z.diffPct < 0 ? 'up' : 'down' }, pctSigned(z.diffPct, 1)),
-        h('td', {}, tl(z.invested)))))));
-    root.append(sectionCard('Zamanlama Kalitesi',
-      hasMidasTotal ? 'Yalnızca Midas’ta şu anda açık görünen varlıklar' : 'Alım fiyatların, tuttuğun varlıkların ortalama piyasa fiyatına göre',
-      h('p', { class: 'dim', style: 'margin:0 0 12px;font-size:.85rem' },
-        isNum(ortalama)
-          ? (ortalama < 0
-            ? `Ağırlıklı ortalamada, tuttuğun dönemin ortalama fiyatının ${pct(Math.abs(ortalama), 1)} `
-              + 'altından almışsın.'
-            : `Ağırlıklı ortalamada, tuttuğun dönemin ortalama fiyatının ${pct(ortalama, 1)} `
-              + 'üstünden almışsın.')
-          : ''),
-      groupAssetRows(zamanlama).map((group) => sectionCard(group.label,
-        `${group.rows.length} açık varlık · işlem kayıtlarından zamanlama`, timingTable(group.rows)))));
   }
 
   /* --------------------------------------------------------------- nakit akışı */

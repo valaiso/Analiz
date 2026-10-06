@@ -117,6 +117,21 @@ export function saveMarketAssets(assets) {
   return state.marketAssets.length;
 }
 
+/** Remove completed Midas cycles and keep only the currently open cycle. */
+export function pruneMidasHistory(activeCycleStarts = {}, closedCodes = []) {
+  const closed = new Set((closedCodes || []).map((code) => String(code).toLocaleUpperCase('tr')));
+  const before = midasTx.length;
+  midasTx = midasTx.filter((tx) => {
+    const code = String(tx.code || '').toLocaleUpperCase('tr');
+    if (closed.has(code)) return false;
+    const startDate = activeCycleStarts[code];
+    return !startDate || tx.date >= startDate;
+  });
+  const removed = before - midasTx.length;
+  if (removed) persistMidasTransactions();
+  return removed;
+}
+
 /* ------------------------------------------------------------------ profiller */
 
 export const profiles = () => state.profiles;

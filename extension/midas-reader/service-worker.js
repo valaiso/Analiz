@@ -18,8 +18,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return;
       }
       const known = new Set((message.knownCodes || []).map((code) => String(code).toUpperCase()));
+      const positionCodes = new Set((result.positions || [])
+        .map((position) => String(position.code || '').toUpperCase()).filter(Boolean));
+      const positionsRead = positionCodes.size > 0;
       const missingRows = (result.rows || [])
-        .filter((row) => !row.missing?.length && row.code && !known.has(String(row.code).toUpperCase()));
+        .filter((row) => !row.missing?.length && row.code && !known.has(String(row.code).toUpperCase())
+          && (!positionsRead || positionCodes.has(String(row.code).toUpperCase())));
       const missingPositionCodes = (result.positions || [])
         .filter((position) => position.code && !known.has(String(position.code).toUpperCase()))
         .map((position) => String(position.code).toUpperCase());
@@ -27,6 +31,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         ...missingRows.map((row) => String(row.code).toUpperCase()),
         ...missingPositionCodes,
       ])];
+      const cycleStarts = activePurchaseStarts(result.rows || []);
       const fundCodes = new Set([...(message.fundCodes || []).map((code) => String(code).toUpperCase()), ...missingRows
         .filter((row) => /\bfon\s+(?:alış|alım|satış|satım)\b/i.test(row.rawText || ''))
         .map((row) => String(row.code).toUpperCase())]);
@@ -34,7 +39,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const marketErrors = {};
       for (const code of missingCodes) {
         try {
-          const asset = await fetchAssetHistory(code, fundCodes.has(code));
+          const asset = await fetchAssetHistory(code, fundCodes.has(code), '3y', cycleStarts[code] || '');
           if (asset) marketData[code] = asset;
           else marketErrors[code] = 'Yahoo Finance veya TEFAS 3 yıllık geçmiş döndürmedi.';
         } catch (error) {
@@ -46,7 +51,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (!code || marketData[code]) continue;
         try {
           const asset = await fetchAssetHistory(code, localAsset.source === 'TEFAS', '1mo');
-          if (asset) marketData[code] = { ...asset, partial: true };
+          if (asset) marketData[code] = { ...asset, partial: true, startDate: localAsset.startDate || '' };
           else marketErrors[code] = 'Güncel fiyat yenilenemedi; önceki yerel fiyat geçmişi korunuyor.';
         } catch (error) {
           marketErrors[code] = `Güncel fiyat yenilenemedi; önceki geçmiş korunuyor. ${error.message || ''}`.trim();
@@ -74,8 +79,39 @@ function isoDate(timestamp, timezone) {
   return `${values.year}-${values.month}-${values.day}`;
 }
 
-async function yahooHistory(code, ticker, range = '3y') {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=${range}&interval=1d&events=history`;
+function activePurchaseStarts(rows) {
+  const groups = new Map();
+  for (const row of rows || []) {
+    const code = String(row.code || '').toUpperCase();
+    if (!code || !row.date || !(Number(row.units) > 0) || !['AL', 'SAT'].includes(row.type)) continue;
+    if (!groups.has(code)) groups.set(code, []);
+    groups.get(code).push(row);
+  }
+  const starts = {};
+  for (const [code, events] of groups) {
+    events.sort((a, b) => a.date.localeCompare(b.date));
+    let units = 0, startDate = '';
+    for (const row of events) {
+      if (row.type === 'AL') {
+        if (units <= 1e-8) startDate = row.date;
+        units += Number(row.units);
+      } else {
+        units = Math.max(0, units - Number(row.units));
+        if (units <= 1e-8) { units = 0; startDate = ''; }
+      }
+    }
+    if (units > 1e-8 && startDate) starts[code] = startDate;
+  }
+  return starts;
+}
+
+async function yahooHistory(code, ticker, range = '3y', startDate = '') {
+  const params = new URLSearchParams({ interval: '1d', events: 'history' });
+  if (/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
+    params.set('period1', String(Math.floor(new Date(`${startDate}T00:00:00Z`).getTime() / 1000)));
+    params.set('period2', String(Math.floor(Date.now() / 1000) + 86400));
+  } else params.set('range', range);
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?${params}`;
   const response = await fetch(url, { cache: 'no-store' });
   if (!response.ok) throw new Error(`Yahoo Finance HTTP ${response.status}`);
   const payload = await response.json();
@@ -86,7 +122,7 @@ async function yahooHistory(code, ticker, range = '3y') {
     date: isoDate(timestamp, chart.meta?.exchangeTimezoneName),
     price: Number(closes[index]),
   })).filter((point) => Number.isFinite(point.price) && point.price > 0);
-  if (prices.length < (range === '3y' ? 20 : 1)) return null;
+  if (prices.length < (startDate || range !== '3y' ? 1 : 20)) return null;
   const quoteType = String(chart.meta?.instrumentType || '').toUpperCase();
   const isBist = ticker.endsWith('.IS') && chart.meta?.currency === 'TRY';
   const kind = quoteType === 'ETF' ? (isBist ? 'BIST_ETF' : 'US_ETF') : (isBist ? 'HISSE' : 'US_STOCK');
@@ -95,7 +131,8 @@ async function yahooHistory(code, ticker, range = '3y') {
     code, name, kind,
     category: quoteType === 'ETF' ? (isBist ? 'Borsa Yatırım Fonu' : 'Yabancı ETF')
       : (isBist ? 'Hisse Senedi' : 'Yabancı Hisse'),
-    currency: chart.meta?.currency || (isBist ? 'TRY' : 'USD'), source: 'Yahoo Finance', prices,
+    currency: chart.meta?.currency || (isBist ? 'TRY' : 'USD'), source: 'Yahoo Finance',
+    startDate: /^\d{4}-\d{2}-\d{2}$/.test(startDate) ? startDate : '', prices,
   };
 }
 
@@ -124,10 +161,10 @@ async function tefasChunk(code, kind, start, end) {
     .filter((row) => /^\d{4}-\d{2}-\d{2}$/.test(row.date) && Number.isFinite(row.price) && row.price > 0);
 }
 
-async function tefasHistory(code) {
+async function tefasHistory(code, purchaseDate = '') {
   const end = new Date();
-  const start = new Date(end);
-  start.setFullYear(start.getFullYear() - 3);
+  const start = /^\d{4}-\d{2}-\d{2}$/.test(purchaseDate) ? new Date(`${purchaseDate}T00:00:00Z`) : new Date(end);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(purchaseDate)) start.setFullYear(start.getFullYear() - 3);
   for (const kind of ['YAT', 'EMK', 'BYF']) {
     // First verify this code belongs to this TEFAS market with a recent window.
     let recent;
@@ -147,10 +184,11 @@ async function tefasHistory(code) {
       await delay(1200);
     }
     const prices = [...byDate.values()].sort((a, b) => a.date.localeCompare(b.date));
-    if (prices.length >= 20) return {
+    if (prices.length >= (purchaseDate ? 1 : 20)) return {
       code, name: prices.find((row) => row.name)?.name || code, kind,
       category: kind === 'BYF' ? 'Borsa Yatırım Fonu' : kind === 'EMK' ? 'Emeklilik Fonu' : 'Yatırım Fonu',
-      currency: 'TRY', source: 'TEFAS', prices: prices.map(({ date, price }) => ({ date, price })),
+      currency: 'TRY', source: 'TEFAS', startDate: purchaseDate,
+      prices: prices.map(({ date, price }) => ({ date, price })),
     };
   }
   return null;
@@ -175,16 +213,16 @@ async function tefasLatest(code) {
   return null;
 }
 
-async function fetchAssetHistory(code, isFund, range = '3y') {
-  if (isFund) return range === '3y' ? tefasHistory(code) : tefasLatest(code);
+async function fetchAssetHistory(code, isFund, range = '3y', purchaseDate = '') {
+  if (isFund) return range === '3y' ? tefasHistory(code, purchaseDate) : tefasLatest(code);
   // Midas symbols are normally Turkish tickers; then try a direct US symbol.
   for (const ticker of [`${code}.IS`, code]) {
     try {
-      const data = await yahooHistory(code, ticker, range);
+      const data = await yahooHistory(code, ticker, range, purchaseDate);
       if (data) return data;
     } catch {
       // Try the next market/source; do not interrupt importing other codes.
     }
   }
-  return range === '3y' ? tefasHistory(code) : tefasLatest(code);
+  return range === '3y' ? tefasHistory(code, purchaseDate) : tefasLatest(code);
 }

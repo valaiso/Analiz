@@ -101,7 +101,7 @@ function installAssetInMemory(asset) {
   return {
     code: asset.code, name: asset.name || asset.code, kind: asset.kind || 'HISSE',
     cat: asset.category || 'Hisse Senedi', catSrc: asset.source || 'local',
-    currency: asset.currency || 'TRY', price: latest?.price ?? null,
+    currency: asset.currency || 'TRY', startDate: asset.startDate || null, price: latest?.price ?? null,
     date: latest?.date || null, chg: null, ret: {}, vol: null, mdd: null,
     size: 0, inv: 0, alloc: {}, i0: first, n: prices.length, localMarketData: true,
   };
@@ -120,18 +120,23 @@ export function addLocalMarketAssets(assets) {
       code, name: String(asset.name || code), kind: String(asset.kind || 'HISSE'),
       category: String(asset.category || 'Hisse Senedi'), currency: asset.currency === 'USD' ? 'USD' : 'TRY',
       source: String(asset.source || current.get(code)?.source || 'local'),
+      startDate: String(asset.startDate || current.get(code)?.startDate || ''),
       prices: asset.prices.filter((point) => point?.date && isNum(point.price) && point.price > 0)
         .map((point) => ({ date: String(point.date).slice(0, 10), price: Number(point.price) }))
+        .filter((point) => !asset.startDate && !current.get(code)?.startDate
+          || point.date >= String(asset.startDate || current.get(code)?.startDate))
         .sort((a, b) => a.date.localeCompare(b.date)),
     };
     const previous = current.get(code);
     if (asset.partial && previous) {
-      const byDate = new Map(previous.prices.map((point) => [point.date, point.price]));
+      const byDate = new Map(previous.prices
+        .filter((point) => !clean.startDate || point.date >= clean.startDate)
+        .map((point) => [point.date, point.price]));
       for (const point of clean.prices) byDate.set(point.date, point.price);
       clean.prices = [...byDate].map(([date, price]) => ({ date, price }))
         .sort((a, b) => a.date.localeCompare(b.date));
     }
-    if (clean.prices.length < 20) continue;
+    if (clean.prices.length < (clean.startDate ? 1 : 20)) continue;
     current.set(code, clean);
     const fund = installAssetInMemory(clean);
     if (fund) {
@@ -148,6 +153,45 @@ export function addLocalMarketAssets(assets) {
     saveMarketAssets(pool);
   }
   return added;
+}
+
+/** Trim account-owned histories to the active purchase cycle or remove them after a full sale. */
+export function pruneLocalMarketAssets(activeCycleStarts = {}, closedCodes = []) {
+  const closed = new Set((closedCodes || []).map((code) => String(code).toLocaleUpperCase('tr')));
+  const current = readLocalAssets();
+  const kept = [];
+  let removed = 0, trimmed = 0;
+  for (const asset of current) {
+    const code = String(asset.code).toLocaleUpperCase('tr');
+    if (closed.has(code)) { removed += 1; continue; }
+    const startDate = activeCycleStarts[code] || asset.startDate || '';
+    const prices = startDate ? asset.prices.filter((point) => point.date >= startDate) : asset.prices;
+    if (!prices.length) { removed += 1; continue; }
+    if (prices.length !== asset.prices.length || startDate !== (asset.startDate || '')) trimmed += 1;
+    kept.push({ ...asset, code, startDate, prices });
+  }
+  if (removed || trimmed) {
+    localStorage.setItem(LOCAL_ASSET_KEY, JSON.stringify(kept));
+    saveMarketAssets(kept);
+    const keptCodes = new Set(kept.map((asset) => asset.code));
+    DB.funds = DB.funds.filter((fund) => !fund.localMarketData || keptCodes.has(fund.code));
+    for (const asset of current) {
+      const code = String(asset.code).toLocaleUpperCase('tr');
+      if (closed.has(code) || activeCycleStarts[code]) {
+        historyCache.delete(code);
+        pending.delete(code);
+      }
+    }
+    for (const asset of kept) {
+      const fund = installAssetInMemory(asset);
+      if (!fund) continue;
+      const index = DB.funds.findIndex((entry) => entry.code === fund.code);
+      if (index >= 0) DB.funds[index] = fund;
+      else DB.funds.push(fund);
+    }
+    DB.byCode = new Map(DB.funds.map((fund) => [fund.code, fund]));
+  }
+  return { removed, trimmed };
 }
 
 /** Bir fonun fiyat geçmişini yükler (önbelleklenir). */
