@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
+import math
 import os
 import shutil
 import sqlite3
@@ -22,6 +23,25 @@ from categorize import categorize
 from tefas import Tefas, KIND_LABELS
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def _json_safe(value):
+    """Replace non-finite floats with JSON null before writing generated data."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    return value
+
+
+def _write_json(path: Path, value, *, indent=None) -> None:
+    text = json.dumps(
+        _json_safe(value), ensure_ascii=False, separators=(',', ':') if indent is None else None,
+        indent=indent, allow_nan=False,
+    )
+    path.write_text(text, encoding='utf-8')
 
 EKSTRA_ENSTRUMANLAR = {
     # ABD ETF'leri
@@ -243,7 +263,14 @@ def process_extra_assets(hist_dir: Path, calendar: list[str], index_of: dict[str
             if hist.empty:
                 continue
             
-            price_map = {d.strftime("%Y-%m-%d"): round(float(r["Close"]), 4) for d, r in hist.iterrows()}
+            price_map = {}
+            for day, row in hist.iterrows():
+                try:
+                    close = float(row["Close"])
+                except (TypeError, ValueError):
+                    continue
+                if math.isfinite(close) and close > 0:
+                    price_map[day.strftime("%Y-%m-%d")] = round(close, 4)
             matching_days = [d for d in calendar if d in price_map]
             if not matching_days:
                 continue
@@ -252,10 +279,7 @@ def process_extra_assets(hist_dir: Path, calendar: list[str], index_of: dict[str
             series = [price_map.get(d) for d in calendar[i0:i1 + 1]]
             
             # JSON olarak kaydet
-            (hist_dir / f"{code}.json").write_text(
-                json.dumps({"c": code, "i": i0, "p": series}, ensure_ascii=False, separators=(",", ":")),
-                encoding="utf-8"
-            )
+            _write_json(hist_dir / f"{code}.json", {"c": code, "i": i0, "p": series})
 
             last_p = price_map[matching_days[-1]]
             prev_p = price_map.get(calendar[i1 - 1]) if i1 > 0 else None
@@ -303,10 +327,7 @@ def build_site(conn: sqlite3.Connection, out_dir: Path, years: int) -> dict:
         for d, p in rows:
             series[index_of[d] - first_idx] = round(p, 6)
 
-        (hist_dir / f"{code}.json").write_text(
-            json.dumps({"c": code, "i": first_idx, "p": series}, ensure_ascii=False, separators=(",", ":")),
-            encoding="utf-8"
-        )
+        _write_json(hist_dir / f"{code}.json", {"c": code, "i": first_idx, "p": series})
 
         returns = {}
         for label, days in RETURN_WINDOWS.items():
@@ -334,19 +355,19 @@ def build_site(conn: sqlite3.Connection, out_dir: Path, years: int) -> dict:
     funds_out.extend(process_extra_assets(hist_dir, calendar, index_of))
     add_category_percentiles(funds_out)
 
-    (data_dir / "funds.json").write_text(json.dumps(funds_out, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
-    (data_dir / "calendar.json").write_text(json.dumps(calendar, separators=(",", ":")), encoding="utf-8")
+    _write_json(data_dir / "funds.json", funds_out)
+    _write_json(data_dir / "calendar.json", calendar)
 
     # Benchmarks
     bench = benchmarks.collect(dt.date.fromisoformat(calendar[0]), dt.date.fromisoformat(last_day), calendar)
-    (data_dir / "benchmarks.json").write_text(json.dumps(bench, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    _write_json(data_dir / "benchmarks.json", bench)
 
     info = {
         "built": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
         "lastDataDate": last_day, "firstDataDate": calendar[0], "days": len(calendar),
         "fundCount": len(funds_out), "years": years, "benchmarks": list(bench), "buckets": buckets.BUCKET_ORDER
     }
-    (data_dir / "meta.json").write_text(json.dumps(info, ensure_ascii=False, indent=1), encoding="utf-8")
+    _write_json(data_dir / "meta.json", info, indent=1)
 
     shutil.copy2(ROOT / "index.html", out_dir / "index.html")
     shutil.copytree(ROOT / "assets", out_dir / "assets")

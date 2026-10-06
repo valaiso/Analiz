@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import gzip
 import json
+import math
 import os
 import urllib.error
 import urllib.parse
@@ -71,9 +72,15 @@ def yahoo_series(symbol: str, start: dt.date, end: dt.date) -> dict[str, float]:
     for ts, close in zip(stamps, closes):
         if close is None:
             continue
+        try:
+            close = float(close)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(close) or close <= 0:
+            continue
         # Yahoo zaman damgasi borsanin yerel gunudur; UTC gunu yeterince dogru.
         day = dt.datetime.utcfromtimestamp(ts).date().isoformat()
-        out[day] = float(close)
+        out[day] = close
     return out
 
 
@@ -154,9 +161,11 @@ def _fetch_tufe_series(series_code: str, start: dt.date, end: dt.date) -> tuple[
             if period is None or raw_value in (None, "", "null"):
                 continue
             try:
-                values[period] = float(str(raw_value).replace(",", "."))
+                value = float(str(raw_value).replace(",", "."))
             except (ValueError, TypeError):
                 continue
+            if math.isfinite(value) and value > 0:
+                values[period] = value
         if values:
             return values, errors
         errors.append(f"{host}/{series_code}: JSON yanıtında seri gözlemi yok")

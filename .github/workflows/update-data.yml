@@ -139,6 +139,21 @@ jobs:
             --delay 3.0 \
             ${{ github.event.inputs.full == 'true' && '--full' || '' }}
 
+      - name: Üretilen JSON dosyalarını doğrula
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          def reject_non_json_constant(value):
+              raise ValueError(f"JSON standardı dışı sayı: {value}")
+
+          files = list(Path("dist").rglob("*.json"))
+          for path in files:
+              json.loads(path.read_text(encoding="utf-8"), parse_constant=reject_non_json_constant)
+          print(f"{len(files)} üretilen JSON dosyası geçerli")
+          PY
+
       - name: Veri deposunu kaydet
         uses: actions/cache/save@v4
         if: always()
