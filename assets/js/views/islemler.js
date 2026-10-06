@@ -392,7 +392,8 @@ export function renderIslemler(ctx) {
     return root;
   }
 
-  const rows = list.slice().reverse().map((t) => {
+  const historyRows = list.slice().reverse().slice(0, 20);
+  const rows = historyRows.map((t) => {
     const meta = DB.byCode.get(t.code);
     const { sym } = getAssetCurrency(t.code);
     const amount = t.units * t.price;
@@ -435,7 +436,8 @@ export function renderIslemler(ctx) {
         }, '🗑')));
   });
 
-  root.append(sectionCard('İşlem Geçmişi', `${list.length} kayıt · en yeniden eskiye`,
+  root.append(sectionCard('İşlem Geçmişi',
+    `${historyRows.length} kayıt gösteriliyor · ${list.length} toplam · en yeniden eskiye`,
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {},
         h('th', { style: 'text-align:left' }, 'Tarih'),
