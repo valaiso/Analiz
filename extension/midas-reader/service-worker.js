@@ -86,7 +86,9 @@ async function yahooHistory(code, ticker, range = '3y') {
   const kind = quoteType === 'ETF' ? (isBist ? 'BIST_ETF' : 'US_ETF') : (isBist ? 'HISSE' : 'US_STOCK');
   const name = chart.meta?.longName || chart.meta?.shortName || code;
   return {
-    code, name, kind, category: quoteType === 'ETF' ? 'ETF' : (isBist ? 'Hisse Senedi' : 'Yabancı Hisse'),
+    code, name, kind,
+    category: quoteType === 'ETF' ? (isBist ? 'Borsa Yatırım Fonu' : 'Yabancı ETF')
+      : (isBist ? 'Hisse Senedi' : 'Yabancı Hisse'),
     currency: chart.meta?.currency || (isBist ? 'TRY' : 'USD'), source: 'Yahoo Finance', prices,
   };
 }

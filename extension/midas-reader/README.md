@@ -11,6 +11,11 @@ Borsa kodları Yahoo Finance'tan, Midas satırında `Fon` olarak tanınan kayıt
 alınır. Bulunan geçmiş ve varlık bilgisi yalnızca Analiz'in bu tarayıcıdaki yerel
 havuzuna eklenir; GitHub Pages'teki ortak dosyalar değiştirilmez. Her sembol için geçmiş
 bulunmadan aktarım onayı açılmaz.
+Yerel havuz, işlem listesinden bağımsızdır: varlık satılsa veya işlem kaydı silinse de
+3 yıllık geçmiş Edge'in bu siteye ait yerel depolamasında kalır. Aynı varlık yeniden
+alındığında geçmiş tekrar indirilmez; Midas eşlemesi sırasında son fiyatı yenilenir.
+Yahoo Finance varlık türü ve şirket/ETF adını sağlarsa yabancı ETF'ler “Yabancı ETF”
+olarak etiketlenir ve ekranda sağlayıcının tam adı kullanılır.
 
 ## Kurulum
 
