@@ -53,8 +53,10 @@ export function addSiteMarketMetrics(positions) {
     if (!(units > 0)) return {
       ...position, units: null,
       dailyPLTRY: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null,
+      dailyPLNative: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null,
       dailyPct: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null,
       totalPLTRY: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null,
+      totalPLNative: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null,
       totalPct: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null,
       marketValueTRY: null, marketValuePrevTRY: null, siteDataAvailable: false,
     };
@@ -98,11 +100,13 @@ export function addSiteMarketMetrics(positions) {
       && Number.isFinite(previousPrice) && Number.isFinite(previousFx);
     const dailyPLTRY = noDailyChange ? 0 : hasPreviousPrice
       ? units * (price * fx - previousPrice * previousFx) : null;
-    const dailyPct = noDailyChange ? 0 : hasPreviousPrice && previousPrice * previousFx > 0
-      ? ((price * fx) / (previousPrice * previousFx) - 1) * 100 : null;
-    const totalPLTRY = hasSitePrice && Number.isFinite(avgCost)
+    const dailyPct = noDailyChange ? 0 : hasPreviousPrice && previousPrice > 0
+      ? ((price / previousPrice) - 1) * 100 : null;
+    const totalPLTRY = noDailyChange ? 0 : hasSitePrice && Number.isFinite(avgCost)
       ? units * (price - avgCost) * fx : null;
-    const totalPct = hasSitePrice && Number.isFinite(avgCost) && avgCost > 0
+    const totalPLNative = noDailyChange ? 0 : hasSitePrice && Number.isFinite(avgCost)
+      ? units * (price - avgCost) : null;
+    const totalPct = noDailyChange ? 0 : hasSitePrice && Number.isFinite(avgCost) && avgCost > 0
       ? ((price / avgCost) - 1) * 100 : null;
     return {
       ...position,
@@ -110,8 +114,10 @@ export function addSiteMarketMetrics(positions) {
       units,
       avgCost,
       dailyPLTRY,
+      dailyPLNative: noDailyChange ? 0 : hasPreviousPrice ? units * (price - previousPrice) : null,
       dailyPct,
       totalPLTRY,
+      totalPLNative,
       totalPct,
       marketValueTRY: hasSitePrice ? units * price * fx : null,
       marketValuePrevTRY: noDailyChange && hasSitePrice

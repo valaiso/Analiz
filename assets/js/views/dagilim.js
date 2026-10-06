@@ -9,6 +9,14 @@ import { sectionCard, emptyState } from './common.js';
 
 const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
 
+function signedCurrency(value, currency = 'TRY') {
+  if (!isNum(value)) return '—';
+  const rendered = new Intl.NumberFormat('tr-TR', {
+    style: 'currency', currency: currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2,
+  }).format(Math.abs(value));
+  return `${value > 0 ? '+' : value < 0 ? '−' : ''}${rendered}`;
+}
+
 export function renderDagilim(ctx) {
   const { analysis, navigate } = ctx;
   const { open, totals } = analysis;
@@ -17,6 +25,9 @@ export function renderDagilim(ctx) {
   const liveCodes = new Set((liveRaw || []).map((row) => row.code));
   const live = addSiteMarketMetrics(liveRaw || []);
   const midasTotal = getMidasAccountSnapshot()?.summary?.totalValue;
+  const liveValueTotal = live.reduce((sum, row) => sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0);
+  const liveValuesReconcile = !usingMidas || live.every((row) => isNum(row.marketValueTRY))
+    && (!Number.isFinite(midasTotal) || liveValueTotal <= midasTotal * 1.1);
   const localCrypto = usingMidas ? open.filter((row) => assetType(row.code) === 'Kripto' && !liveCodes.has(row.code)).map((row) => ({
     ...row, kind: 'CRYPTO', currency: 'TRY', allocationPct: null,
     dailyPLTRY: row.dayPL, totalPLTRY: row.totalPL, localRecord: true,
@@ -46,8 +57,10 @@ export function renderDagilim(ctx) {
     }
     const securitiesValue = priced.filter((row) => !row.localRecord)
       .reduce((sum, row) => sum + row.pieValue, 0);
-    const valuesReconcile = !Number.isFinite(midasTotal) || securitiesValue <= midasTotal * 1.1;
-    const cashValue = Number.isFinite(midasTotal) ? Math.max(0, midasTotal - securitiesValue) : 0;
+    const missingPositionValue = live.filter((row) => !(row.units > 0) || !isNum(row.marketValueTRY));
+    const valuesReconcile = liveValuesReconcile && !missingPositionValue.length
+      && (!Number.isFinite(midasTotal) || securitiesValue <= midasTotal * 1.1);
+    const cashValue = valuesReconcile && Number.isFinite(midasTotal) ? Math.max(0, midasTotal - securitiesValue) : 0;
     if (cashValue > 0.01) {
       byTypeMap.set('Nakit', (byTypeMap.get('Nakit') || 0) + cashValue);
       priced.push({ code: 'Nakit', pieValue: cashValue, kind: 'CASH' });
@@ -71,7 +84,9 @@ export function renderDagilim(ctx) {
         centerBottom: 'BIST toplamı',
       }))));
     else root.append(h('div', { class: 'notice warn' },
-      `Dağılım grafiği bekletiliyor: pozisyon fiyatlarından hesaplanan ${tl(securitiesValue)} değeri Midas hesap toplamı ${tl(midasTotal)} ile uyuşmuyor. Adet sütunlarını düzeltmek için Midas aktarımını yeniden çalıştır.`));
+      missingPositionValue.length
+        ? `Dağılım grafiği bekletiliyor: Midas adedi/fiyatı okunamayan varlıklar: ${missingPositionValue.map((row) => row.code).join(', ')}. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`
+        : `Dağılım grafiği bekletiliyor: pozisyon fiyatlarından hesaplanan ${tl(securitiesValue)} değeri Midas hesap toplamı ${tl(midasTotal)} ile uyuşmuyor. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`));
     root.append(h('div', { class: 'notice' },
       `ETF, fon ve hisse değerleri Midas’tan okunan adetlerle sitenin fiyat geçmişinden hesaplanır; ${live.filter((row) => row.marketValueTRY > 0).length}/${live.length} açık varlık grafiğe girdi. THF ve TP2 günlük değişimi %0 kabul edilir; değerleri portföye dahildir.`));
     const sortedGroups = groupAssetRows(positions).map((group) => ({
@@ -89,11 +104,11 @@ export function renderDagilim(ctx) {
         h('tbody', {}, rows.map((row) => h('tr', {},
           h('td', {}, h('span', { class: 'code-chip' }, row.code)),
           h('td', {}, fmtUnits(row.units)),
-          h('td', {}, isNum(row.marketValueTRY) ? tl(row.marketValueTRY) : '—'),
+          h('td', {}, liveValuesReconcile && isNum(row.marketValueTRY) ? tl(row.marketValueTRY) : '—'),
           h('td', {}, `${row.avgCost == null ? '—' : new Intl.NumberFormat('tr-TR', { style: 'currency', currency: row.currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2 }).format(row.avgCost)}`),
           h('td', {}, row.localRecord || !isNum(row.allocationPct) ? '—' : pct(row.allocationPct, 2)),
-          h('td', { class: cls2(row.totalPLTRY) }, isNum(row.totalPLTRY) ? `${tlSigned(row.totalPLTRY)}${isNum(row.totalPct) ? ` · ${pctSigned(row.totalPct)}` : ''}` : '—'),
-          h('td', { class: cls2(row.dailyPLTRY) }, isNum(row.dailyPLTRY) ? `${tlSigned(row.dailyPLTRY)}${isNum(row.dailyPct) ? ` · ${pctSigned(row.dailyPct)}` : ''}` : '—'))))));
+          h('td', { class: cls2(row.totalPLTRY) }, liveValuesReconcile && isNum(row.totalPLNative) ? `${signedCurrency(row.totalPLNative, row.currency)}${isNum(row.totalPct) ? ` · ${pctSigned(row.totalPct)}` : ''}` : '—'),
+          h('td', { class: cls2(row.dailyPLNative) }, liveValuesReconcile && isNum(row.dailyPLNative) ? `${signedCurrency(row.dailyPLNative, row.currency)}${isNum(row.dailyPct) ? ` · ${pctSigned(row.dailyPct)}` : ''}` : '—'))))));
       root.append(sectionCard(localOnly ? 'Kripto' : group.label,
         localOnly ? 'Bitcoin elle manuel eklenmelidir.' : null, table));
     }
@@ -116,33 +131,40 @@ export function renderDagilim(ctx) {
   /* Kâr/zarar katkısı, Midas pozisyon kodları + site fiyatı + Midas adetlerinden hesaplanır. */
   if (usingMidas) {
     for (const group of groupAssetRows(live)) {
-      const rows = group.rows.filter((row) => isNum(row.totalPLTRY));
-      if (!rows.length) continue;
-      const box = h('div');
-      const table = h('div', { class: 'table-wrap', style: 'margin-top:12px' }, h('table', {},
-        h('thead', {}, h('tr', {},
-          h('th', { style: 'text-align:left' }, 'Varlık'),
-          h('th', {}, 'Kâr/Zarar (₺)'), h('th', {}, 'Getiri'))),
-        h('tbody', {}, rows.map((row) => h('tr', {},
-          h('td', {}, h('span', { class: 'code-chip' }, row.code)),
-          h('td', { class: cls2(row.totalPLTRY) }, tlSigned(row.totalPLTRY)),
-          h('td', { class: cls2(row.totalPct) }, isNum(row.totalPct) ? pctSigned(row.totalPct, 2) : '—'))))));
-      root.append(sectionCard(`${group.label} · Kâr/Zarar Katkısı`,
-        'Sitenin güncel fiyatı ve Midas’tan okunan ortalama maliyetle; işlem adetleri varsa TL tutarı hesaplanır', box, table));
-      barChart(box, { items: rows.map((row) => ({ label: row.code, value: row.totalPLTRY })), format: tlSigned });
-    }
+      const currencies = [...new Set(group.rows.map((row) => row.currency === 'USD' ? 'USD' : 'TRY'))];
+      for (const currency of currencies) {
+        const rows = group.rows.filter((row) => liveValuesReconcile && (row.currency === 'USD' ? 'USD' : 'TRY') === currency
+          && isNum(row.totalPLNative));
+        if (!rows.length) continue;
+        const box = h('div');
+        const table = h('div', { class: 'table-wrap', style: 'margin-top:12px' }, h('table', {},
+          h('thead', {}, h('tr', {},
+            h('th', { style: 'text-align:left' }, 'Varlık'),
+            h('th', {}, `Toplam K/Z (${currency})`), h('th', {}, 'Getiri'))),
+          h('tbody', {}, rows.map((row) => h('tr', {},
+            h('td', {}, h('span', { class: 'code-chip' }, row.code)),
+            h('td', { class: cls2(row.totalPLNative) }, signedCurrency(row.totalPLNative, currency)),
+            h('td', { class: cls2(row.totalPct) }, isNum(row.totalPct) ? pctSigned(row.totalPct, 2) : '—'))))));
+        root.append(sectionCard(`${group.label} · Kâr/Zarar Katkısı (${currency})`,
+          'Açık pozisyonlarda site fiyatı ile Midas’ın ortalama maliyet ve adedinden hesaplanır', box, table));
+        barChart(box, { items: rows.map((row) => ({ label: row.code, value: row.totalPLNative })),
+          format: (value) => signedCurrency(value, currency) });
+      }
 
-    for (const group of groupAssetRows(live)) {
-      const rows = group.rows.filter((row) => isNum(row.dailyPLTRY) && Math.abs(row.dailyPLTRY) > 0.005);
-      if (!rows.length) continue;
-      const box = h('div');
-      root.append(sectionCard(`${group.label} · Bugünkü Katkı`,
-        'Açık pozisyonlardaki günlük değişim; nakit bakiyesi hariç', box));
-      barChart(box, {
-        items: rows.sort((a, b) => b.dailyPLTRY - a.dailyPLTRY)
-          .map((row) => ({ label: row.code, value: row.dailyPLTRY })),
-        format: tlSigned,
-      });
+      const currenciesWithDaily = [...new Set(group.rows.filter((row) => liveValuesReconcile && isNum(row.dailyPLNative)
+        && Math.abs(row.dailyPLNative) > 0.005).map((row) => row.currency === 'USD' ? 'USD' : 'TRY'))];
+      for (const currency of currenciesWithDaily) {
+        const rows = group.rows.filter((row) => (row.currency === 'USD' ? 'USD' : 'TRY') === currency
+          && isNum(row.dailyPLNative) && Math.abs(row.dailyPLNative) > 0.005)
+          .sort((a, b) => b.dailyPLNative - a.dailyPLNative);
+        const box = h('div');
+        root.append(sectionCard(`${group.label} · Bugünkü Katkı (${currency})`,
+          'Açık pozisyonlardaki site kapanış fiyatı değişimi; THF ve TP2 %0 kabul edilir', box));
+        barChart(box, {
+          items: rows.map((row) => ({ label: row.code, value: row.dailyPLNative })),
+          format: (value) => signedCurrency(value, currency),
+        });
+      }
     }
     if (localCrypto.length) {
       const rows = localCrypto.filter((row) => isNum(row.totalPLTRY));

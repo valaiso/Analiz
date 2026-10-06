@@ -211,7 +211,27 @@ function positionSnapshotRows() {
       totalPct: percentFrom(cells[ix.total]) ?? null,
       currency: /\$|USD/i.test(text) ? 'USD' : 'TRY',
     };
+    if (['THF', 'TP2', 'MGV', 'VIG', 'SCHD'].includes(code)) {
+      fields.domCells = headers.map(({ label }, index) => ({
+        header: label, raw: raw[index] || '', selected: cells[index] || '',
+      }));
+    }
+    // Bu Midas görünümünde bazı sanal satırlarda fiyat hücresi yanlışlıkla
+    // adet alanına eşleniyor. Adet fiyatla neredeyse aynıysa geçersiz say.
+    if (fields.units > 0 && fields.price > 0
+      && Math.abs(fields.units - fields.price) / fields.price < 0.005) {
+      fields.units = null;
+      fields.unitsText = `${fields.unitsText} (fiyatla aynı, adet reddedildi)`.trim();
+    }
+    if (fields.price > 0 && fields.avgCost > 0 && Number.isFinite(fields.totalPct)) {
+      const calculatedPct = (fields.price / fields.avgCost - 1) * 100;
+      if (Math.abs(calculatedPct - fields.totalPct) > 15) {
+        fields.costDiagnostic = `ortalama maliyet/toplam getiri uyuşmuyor (${calculatedPct.toFixed(2)}% / ${fields.totalPct.toFixed(2)}%)`;
+        fields.avgCost = null;
+      }
+    }
     if (fields.price > 0 && fields.avgCost > 0) found.set(code, fields);
+    else if (fields.price > 0 && fields.domCells) found.set(code, fields);
   }
   return [...found.values()];
 }

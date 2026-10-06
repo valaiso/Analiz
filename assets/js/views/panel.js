@@ -23,6 +23,14 @@ function fiyatiDurmus(holding) {
   return fark > DURMUS_GUN_ESIGI;
 }
 
+function signedCurrency(value, currency = 'TRY') {
+  if (!isNum(value)) return '—';
+  const rendered = new Intl.NumberFormat('tr-TR', {
+    style: 'currency', currency: currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2,
+  }).format(Math.abs(value));
+  return `${value > 0 ? '+' : value < 0 ? '−' : ''}${rendered}`;
+}
+
 export function renderPanel(ctx) {
   const { analysis, navigate } = ctx;
   const { totals, open, series } = analysis;
@@ -33,7 +41,8 @@ export function renderPanel(ctx) {
   const snapshotPositions = addSiteMarketMetrics(rawSnapshotPositions);
   const snapshotCodes = new Set(snapshotPositions.map((row) => row.code));
   const pricedSnapshotPositions = snapshotPositions.filter((row) => isNum(row.dailyPLTRY));
-  const missingDailyCodes = snapshotPositions.filter((row) => !isNum(row.dailyPLTRY)).map((row) => {
+  const missingDailyCodes = snapshotPositions.filter((row) => !isNum(row.dailyPLTRY)
+    || !isNum(row.marketValueTRY)).map((row) => {
     if (!(row.units > 0)) return `${row.code} (adet okunamadı)`;
     if (!row.siteDataAvailable) return `${row.code} (fiyat geçmişi yok)`;
     return `${row.code} (son kapanış değişimi yok)`;
@@ -52,8 +61,11 @@ export function renderPanel(ctx) {
   const calculatedPositionsValue = snapshotPositions.reduce((sum, row) =>
     sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0);
   const accountValueConsistent = !hasMidasTotal || calculatedPositionsValue <= midasSummary.totalValue * 1.1;
+  const positionSnapshotConsistent = accountValueConsistent
+    && snapshotPositions.every((row) => isNum(row.marketValueTRY));
   const dailyDataComplete = snapshotPositions.length > 0
-    && pricedSnapshotPositions.length === snapshotPositions.length && accountValueConsistent;
+    && pricedSnapshotPositions.length === snapshotPositions.length
+    && positionSnapshotConsistent;
   const snapshotTime = midasSnapshot?.capturedAt
     ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(midasSnapshot.capturedAt))
     : null;
@@ -90,7 +102,7 @@ export function renderPanel(ctx) {
       formatPct: pctSigned,
       hint: hasMidasTotal
         ? (!accountValueConsistent
-          ? `Günlük hesap bekletiliyor · Midas pozisyonlarından hesaplanan ${tl(calculatedPositionsValue)}, hesap toplamı ${tl(midasSummary.totalValue)} ile uyuşmuyor. Midas eşitlemesini yenile.`
+          ? `Günlük hesap bekletiliyor · Midas pozisyonlarından hesaplanan ${tl(calculatedPositionsValue)}, hesap toplamı ${tl(midasSummary.totalValue)} ile uyuşmuyor. Midas aktarımını yenileyip sütun tanısını kontrol et; adet/fiyat alanı yanlış okunuyor olabilir.`
           : dailyDataComplete
           ? 'Her varlığın sitedeki son iki kapanış fiyatına göre; adet Midas’tan alınır'
           : `Günlük toplam bekletiliyor · ${missingDailyCodes.join(', ') || 'hesap verisi eksik'}`)
@@ -187,10 +199,10 @@ export function renderPanel(ctx) {
       columns: [
         { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', { class: 'code-chip' }, r.code) },
         { key: 'units', label: 'Adet', render: (r) => fmtUnits(r.units) },
-        { key: 'marketValueTRY', label: 'Portföy Değeri', render: (r) => isNum(r.marketValueTRY) ? tl(r.marketValueTRY) : '—' },
+        { key: 'marketValueTRY', label: 'Portföy Değeri', render: (r) => positionSnapshotConsistent && isNum(r.marketValueTRY) ? tl(r.marketValueTRY) : '—' },
         { key: 'avgCost', label: 'Ort. Maliyet', render: (r) => moneyByCurrency(r.avgCost, r.currency) },
-        { key: 'dailyPLTRY', label: 'Günlük', render: (r) => h('span', { class: cls(r.dailyPLTRY) }, `${isNum(r.dailyPLTRY) ? tlSigned(r.dailyPLTRY) : '—'}${isNum(r.dailyPct) ? ` · ${pctSigned(r.dailyPct)}` : ''}`) },
-        { key: 'totalPLTRY', label: 'Toplam K/Z', render: (r) => h('span', { class: cls(r.totalPLTRY) }, `${isNum(r.totalPLTRY) ? tlSigned(r.totalPLTRY) : '—'}${isNum(r.totalPct) ? ` · ${pctSigned(r.totalPct)}` : ''}`) },
+        { key: 'dailyPLTRY', label: 'Günlük', render: (r) => h('span', { class: cls(r.dailyPLTRY) }, `${r.noDailyChange || positionSnapshotConsistent ? signedCurrency(r.dailyPLNative, r.currency) : '—'}${(r.noDailyChange || positionSnapshotConsistent) && isNum(r.dailyPct) ? ` · ${pctSigned(r.dailyPct)}` : ''}`) },
+        { key: 'totalPLTRY', label: 'Toplam K/Z', render: (r) => h('span', { class: cls(r.totalPLTRY) }, `${r.noDailyChange || positionSnapshotConsistent ? signedCurrency(r.totalPLNative, r.currency) : '—'}${(r.noDailyChange || positionSnapshotConsistent) && isNum(r.totalPct) ? ` · ${pctSigned(r.totalPct)}` : ''}`) },
         { key: 'allocationPct', label: 'Dağılım', render: (r) => isNum(r.allocationPct) ? pct(r.allocationPct, 2) : '—' },
       ],
       rows,
