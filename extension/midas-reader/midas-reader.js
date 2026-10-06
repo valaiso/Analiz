@@ -28,57 +28,85 @@ function executedStatus(status) {
   return /gerçekleş|tamamlan|filled|executed/.test(value);
 }
 
-function hasOrderHistoryTable() {
-  const rowSelector = 'tr, [role="row"], [class*="row" i]';
-  const required = [/varlık|sembol|fon/, /durum|statü|status/, /alış\s*\/\s*satış|işlem yönü|yön/, /adet|miktar|lot/, /fiyat/, /emir tarihi|işlem tarihi|tarih/];
-  return [...document.querySelectorAll(rowSelector)].filter(isVisible).some((row) => {
-    const cells = directCells(row).map((cell) => cell.toLocaleLowerCase('tr'));
-    return required.every((pattern) => cells.some((cell) => pattern.test(cell)));
-  });
-}
-
 function candidateElements() {
   const rowSelector = 'tr, [role="row"], [class*="row" i]';
-  const visibleRows = [...document.querySelectorAll(rowSelector)].filter(isVisible);
-  for (const headerRow of visibleRows) {
+  // Atlas bazı tablo sürümlerinde table/role=row kullanmıyor; sütun başlıklarını
+  // taşıyan CSS grid satırlarını da doğrudan çocuklarından tanı.
+  const headerCandidates = [...document.querySelectorAll(`${rowSelector}, div`)]
+    .filter((element) => isVisible(element) && element.children.length >= 5 && element.children.length <= 12);
+  for (const headerRow of headerCandidates) {
     const headers = directCells(headerRow);
     const norm = headers.map((header) => header.toLocaleLowerCase('tr'));
     const index = (pattern) => norm.findIndex((header) => pattern.test(header));
     const columns = {
       code: index(/varlık|sembol|fon/),
       status: index(/durum|statü|status/),
-      side: index(/alış\s*\/\s*satış|işlem yönü|yön/),
+      side: (() => {
+        const tradeColumn = index(/alış\s*\/\s*satış|işlem yönü|yön/);
+        return tradeColumn >= 0 ? tradeColumn : index(/emir tipi/);
+      })(),
       units: index(/adet|miktar|lot/),
-      price: index(/fiyat/),
+      price: index(/fiyat|toplam/),
       date: index(/emir tarihi|işlem tarihi|tarih/),
     };
     // Yalnızca gerçek emir tablosunu işle; sayfanın tamamını kapsayan listeleri
     // ve işlem geçmişi kartlarını satır sanıp çoğaltma.
-    if (Object.values(columns).some((column) => column < 0)) continue;
+    if ([columns.code, columns.side, columns.units, columns.date].some((column) => column < 0)) continue;
 
-    const root = headerRow.closest('table, [role="table"], [role="grid"]')
-      || headerRow.parentElement?.parentElement
-      || document;
-    const rows = [...root.querySelectorAll(rowSelector)]
-      .filter((row) => row !== headerRow && isVisible(row));
-    return rows.flatMap((element) => {
+    const semanticRoot = headerRow.closest('table, [role="table"]');
+    let rows = semanticRoot
+      ? [...semanticRoot.querySelectorAll(`tbody tr, ${rowSelector}, div, li`)]
+      : [];
+    if (!semanticRoot) {
+      // CSS grid satırları başlıkla aynı kapsayıcıda veya birkaç seviye aşağıda
+      // bulunur. Satır sayısı/sırası ve tarih/yön sütunlarıyla doğrula.
+      let scope = headerRow.parentElement;
+      for (let depth = 0; scope && depth < 5; scope = scope.parentElement, depth += 1) {
+        const candidates = [...scope.querySelectorAll(`${rowSelector}, li, div`)]
+          .filter((row) => row !== headerRow && isVisible(row));
+        const matching = candidates.filter((row) => {
+          const cells = directCells(row);
+          return cells.length === headers.length && TRADE_WORDS.test(cells[columns.side] || '')
+            && DATE_WORDS.test(cells[columns.date] || '');
+        });
+        if (matching.length) { rows = matching; break; }
+      }
+    }
+    const uniqueRows = new Map();
+    for (const element of rows) {
       const cells = directCells(element);
-      const status = cells[columns.status] || '';
+      const status = columns.status >= 0 ? cells[columns.status] || '' : '';
       const text = cells.join('\n');
       const side = cells[columns.side] || '';
       const date = cells[columns.date] || '';
-      if (!executedStatus(status) || !TRADE_WORDS.test(side) || !DATE_WORDS.test(date)) return [];
-      return [{
+      // Midas'ın emir tablosunda durum sütunu olmayabilir. Bu tabloda satır
+      // görünüyorsa ve doldurulmuş adet/fiyat varsa işlem gerçekleşmiştir;
+      // durum sütunu varsa bekleyen/iptal satırlarını kesinlikle dışarıda tut.
+      if ((columns.status >= 0 && !executedStatus(status))
+        || !TRADE_WORDS.test(side) || !DATE_WORDS.test(date)) continue;
+      const row = {
         text,
         headers,
         cells,
         sourceId: element.getAttribute('data-order-id')
           || element.getAttribute('data-id')
           || '',
-      }];
-    }).slice(0, 500);
+      };
+      const key = row.sourceId || text.replace(/\s+/g, ' ').trim();
+      if (key && !uniqueRows.has(key)) uniqueRows.set(key, row);
+    }
+    if (uniqueRows.size) return [...uniqueRows.values()].slice(0, 500);
   }
   return [];
+}
+
+function historyDiagnostics() {
+  const labels = [...document.querySelectorAll('button, [role="button"], h1, h2, h3, span, div')]
+    .filter(isVisible)
+    .map(textOf)
+    .filter((text) => text && text.length < 40)
+    .filter((text) => /varlık|sembol|durum|statü|alış|satış|emir tipi|adet|miktar|lot|fiyat|emir tarihi|işlem tarihi|gerçekleş|tamamlan|bekliyor|iptal/i.test(text));
+  return [...new Set(labels)].slice(0, 40);
 }
 
 function paginationState(direction) {
@@ -114,7 +142,6 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function collectCompletedHistory() {
   const collected = new Map();
-  if (!hasOrderHistoryTable()) return [];
   const start = paginationState('prev')?.label || '';
   let pageCount = 0;
 
@@ -154,7 +181,7 @@ async function collectCompletedHistory() {
       if (paginationState('prev')?.label !== previousLabel) break;
     }
   }
-  return [...collected.values()].slice(0, 500);
+  return { rows: [...collected.values()].slice(0, 500), pageCount, labels: historyDiagnostics(), start };
 }
 
 function parseLocaleNumber(value) {
@@ -245,8 +272,15 @@ function normalizeRow(row) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'ANALIZ_SCAN_VISIBLE_HISTORY') return undefined;
-  collectCompletedHistory().then((rawRows) => {
-    sendResponse({ ok: true, rows: rawRows.map(normalizeRow) });
+  collectCompletedHistory().then(({ rows, pageCount, labels, start }) => {
+    const normalized = rows.map(normalizeRow);
+    const ready = normalized.filter((row) => !row.missing.length);
+    if (!rows.length) {
+      const evidence = labels.length ? `Ekranda algılanan başlık/durum metinleri: ${labels.join(' · ')}.` : 'Ekranda tanınan emir tablosu başlığı görünmüyor.';
+      sendResponse({ ok: false, error: `Midas'tan tamamlanmış işlem satırı okunamadı. ${pageCount ? `${pageCount + 1} sayfa tarandı. ` : ''}${start ? `Tablo sayfası: ${start}. ` : ''}${evidence} Alt kısımdaki “Emir geçmişi” tablosunu açın; başlıkların ve işlem satırlarının göründüğünden emin olun.` });
+      return;
+    }
+    sendResponse({ ok: true, rows: normalized, scannedPages: pageCount + 1, unmatchedCount: normalized.length - ready.length });
   }).catch((error) => {
     sendResponse({ ok: false, error: error.message || 'Midas emir geçmişi okunamadı.' });
   });
