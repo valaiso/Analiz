@@ -255,10 +255,11 @@ export function renderAyarlar(ctx) {
       : null);
 
   root.append(sectionCard('Yedekleme',
-    'Veriler yalnızca bu tarayıcıda tutulur - düzenli yedek al',
+    'Midas aktarımları bu tarayıcıda kalır; oturum açılmış portföy Supabase ile eşitlenir.',
     yedekUyarisi,
     h('p', { class: 'dim', style: 'margin:0 0 12px;font-size:.86rem' },
-      'Yedek dosyasını başka bir cihazda içe aktararak portföyünü taşıyabilirsin. '
+      'Yedek dosyası normal işlemlerle Midas aktarımlarını birlikte içerir; başka bir cihazda '
+      + 'içe aktararak portföyünü taşıyabilirsin. '
       + 'Aile bireyleri kendi cihazlarında kendi verilerini tutar; istersen yedeği paylaşarak '
       + 'aynı portföyü herkesin görmesini sağlayabilirsin.'),
     h('div', { class: 'btn-row' },

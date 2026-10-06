@@ -1,0 +1,23 @@
+{
+  "manifest_version": 3,
+  "name": "Analiz · Midas işlem aktarımı",
+  "version": "0.1.0",
+  "description": "Açık Midas işlem geçmişini kullanıcı isteğiyle Analiz'e yerel olarak aktarır.",
+  "host_permissions": [
+    "https://atlas.getmidas.com/*",
+    "https://valaiso.github.io/Analiz/*"
+  ],
+  "background": { "service_worker": "service-worker.js" },
+  "content_scripts": [
+    {
+      "matches": ["https://atlas.getmidas.com/*"],
+      "js": ["midas-reader.js"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["https://valaiso.github.io/Analiz/*"],
+      "js": ["analiz-bridge.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}

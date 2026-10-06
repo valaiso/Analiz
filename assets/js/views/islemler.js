@@ -6,9 +6,73 @@ import {
 import { DB, priceOnDate, lastDate, indexForDate } from '../data.js';
 import {
   transactions, addTransaction, updateTransaction, removeTransaction,
-  activeProfileId, profiles,
+  activeProfileId, profiles, addMidasTransactions,
 } from '../store.js';
 import { sectionCard, fundPicker } from './common.js';
+import { requestMidasHistory } from '../midas-import.js';
+
+function showMidasPreview(rows, ctx) {
+  const candidates = rows.map((row) => ({
+    ...row,
+    missing: [...(row.missing || [])],
+  }));
+  const ready = candidates.filter((row) => !row.missing.length && DB.byCode.has(row.code));
+  const unmatched = candidates.filter((row) => row.missing.length || !DB.byCode.has(row.code));
+  const line = (row) => h('tr', {},
+    h('td', {}, row.date || '—'),
+    h('td', {}, row.code || '—'),
+    h('td', {}, row.type === 'SAT' ? 'Satış' : row.type === 'AL' ? 'Alış' : '—'),
+    h('td', {}, row.units > 0 ? fmtUnits(row.units) : '—'),
+    h('td', {}, row.price > 0 ? money(row.price) : '—'),
+    h('td', { style: 'text-align:left;max-width:360px;white-space:normal' }, row.rawText));
+
+  let close;
+  const body = h('div', { class: 'stack' },
+    h('p', { class: 'dim' },
+      `${candidates.length} satır bulundu. ${ready.length} satır otomatik eşleşti; `
+      + `${unmatched.length} satır eksik bilgi veya tanınmayan varlık kodu nedeniyle atlanacak. `
+      + 'Midas’a hiçbir emir gönderilmez. Onaylanan kayıtlar bu tarayıcıda yerel saklanır.'),
+    ready.length ? h('div', { class: 'table-wrap' }, h('table', {},
+      h('thead', {}, h('tr', {},
+        h('th', {}, 'Tarih'), h('th', {}, 'Kod'), h('th', {}, 'Tür'),
+        h('th', {}, 'Miktar'), h('th', {}, 'Birim fiyat'), h('th', { style: 'text-align:left' }, 'Midas satırı'))),
+      h('tbody', {}, ready.map(line)))) : h('div', { class: 'notice warn' },
+      'Henüz otomatik eşleşen işlem yok. Midas işlem geçmişindeki görünen satır biçimini kontrol et.'),
+    unmatched.length ? h('details', {},
+      h('summary', {}, `Atlanacak ${unmatched.length} satırı göster`),
+      h('div', { class: 'table-wrap', style: 'margin-top:10px' }, h('table', {},
+        h('thead', {}, h('tr', {},
+          h('th', {}, 'Tarih'), h('th', {}, 'Kod'), h('th', {}, 'Tür'),
+          h('th', {}, 'Miktar'), h('th', {}, 'Fiyat'), h('th', { style: 'text-align:left' }, 'Okunan satır'))),
+        h('tbody', {}, unmatched.map(line)))) : null,
+    h('div', { class: 'btn-row', style: 'justify-content:flex-end' },
+      h('button', { class: 'btn', type: 'button', onclick: () => close() }, 'Vazgeç'),
+      h('button', {
+        class: 'btn btn-primary', type: 'button', disabled: !ready.length,
+        onclick: () => {
+          const count = addMidasTransactions(ready);
+          close();
+          toast(count ? `${count} Midas işlemi yerel olarak eklendi` : 'Bu işlemler zaten kayıtlı');
+          ctx.refresh();
+        },
+      }, `${ready.length} işlemi içe aktar`)));
+  close = openModal('Midas işlem aktarımı · önizleme', body, { wide: true });
+}
+
+async function readMidas(ctx, button) {
+  button.disabled = true;
+  button.textContent = 'Midas sekmesi okunuyor…';
+  try {
+    const rows = await requestMidasHistory();
+    if (!rows.length) throw new Error('İşlem satırı bulunamadı. Midas’ta Yatırım İşlem Geçmişi ekranını aç.');
+    showMidasPreview(rows, ctx);
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Midas’tan İşlemleri Oku';
+  }
+}
 
 /** Seçilen varlığın USD bazlı olup olmadığını belirler. */
 function getAssetCurrency(code) {
@@ -177,6 +241,14 @@ export function renderIslemler(ctx) {
   const multiProfile = activeProfileId() === 'ALL';
   const profileName = new Map(profiles().map((p) => [p.id, p.name]));
 
+  const midasButton = h('button', {
+    class: 'btn btn-primary', type: 'button', disabled: multiProfile,
+    onclick: (event) => readMidas(ctx, event.currentTarget),
+  }, multiProfile ? 'Önce tek profil seç' : 'Midas’tan İşlemleri Oku');
+  root.append(sectionCard('Midas Aktarımı',
+    'Açık Midas işlem geçmişini oku; emir gönderilmez. İçe aktarılan kayıtlar bu tarayıcıda kalır ve Supabase’e eşitlenmez.',
+    h('div', { class: 'btn-row' }, midasButton)));
+
   /* --------------------------------------------------------------- ekleme formu */
 
   if (multiProfile) {
@@ -207,6 +279,9 @@ export function renderIslemler(ctx) {
       h('td', {}, fmtDate(t.date)),
       h('td', {},
         h('span', { class: 'code-chip' }, t.code),
+        t.source === 'midas'
+          ? h('span', { class: 'dim', style: 'margin-left:6px;font-size:.76rem' }, 'Midas')
+          : null,
         multiProfile
           ? h('span', { class: 'dim', style: 'margin-left:7px;font-size:.76rem' },
             profileName.get(t.profile) || '')
