@@ -33,15 +33,19 @@ export function renderPanel(ctx) {
   const snapshotPositions = addSiteMarketMetrics(rawSnapshotPositions, open);
   const snapshotCodes = new Set(snapshotPositions.map((row) => row.code));
   const pricedSnapshotPositions = snapshotPositions.filter((row) => isNum(row.dailyPLTRY));
-  const siteDailyPL = pricedSnapshotPositions.reduce((sum, row) => sum + row.dailyPLTRY, 0);
-  const siteDailyBase = pricedSnapshotPositions.reduce((sum, row) =>
-    sum + (row.marketValuePrevTRY || 0), 0);
   const localCrypto = hasMidasTotal
     ? open.filter((row) => DB.byCode.get(row.code)?.kind === 'CRYPTO' && !snapshotCodes.has(row.code)).map((row) => ({
       ...row, dailyPLTRY: row.dayPL, totalPLTRY: row.totalPL,
       allocationPct: null, localRecord: true,
     }))
     : [];
+  const completeMidasDaily = snapshotPositions.length > 0
+    && pricedSnapshotPositions.length === snapshotPositions.length;
+  const siteDailyPL = pricedSnapshotPositions.reduce((sum, row) => sum + row.dailyPLTRY, 0)
+    + localCrypto.reduce((sum, row) => sum + (row.dailyPLTRY || 0), 0);
+  const siteDailyBase = pricedSnapshotPositions.reduce((sum, row) =>
+    sum + (row.marketValuePrevTRY || 0), 0)
+    + localCrypto.reduce((sum, row) => sum + (row.prevValue || 0), 0);
   const snapshotTime = midasSnapshot?.capturedAt
     ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(midasSnapshot.capturedAt))
     : null;
@@ -71,13 +75,15 @@ export function renderPanel(ctx) {
     plCard({
       label: 'Günlük Kazanç',
       amount: hasMidasTotal
-        ? (pricedSnapshotPositions.length ? siteDailyPL : null) : totals.dayPL,
+        ? (completeMidasDaily ? siteDailyPL : null) : totals.dayPL,
       pct: hasMidasTotal
-        ? (siteDailyBase > 0 ? (siteDailyPL / siteDailyBase) * 100 : null) : totals.dayPct,
+        ? (completeMidasDaily && siteDailyBase > 0 ? (siteDailyPL / siteDailyBase) * 100 : null) : totals.dayPct,
       formatMoney: tlSigned,
       formatPct: pctSigned,
       hint: hasMidasTotal
-        ? `${fmtDate(totals.prevDate)} kapanışına göre · site fiyatları ve kayıtlı adetler (${pricedSnapshotPositions.length}/${snapshotPositions.length} pozisyon)`
+        ? (completeMidasDaily
+          ? `${fmtDate(totals.prevDate)} kapanışına göre · tam pozisyonlar için fiyat/adet mevcut`
+          : `${fmtDate(totals.prevDate)} kapanışına göre · tüm pozisyonların güncel fiyatı bulunmadığı için net gösterilmiyor`)
         : `${fmtDate(totals.prevDate)} kapanışına göre`,
     }),
     plCard({
@@ -166,18 +172,12 @@ export function renderPanel(ctx) {
         style: 'currency', currency: currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2,
       }).format(value);
     };
-    const signedByCurrency = (value, currency) => {
-      if (!isNum(value)) return '—';
-      const formatted = moneyByCurrency(Math.abs(value), currency);
-      return `${value > 0 ? '+' : value < 0 ? '−' : ''}${formatted}`;
-    };
     const positionsTable = (rows) => sortableTable({
       initialSort: { key: 'marketValueTRY', dir: 'desc' },
       columns: [
         { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', { class: 'code-chip' }, r.code) },
         { key: 'units', label: 'Adet', render: (r) => fmtUnits(r.units) },
         { key: 'marketValueTRY', label: 'Portföy Değeri', render: (r) => isNum(r.marketValueTRY) ? tl(r.marketValueTRY) : '—' },
-        { key: 'price', label: 'Site Fiyatı', render: (r) => moneyByCurrency(r.price, r.currency) },
         { key: 'avgCost', label: 'Ort. Maliyet', render: (r) => moneyByCurrency(r.avgCost, r.currency) },
         { key: 'dailyPLTRY', label: 'Günlük', render: (r) => h('span', { class: cls(r.dailyPLTRY) }, `${isNum(r.dailyPLTRY) ? tlSigned(r.dailyPLTRY) : '—'}${isNum(r.dailyPct) ? ` · ${pctSigned(r.dailyPct)}` : ''}`) },
         { key: 'totalPLTRY', label: 'Ort. Maliyete Göre K/Z', render: (r) => h('span', { class: cls(r.totalPLTRY) }, `${isNum(r.totalPLTRY) ? tlSigned(r.totalPLTRY) : '—'}${isNum(r.totalPct) ? ` · ${pctSigned(r.totalPct)}` : ''}`) },
@@ -187,8 +187,8 @@ export function renderPanel(ctx) {
     });
     const groupTitles = { ETF: 'ETF’ler', Fon: 'Fonlar', Hisse: 'Hisseler', Kripto: 'Kripto', Diğer: 'Diğer Varlıklar' };
     for (const group of groupAssetRows(snapshotPositions)) {
-      root.append(sectionCard(`Açık ${groupTitles[group.label] || group.label}`,
-        `${group.rows.length} varlık · Midas ekranından okundu`, positionsTable(group.rows).element));
+      root.append(sectionCard(groupTitles[group.label] || group.label,
+        null, positionsTable(group.rows).element));
     }
     if (localCrypto.length) {
       const table = sortableTable({
@@ -196,15 +196,14 @@ export function renderPanel(ctx) {
         columns: [
           { key: 'code', label: 'Varlık', render: (row) => h('span', { class: 'code-chip' }, row.code) },
           { key: 'units', label: 'Adet', render: (row) => fmtUnits(row.units) },
-          { key: 'price', label: 'Fiyat', render: (row) => moneyByCurrency(row.price, row.currency) },
           { key: 'dailyPLTRY', label: 'Bugünkü K/Z (₺)', render: (row) => h('span', { class: cls(row.dailyPLTRY) }, tlSigned(row.dailyPLTRY)) },
           { key: 'totalPLTRY', label: 'Toplam K/Z (₺)', render: (row) => h('span', { class: cls(row.totalPLTRY) }, tlSigned(row.totalPLTRY)) },
         ],
         rows: localCrypto,
       });
-      root.append(sectionCard('Kripto · İşlem Kayıtları',
-        'Midas yatırım hesabı pozisyonlarından ayrı; işlem kayıtlarından hesaplanır', table.element));
+      root.append(sectionCard('Kripto', 'Bitcoin elle manuel eklenmelidir.', table.element));
     }
+    if (!localCrypto.length) root.append(h('div', { class: 'notice' }, 'Bitcoin elle manuel eklenmelidir.'));
   } else if (!hasMidasTotal && open.length) {
     const table = sortableTable({
       initialSort: { key: 'value', dir: 'desc' },

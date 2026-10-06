@@ -194,7 +194,7 @@ function positionSnapshotRows() {
     const text = cells.join(' ');
     const fields = {
       code,
-      units: ix.units >= 0 ? parseLocaleNumber(cells[ix.units]) : null,
+      units: ix.units >= 0 ? parseQuantity(cells[ix.units]) : null,
       price: moneyFrom(cells[ix.price]) ?? moneyFrom(text),
       avgCost: moneyFrom(cells[ix.avg]) ?? null,
       allocationPct: percentFrom(cells[ix.allocation]) ?? null,
@@ -556,6 +556,15 @@ function parseLocaleNumber(value) {
   } else if (s.includes(',')) s = s.replace(',', '.');
   const n = Number(s);
   return Number.isFinite(n) ? (signBeforeCurrency ? -Math.abs(n) : signBeforeNumber ? Math.abs(n) : n) : null;
+}
+
+function parseQuantity(value) {
+  const number = String(value || '').trim().match(/[+-]?\d[\d.,]*/)?.[0];
+  if (!number) return null;
+  // Midas Türkçe arayüzünde 1.234 adet bin iki yüz otuz dörttür; ondalık
+  // paylar virgülle (0,125) gösterilir.
+  if (/^\d{1,3}(?:\.\d{3})+$/.test(number)) return Number(number.replaceAll('.', ''));
+  return parseLocaleNumber(number);
 }
 
 function parseDate(text) {

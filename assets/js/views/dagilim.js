@@ -39,13 +39,13 @@ export function renderDagilim(ctx) {
     const byTypeMap = new Map();
     for (const row of priced) {
       if (!(row.pieValue > 0)) continue;
-      const baseType = assetType(row.code, row.kind);
+      const baseType = assetType(row.code, row.kind, row.category);
       const type = baseType === 'Hisse' && row.currency !== 'USD' ? 'BIST Hisse' : baseType;
       byTypeMap.set(type, (byTypeMap.get(type) || 0) + row.pieValue);
     }
     const byType = [...byTypeMap.entries()].sort((a, b) => b[1] - a[1])
       .map(([label, value], index) => ({ label, value, color: colorAt(index) }));
-    const bistRows = priced.filter((row) => assetType(row.code, row.kind) === 'Hisse'
+    const bistRows = priced.filter((row) => assetType(row.code, row.kind, row.category) === 'Hisse'
       && row.currency !== 'USD' && row.kind !== 'US_ETF' && row.kind !== 'CRYPTO');
     const bistSlices = bistRows.filter((row) => row.pieValue > 0)
       .sort((a, b) => b.pieValue - a.pieValue)
@@ -55,7 +55,7 @@ export function renderDagilim(ctx) {
         centerTop: tl(priced.reduce((sum, row) => sum + (row.pieValue || 0), 0), { compact: true }),
         centerBottom: 'fiyat bulunanlar',
       })),
-      sectionCard('BIST Hisseleri', 'Açık BIST hisselerinin kendi içindeki dağılımı', donutWithLegend(bistSlices, {
+      sectionCard('BIST Hisseleri', 'BIST hisselerinin kendi içindeki dağılımı', donutWithLegend(bistSlices, {
         centerTop: tl(bistRows.reduce((sum, row) => sum + (row.pieValue || 0), 0), { compact: true }),
         centerBottom: 'BIST toplamı',
       }))));
@@ -67,19 +67,18 @@ export function renderDagilim(ctx) {
       const table = h('div', { class: 'table-wrap' }, h('table', {},
         h('thead', {}, h('tr', {},
           h('th', { style: 'text-align:left' }, 'Varlık'),
-          h('th', {}, 'Adet'), h('th', {}, 'Portföy Değeri'), h('th', {}, 'Site Fiyatı'), h('th', {}, 'Ort. Maliyet'), h('th', {}, 'Dağılım'),
-          h('th', {}, 'Ort. Maliyete Göre K/Z'), h('th', {}, 'Günlük · Site'))),
+          h('th', {}, 'Adet'), h('th', {}, 'Portföy Değeri'), h('th', {}, 'Ort. Maliyet'), h('th', {}, 'Dağılım'),
+          h('th', {}, 'Ort. Maliyete Göre K/Z'), h('th', {}, 'Günlük'))),
         h('tbody', {}, rows.map((row) => h('tr', {},
           h('td', {}, h('span', { class: 'code-chip' }, row.code)),
           h('td', {}, fmtUnits(row.units)),
           h('td', {}, isNum(row.marketValueTRY) ? tl(row.marketValueTRY) : '—'),
-          h('td', {}, `${row.price == null ? '—' : new Intl.NumberFormat('tr-TR', { style: 'currency', currency: row.currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2 }).format(row.price)}`),
           h('td', {}, `${row.avgCost == null ? '—' : new Intl.NumberFormat('tr-TR', { style: 'currency', currency: row.currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2 }).format(row.avgCost)}`),
           h('td', {}, row.localRecord || !isNum(row.allocationPct) ? '—' : pct(row.allocationPct, 2)),
           h('td', { class: cls2(row.totalPLTRY) }, isNum(row.totalPLTRY) ? `${tlSigned(row.totalPLTRY)}${isNum(row.totalPct) ? ` · ${pctSigned(row.totalPct)}` : ''}` : '—'),
           h('td', { class: cls2(row.dailyPLTRY) }, isNum(row.dailyPLTRY) ? `${tlSigned(row.dailyPLTRY)}${isNum(row.dailyPct) ? ` · ${pctSigned(row.dailyPct)}` : ''}` : '—'))))));
-      root.append(sectionCard(localOnly ? 'Kripto · İşlem Kayıtları' : `Açık ${group.label}`,
-        `${group.rows.length} varlık · ${localOnly ? 'Midas yatırım pozisyonlarından ayrı' : 'açık pozisyonlar'}`, table));
+      root.append(sectionCard(localOnly ? 'Kripto' : group.label,
+        localOnly ? 'Bitcoin elle manuel eklenmelidir.' : null, table));
     }
   } else {
     const byFund = open.filter((row) => row.value > 0)

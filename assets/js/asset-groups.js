@@ -3,19 +3,19 @@ import { getMidasAccountSnapshot } from './store.js';
 
 const GROUP_ORDER = ['ETF', 'Fon', 'Hisse', 'Kripto', 'Diğer'];
 
-export function assetType(code, suppliedKind = '') {
+export function assetType(code, suppliedKind = '', suppliedCategory = '') {
   const kind = String(suppliedKind || DB.byCode.get(code)?.kind || '').toUpperCase();
-  const category = String(DB.byCode.get(code)?.cat || DB.byCode.get(code)?.category || '').toLocaleLowerCase('tr');
-  if (kind === 'US_ETF' || kind === 'BYF' || /\betf\b|borsa yatırım fonu/.test(category)) return 'ETF';
+  const category = String(suppliedCategory || DB.byCode.get(code)?.cat || DB.byCode.get(code)?.category || '').toLocaleLowerCase('tr');
+  if (['US_ETF', 'BIST_ETF', 'BYF'].includes(kind) || /\betf\b|borsa yatırım fonu/.test(category)) return 'ETF';
   if (kind === 'CRYPTO') return 'Kripto';
   if (['YAT', 'EMK', 'GYF', 'GSYF'].includes(kind) || /fon|emeklilik/.test(category)) return 'Fon';
-  if (kind === 'HISSE' || /hisse|equity|stock/.test(category)) return 'Hisse';
+  if (['HISSE', 'BIST_STOCK', 'BIST_HISSE'].includes(kind) || /hisse|equity|stock/.test(category)) return 'Hisse';
   return 'Diğer';
 }
 
 export function groupAssetRows(rows) {
   const groups = new Map(GROUP_ORDER.map((label) => [label, []]));
-  for (const row of rows || []) groups.get(assetType(row.code, row.kind))?.push(row);
+  for (const row of rows || []) groups.get(assetType(row.code, row.kind, row.category))?.push(row);
   return GROUP_ORDER.map((label) => ({ label, rows: groups.get(label) })).filter((group) => group.rows.length);
 }
 
@@ -61,12 +61,15 @@ export function addSiteMarketMetrics(positions, localHoldings = []) {
       : (Number.isFinite(DB.byCode.get(position.code)?.price) ? DB.byCode.get(position.code).price : null);
     const previousPrice = Number.isFinite(holding?.pricePrev) ? holding.pricePrev
       : priceAtIndex(hist, previousIndex);
+    const quoteDate = holding?.lastPriceDate || DB.byCode.get(position.code)?.date || null;
+    const quoteIsCurrent = !DB.meta.lastDataDate || quoteDate === DB.meta.lastDataDate;
     const avgCost = Number.isFinite(position.avgCost) && position.avgCost > 0
       ? position.avgCost : holding?.avgCost;
     const fx = Number.isFinite(holding?.fxRate) ? holding.fxRate : fxToTRY(position.code, latestIndex);
     const previousFx = Number.isFinite(holding?.fxRatePrev) ? holding.fxRatePrev : fxToTRY(position.code, previousIndex);
     const hasSitePrice = Number.isFinite(price) && Number.isFinite(fx);
-    const hasPreviousPrice = hasSitePrice && Number.isFinite(previousPrice) && Number.isFinite(previousFx);
+    const hasPreviousPrice = hasSitePrice && quoteIsCurrent
+      && Number.isFinite(previousPrice) && Number.isFinite(previousFx);
     const dailyPLTRY = hasPreviousPrice
       ? units * (price * fx - previousPrice * previousFx) : null;
     const dailyPct = hasPreviousPrice && previousPrice * previousFx > 0

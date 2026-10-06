@@ -20,7 +20,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const known = new Set((message.knownCodes || []).map((code) => String(code).toUpperCase()));
       const missingRows = (result.rows || [])
         .filter((row) => !row.missing?.length && row.code && !known.has(String(row.code).toUpperCase()));
-      const missingCodes = [...new Set(missingRows.map((row) => String(row.code).toUpperCase()))];
+      const missingPositionCodes = (result.positions || [])
+        .filter((position) => position.code && !known.has(String(position.code).toUpperCase()))
+        .map((position) => String(position.code).toUpperCase());
+      const missingCodes = [...new Set([
+        ...missingRows.map((row) => String(row.code).toUpperCase()),
+        ...missingPositionCodes,
+      ])];
       const fundCodes = new Set(missingRows
         .filter((row) => /\bfon\s+(?:alış|alım|satış|satım)\b/i.test(row.rawText || ''))
         .map((row) => String(row.code).toUpperCase()));
