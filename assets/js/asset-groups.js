@@ -1,4 +1,4 @@
-import { DB, cachedHistory, priceAtIndex, lastIndex, fxToTRY } from './data.js';
+import { DB, cachedHistory, exactPriceAtIndex, lastIndex, fxToTRY } from './data.js';
 import { getMidasAccountSnapshot } from './store.js';
 
 const GROUP_ORDER = ['ETF', 'Fon', 'Hisse', 'Kripto', 'Diğer'];
@@ -55,20 +55,40 @@ export function addSiteMarketMetrics(positions, localHoldings = []) {
       totalPct: null, marketValueTRY: null, marketValuePrevTRY: null, siteDataAvailable: false,
     };
     const latestIndex = Math.max(0, lastIndex());
-    const previousIndex = Math.max(0, latestIndex - 1);
     const hist = cachedHistory(position.code);
-    const price = Number.isFinite(holding?.price) ? holding.price
+    let quoteIndex = -1;
+    let priceFromHistory = null;
+    for (let index = latestIndex; index >= 0; index -= 1) {
+      const candidate = exactPriceAtIndex(hist, index);
+      if (Number.isFinite(candidate) && candidate > 0) {
+        quoteIndex = index;
+        priceFromHistory = candidate;
+        break;
+      }
+    }
+    let previousIndex = -1;
+    let previousPrice = null;
+    for (let index = quoteIndex - 1; index >= 0; index -= 1) {
+      const candidate = exactPriceAtIndex(hist, index);
+      if (Number.isFinite(candidate) && candidate > 0) {
+        previousIndex = index;
+        previousPrice = candidate;
+        break;
+      }
+    }
+    const quoteDate = quoteIndex >= 0 ? DB.calendar[quoteIndex] : DB.byCode.get(position.code)?.date || null;
+    const price = Number.isFinite(priceFromHistory) ? priceFromHistory
       : (Number.isFinite(DB.byCode.get(position.code)?.price) ? DB.byCode.get(position.code).price : null);
-    const previousPrice = Number.isFinite(holding?.pricePrev) ? holding.pricePrev
-      : priceAtIndex(hist, previousIndex);
-    const quoteDate = holding?.lastPriceDate || DB.byCode.get(position.code)?.date || null;
-    const quoteIsCurrent = !DB.meta.lastDataDate || quoteDate === DB.meta.lastDataDate;
     const avgCost = Number.isFinite(position.avgCost) && position.avgCost > 0
       ? position.avgCost : holding?.avgCost;
-    const fx = Number.isFinite(holding?.fxRate) ? holding.fxRate : fxToTRY(position.code, latestIndex);
-    const previousFx = Number.isFinite(holding?.fxRatePrev) ? holding.fxRatePrev : fxToTRY(position.code, previousIndex);
+    const fx = fxToTRY(position.code, quoteIndex >= 0 ? quoteIndex : latestIndex);
+    const previousFx = fxToTRY(position.code, previousIndex);
     const hasSitePrice = Number.isFinite(price) && Number.isFinite(fx);
-    const hasPreviousPrice = hasSitePrice && quoteIsCurrent
+    // ABD fon/hisselerinin kapanışı Türkiye takviminde çoğunlukla bir gün geridedir.
+    // Her varlığı kendi son iki gerçek kapanışından hesapla; global TEFAS tarihiyle
+    // birebir eşitlik aramak geçerli fiyatları yanlışlıkla eksik sayıyordu.
+    const recentQuote = quoteIndex >= 0 && latestIndex - quoteIndex <= 1;
+    const hasPreviousPrice = hasSitePrice && recentQuote && previousIndex >= 0
       && Number.isFinite(previousPrice) && Number.isFinite(previousFx);
     const dailyPLTRY = hasPreviousPrice
       ? units * (price * fx - previousPrice * previousFx) : null;
@@ -90,6 +110,7 @@ export function addSiteMarketMetrics(positions, localHoldings = []) {
       marketValueTRY: hasSitePrice ? units * price * fx : null,
       marketValuePrevTRY: hasPreviousPrice ? units * previousPrice * previousFx : null,
       siteDataAvailable: hasSitePrice,
+      quoteDate,
     };
   });
 }

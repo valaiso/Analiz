@@ -33,6 +33,11 @@ export function renderPanel(ctx) {
   const snapshotPositions = addSiteMarketMetrics(rawSnapshotPositions, open);
   const snapshotCodes = new Set(snapshotPositions.map((row) => row.code));
   const pricedSnapshotPositions = snapshotPositions.filter((row) => isNum(row.dailyPLTRY));
+  const missingDailyCodes = snapshotPositions.filter((row) => !isNum(row.dailyPLTRY)).map((row) => {
+    if (!(row.units > 0)) return `${row.code} (adet okunamadı)`;
+    if (!row.siteDataAvailable) return `${row.code} (fiyat geçmişi yok)`;
+    return `${row.code} (son kapanış değişimi yok)`;
+  });
   const localCrypto = hasMidasTotal
     ? open.filter((row) => DB.byCode.get(row.code)?.kind === 'CRYPTO' && !snapshotCodes.has(row.code)).map((row) => ({
       ...row, dailyPLTRY: row.dayPL, totalPLTRY: row.totalPL,
@@ -82,8 +87,8 @@ export function renderPanel(ctx) {
       formatPct: pctSigned,
       hint: hasMidasTotal
         ? (completeMidasDaily
-          ? `${fmtDate(totals.prevDate)} kapanışına göre · tam pozisyonlar için fiyat/adet mevcut`
-          : `${fmtDate(totals.prevDate)} kapanışına göre · tüm pozisyonların güncel fiyatı bulunmadığı için net gösterilmiyor`)
+          ? 'Her varlığın sitedeki son iki kapanış fiyatına göre; adet Midas’tan alınır'
+          : `Günlük toplam bekletiliyor · ${missingDailyCodes.join(', ') || 'hesap verisi eksik'}`)
         : `${fmtDate(totals.prevDate)} kapanışına göre`,
     }),
     plCard({
@@ -173,7 +178,7 @@ export function renderPanel(ctx) {
       }).format(value);
     };
     const positionsTable = (rows) => sortableTable({
-      initialSort: { key: 'marketValueTRY', dir: 'desc' },
+      initialSort: { key: 'allocationPct', dir: 'desc' },
       columns: [
         { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', { class: 'code-chip' }, r.code) },
         { key: 'units', label: 'Adet', render: (r) => fmtUnits(r.units) },
@@ -186,7 +191,12 @@ export function renderPanel(ctx) {
       rows,
     });
     const groupTitles = { ETF: 'ETF’ler', Fon: 'Fonlar', Hisse: 'Hisseler', Kripto: 'Kripto', Diğer: 'Diğer Varlıklar' };
-    for (const group of groupAssetRows(snapshotPositions)) {
+    const positionGroups = groupAssetRows(snapshotPositions).map((group) => ({
+      ...group,
+      rows: [...group.rows].sort((a, b) => (b.allocationPct ?? -1) - (a.allocationPct ?? -1)),
+      groupValue: group.rows.reduce((sum, row) => sum + (row.marketValueTRY || 0), 0),
+    })).sort((a, b) => b.groupValue - a.groupValue);
+    for (const group of positionGroups) {
       root.append(sectionCard(groupTitles[group.label] || group.label,
         null, positionsTable(group.rows).element));
     }

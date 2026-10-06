@@ -150,14 +150,20 @@ function positionSnapshotRows() {
       const cellElements = directCellElements(container).filter(isVisible);
       if (cellElements.length < 4 || cellElements.length > 12) continue;
       const raw = cellElements.map(textOf);
-      const aligned = raw.length === headers.length ? raw : headers.map(({ box }) => {
+      // Midas bazen responsive tablolarda gizli/tekrarlı hücreleri satırın DOM'una
+      // ekliyor. Hücre sayısı başlık sayısına eşit olsa bile sıraları aynı olmayabilir;
+      // her alanı başlığın yatay konumuna göre, bir hücreyi yalnızca bir kez eşleştir.
+      const unused = new Set(cellElements);
+      const aligned = headers.map(({ box }) => {
         const x = (box.left + box.right) / 2;
-        const nearest = cellElements.reduce((best, candidate) => {
+        const nearest = [...unused].reduce((best, candidate) => {
           const rect = candidate.getBoundingClientRect();
           const distance = Math.abs((rect.left + rect.right) / 2 - x);
           return !best || distance < best.distance ? { candidate, distance } : best;
         }, null);
-        return nearest ? textOf(nearest.candidate) : '';
+        if (!nearest) return '';
+        unused.delete(nearest.candidate);
+        return textOf(nearest.candidate);
       });
       const code = assetCodeAtRow(root, container, headers[ix.code]);
       if (code && moneyFrom(aligned[ix.price]) !== null && moneyFrom(aligned[ix.avg]) !== null) {
@@ -195,6 +201,7 @@ function positionSnapshotRows() {
     const fields = {
       code,
       units: ix.units >= 0 ? parseQuantity(cells[ix.units]) : null,
+      unitsText: ix.units >= 0 ? String(cells[ix.units] || '').trim() : '',
       price: moneyFrom(cells[ix.price]) ?? moneyFrom(text),
       avgCost: moneyFrom(cells[ix.avg]) ?? null,
       allocationPct: percentFrom(cells[ix.allocation]) ?? null,

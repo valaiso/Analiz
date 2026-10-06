@@ -27,9 +27,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         ...missingRows.map((row) => String(row.code).toUpperCase()),
         ...missingPositionCodes,
       ])];
-      const fundCodes = new Set(missingRows
+      const fundCodes = new Set([...(message.fundCodes || []).map((code) => String(code).toUpperCase()), ...missingRows
         .filter((row) => /\bfon\s+(?:alış|alım|satış|satım)\b/i.test(row.rawText || ''))
-        .map((row) => String(row.code).toUpperCase()));
+        .map((row) => String(row.code).toUpperCase())]);
       const marketData = {};
       const marketErrors = {};
       for (const code of missingCodes) {

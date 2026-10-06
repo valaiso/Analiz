@@ -6,7 +6,7 @@ import {
 import { DB, priceOnDate, lastDate, indexForDate, addLocalMarketAssets } from '../data.js';
 import {
   transactions, addTransaction, updateTransaction, removeTransaction,
-  activeProfileId, profiles, addMidasTransactions, saveMidasAccountSnapshot,
+  activeProfileId, profiles, addMidasTransactions, saveMidasAccountSnapshot, getMidasAccountSnapshot,
 } from '../store.js';
 import { sectionCard, fundPicker } from './common.js';
 import { requestMidasHistory } from '../midas-import.js';
@@ -130,6 +130,8 @@ async function readMidas(ctx, button) {
       DB.funds.map((fund) => fund.code),
       DB.funds.filter((fund) => fund.localMarketData)
         .map((fund) => ({ code: fund.code, source: fund.catSrc })),
+      DB.funds.filter((fund) => ['YAT', 'EMK', 'GYF', 'GSYF'].includes(fund.kind))
+        .map((fund) => fund.code),
     );
     saveMidasAccountSnapshot({
       capturedAt: new Date().toISOString(),
@@ -148,6 +150,9 @@ async function readMidas(ctx, button) {
     if (result.positions?.length) {
       const withUnits = result.positions.filter((position) => Number.isFinite(position.units) && position.units > 0).length;
       logMidas(`Midas Pozisyonlar tablosundan ${result.positions.length} açık varlık kaydı okundu; ${withUnits} kayıtta adet bilgisi var.`);
+      for (const position of result.positions.filter((row) => row.code === 'TP2')) {
+        logMidas(`TP2 adet kontrolü: Midas hücresi “${position.unitsText || 'okunamadı'}” → ayrıştırılan adet ${Number.isFinite(position.units) ? fmtUnits(position.units) : 'okunamadı'}.`);
+      }
     } else {
       logMidas('Midas toplam hesabı okundu; ancak Pozisyonlar tablosundaki açık varlıklar okunamadı. Panelde eski işlem kayıtlarından türetilmiş pozisyonlar kullanılmayacak.');
     }

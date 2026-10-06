@@ -9,6 +9,7 @@ window.addEventListener('message', async (event) => {
     const response = await chrome.runtime.sendMessage({
       type: 'ANALIZ_READ_MIDAS_HISTORY',
       knownCodes: request.knownCodes || [], localAssets: request.localAssets || [],
+      fundCodes: request.fundCodes || [],
     });
     window.postMessage({
       channel: 'ANALIZ_MIDAS_EXTENSION',

@@ -1,11 +1,11 @@
 /* Uygulama çatısı: veri yükleme, sekme yönlendirme, profil/tema ve Supabase eşitlemesi. */
 
 import { $, h, fmtDate, toast } from './util.js';
-import { loadCore, refreshData, DB } from './data.js';
+import { loadCore, loadHistories, refreshData, DB } from './data.js';
 import { analyze } from './portfolio.js';
 import {
   transactions, profiles, activeProfileId, setActiveProfile, activeProfileName,
-  settings, setSetting, subscribe, getState, importJSON,
+  settings, setSetting, subscribe, getState, importJSON, getMidasAccountSnapshot,
 } from './store.js';
 import { supabase } from './supabase-client.js';
 import { renderPanel } from './views/panel.js';
@@ -409,6 +409,10 @@ async function render() {
       accountEmail: sessionUser?.email || '',
       changeAccount: signOutFromAccount,
     };
+    if (currentView === 'panel' || currentView === 'dagilim') {
+      const positions = getMidasAccountSnapshot()?.positions || [];
+      if (positions.length) await loadHistories(positions.map((position) => position.code));
+    }
     if (view.needsAnalysis) {
       const txs = transactions();
       if (txs.length) app.replaceChildren(h('div', { class: 'loading' },

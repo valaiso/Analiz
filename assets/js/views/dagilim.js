@@ -61,9 +61,13 @@ export function renderDagilim(ctx) {
       }))));
     root.append(h('div', { class: 'notice' },
       `ETF, fon ve hisse değerleri Midas’tan okunan adetlerle sitenin fiyat geçmişinden hesaplanır; ${priced.length}/${positions.length} açık varlık grafiğe girdi. Kripto, yerel işlem kayıtlarına dayanır. Midas’ın günlük/toplam getiri hücreleri kullanılmaz.`));
-    for (const group of groupAssetRows(positions)) {
+    const sortedGroups = groupAssetRows(positions).map((group) => ({
+      ...group,
+      groupValue: group.rows.reduce((sum, row) => sum + (row.marketValueTRY || 0), 0),
+    })).sort((a, b) => b.groupValue - a.groupValue);
+    for (const group of sortedGroups) {
       const localOnly = group.label === 'Kripto';
-      const rows = [...group.rows].sort((a, b) => (b.marketValueTRY || 0) - (a.marketValueTRY || 0));
+      const rows = [...group.rows].sort((a, b) => (b.allocationPct ?? -1) - (a.allocationPct ?? -1));
       const table = h('div', { class: 'table-wrap' }, h('table', {},
         h('thead', {}, h('tr', {},
           h('th', { style: 'text-align:left' }, 'Varlık'),
