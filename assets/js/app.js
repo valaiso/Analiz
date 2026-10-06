@@ -60,6 +60,7 @@ function showAuthStyles() {
     .auth-error { color:var(--down); background:var(--down-soft); border-radius:8px; padding:9px 11px; font-size:.86rem; }
     .auth-note { margin-top:14px!important; font-size:.78rem; }
     .auth-sync { font-size:.76rem; color:var(--text-dim); white-space:nowrap; }
+    .quote-time { font-size:.72rem; color:var(--text-dim); white-space:nowrap; font-variant-numeric:tabular-nums; }
     @media(max-width:640px) { .auth-card { padding:19px; } .auth-sync { display:none; } }
   `;
   document.head.append(style);
@@ -151,6 +152,16 @@ function showMainUI(user) {
   status.textContent = `Bulut · ${user.email || 'Giriş yapıldı'}`;
   status.title = 'Portföy kayıtları Supabase hesabınla eşitleniyor';
 
+  let quoteTime = $('#quoteTime');
+  if (!quoteTime) {
+    quoteTime = document.createElement('span');
+    quoteTime.id = 'quoteTime';
+    quoteTime.className = 'quote-time';
+    quoteTime.setAttribute('aria-label', 'Son kotasyon zamanı');
+    $('.topbar-actions')?.prepend(quoteTime);
+  }
+  updateQuoteTimestamp();
+
   let signOut = $('#signOutBtn');
   if (!signOut) {
     signOut = document.createElement('button');
@@ -163,6 +174,7 @@ function showMainUI(user) {
     $('.topbar-actions')?.prepend(signOut);
     signOut.addEventListener('click', signOutFromAccount);
   }
+  $('.topbar-actions')?.prepend(quoteTime);
 }
 
 function hasLocalPortfolio(state) {
@@ -331,6 +343,24 @@ function updateDataStatus() {
   if (disclaimer) disclaimer.textContent = 'Bu araç kişisel takip amaçlıdır, yatırım tavsiyesi değildir. Fiyat verileri TEFAS ve açık piyasa kaynaklarından alınır. Portföy işlemleri Supabase hesabınla eşitlenir; erişim kullanıcı hesabı ve veritabanı kurallarıyla sınırlandırılır.';
 }
 
+function updateQuoteTimestamp() {
+  const label = $('#quoteTime');
+  if (!label) return;
+  const snapshot = getMidasAccountSnapshot();
+  const activeCodes = new Set((snapshot?.positions || []).map((position) => String(position.code || '').toUpperCase()));
+  const quoteTimes = Object.entries(snapshot?.liveQuotes || {})
+    .filter(([code]) => !activeCodes.size || activeCodes.has(String(code).toUpperCase()))
+    .map(([, quote]) => Number(quote?.timestamp))
+    .filter((timestamp) => Number.isFinite(timestamp) && timestamp > 0);
+  const timestamp = quoteTimes.length ? Math.max(...quoteTimes) : Date.parse(snapshot?.capturedAt || '');
+  label.textContent = Number.isFinite(timestamp)
+    ? new Intl.DateTimeFormat('tr-TR', {
+      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).format(new Date(timestamp))
+    : '—';
+  label.title = 'Son kotasyonun tarih ve saati';
+}
+
 async function refreshIntradayQuotes() {
   if (intradayQuoteBusy || document.visibilityState === 'hidden') return;
   const positions = getMidasAccountSnapshot()?.positions || [];
@@ -343,7 +373,10 @@ async function refreshIntradayQuotes() {
   intradayQuoteBusy = true;
   try {
     const received = await requestMidasLiveQuotes(codes);
-    if (Object.keys(received).length && saveMidasLiveQuotes(received)) await render({ preserveScroll: true });
+    if (Object.keys(received).length && saveMidasLiveQuotes(received)) {
+      updateQuoteTimestamp();
+      await render({ preserveScroll: true });
+    }
   } catch {
     // Keep the last site prices when the optional browser extension is unavailable.
   } finally {
@@ -426,6 +459,7 @@ function navigate(view, opts = {}) {
 async function render({ preserveScroll = false } = {}) {
   if (rendering || !cloudReady) return;
   rendering = true;
+  updateQuoteTimestamp();
   const previousScrollY = window.scrollY;
   const view = VIEWS[currentView] || VIEWS.panel;
   try {

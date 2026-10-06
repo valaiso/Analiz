@@ -50,7 +50,9 @@ Analiz açıkken eklenti, açık pozisyonların piyasa kotasyonlarını dakikada
 Kotasyonun piyasa tarihi bugünkü piyasa tarihiyle aynıysa günlük getiride bu kotasyon
 ve önceki kapanış kullanılır. Yeni piyasa tarihli kotasyon gelene kadar son fiyat
 portföy değerinde korunur; eski seansın günlük hareketi yeni güne taşınmaz.
-BIST hisseleri ve işlem gören ETF'ler
+BIST hisseleri ve işlem gören ETF'lerde güncel piyasa gününe ait kotasyon 30 dakikadan
+eskiyse günlük kazanç hesabına katılmaz, toplam değer için son fiyat saklanır ve panelde
+sembol ile kotasyon yaşı gösterilir. BIST hisseleri ve işlem gören ETF'ler
 son kotasyonla; TEFAS fonları site havuzundaki son yayımlanmış fiyatla değerlenir.
 Kotasyon sağlayıcısı gecikmeli olabilir.
 Miktar, fiyat, tarih ya da sembol güvenle okunamazsa satır içe aktarılmaz. Midas

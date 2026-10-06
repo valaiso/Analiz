@@ -55,6 +55,10 @@ export function renderPanel(ctx) {
   const dailyComplete = dailyRows.length > 0 && dailyRows.every((row) => isNum(row.dailyPLTRY));
   const dailyMissing = dailyRows.filter((row) => !isNum(row.dailyPLTRY)).map((row) => {
     if (!(row.units > 0)) return `${row.code} (adet yok)`;
+    if (row.quoteStale) return row.quoteAgeMinutes === null
+      ? `${row.code} (kotasyon zamanı yok; günlük hesaba alınmadı)`
+      : `${row.code} (kotasyon ${row.quoteAgeMinutes} dk eski; günlük hesaba alınmadı)`;
+    if (row.quoteMissing) return `${row.code} (piyasa kotasyonu alınmadı; son fiyat korunuyor)`;
     if (!row.siteDataAvailable) return `${row.code} (fiyat yok)`;
     return `${row.code} (önceki fiyat yok)`;
   });

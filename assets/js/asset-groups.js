@@ -121,18 +121,30 @@ export function addSiteMarketMetrics(positions) {
       ? marketDateInTimezone(liveQuote?.exchangeTimezoneName || defaultTimezone) : null;
     const quoteIsFromCurrentMarketDate = hasLiveQuote && liveQuote.date === marketToday;
     const useIntradayChange = hasLiveQuote && quoteIsFromCurrentMarketDate;
+    const quoteTimestamp = Number(liveQuote?.timestamp);
+    const quoteAgeMinutes = Number.isFinite(quoteTimestamp)
+      ? Math.max(0, Math.ceil((Date.now() - quoteTimestamp) / 60_000)) : null;
+    const quoteMissing = exchangeTraded && !hasLiveQuote;
+    const quoteStale = exchangeTraded && hasLiveQuote && quoteIsFromCurrentMarketDate
+      && (quoteAgeMinutes === null || quoteAgeMinutes > 30);
     const dailyReferencePrice = useIntradayChange ? liveQuote.previousClose : previousPrice;
     const hasPreviousPrice = !noDailyChange && hasSitePrice
       && (useIntradayChange || recentQuote && previousIndex >= 0)
       && Number.isFinite(dailyReferencePrice) && dailyReferencePrice > 0
       && Number.isFinite(previousFx);
     const dailyPLNative = noDailyChange ? 0
+      : quoteMissing ? null
+      : quoteStale ? null
       : exchangeTraded && hasLiveQuote && !useIntradayChange ? 0
         : hasPreviousPrice ? units * (price - dailyReferencePrice) : firstTrackedPoint ? 0 : null;
     const dailyPLTRY = noDailyChange ? 0
+      : quoteMissing ? null
+      : quoteStale ? null
       : exchangeTraded && hasLiveQuote && !useIntradayChange ? 0
         : hasPreviousPrice ? units * (price * fx - dailyReferencePrice * previousFx) : firstTrackedPoint ? 0 : null;
     const dailyPct = noDailyChange ? 0
+      : quoteMissing ? null
+      : quoteStale ? null
       : exchangeTraded && hasLiveQuote && !useIntradayChange ? 0
         : hasPreviousPrice ? ((price / dailyReferencePrice) - 1) * 100 : firstTrackedPoint ? 0 : null;
     const totalPLNative = noDailyChange ? 0
@@ -162,6 +174,9 @@ export function addSiteMarketMetrics(positions) {
       siteDataAvailable: hasSitePrice,
       quoteDate: hasLiveQuote ? liveQuote.date : quoteDate,
       quoteSource: hasLiveQuote ? liveQuote.source : 'site',
+      quoteMissing,
+      quoteStale,
+      quoteAgeMinutes,
       noDailyChange,
     };
   });
