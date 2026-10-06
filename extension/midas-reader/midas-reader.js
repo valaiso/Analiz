@@ -17,9 +17,13 @@ function multilineTextOf(element) {
     .split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join('\n');
 }
 
-function directCells(row) {
+function directCellElements(row) {
   const explicit = [...row.querySelectorAll(':scope > td, :scope > th, :scope > [role="cell"], :scope > [role="gridcell"]')];
-  return (explicit.length ? explicit : [...row.children]).map(textOf);
+  return explicit.length ? explicit : [...row.children];
+}
+
+function directCells(row) {
+  return directCellElements(row).map(textOf);
 }
 
 function executedStatus(status) {
@@ -52,7 +56,7 @@ function canonicalHeader(value) {
   return '';
 }
 
-function headerCells(element) {
+function headerCellItems(element) {
   const nodes = [element, ...element.querySelectorAll('*')]
     .filter(isVisible)
     .map((node) => ({ node, label: canonicalHeader(textOf(node)), box: node.getBoundingClientRect() }))
@@ -64,7 +68,11 @@ function headerCells(element) {
       bestByLabel.set(item.label, item);
     }
   }
-  return [...bestByLabel.values()].sort((a, b) => a.box.left - b.box.left).map((item) => item.label);
+  return [...bestByLabel.values()].sort((a, b) => a.box.left - b.box.left);
+}
+
+function headerCells(element) {
+  return headerCellItems(element).map((item) => item.label);
 }
 
 function isOrderHeader(element) {
@@ -94,86 +102,81 @@ function orderHistoryRoot() {
 }
 
 function candidateElements(root, scanStats) {
-  const rowSelector = 'tr, [role="row"], [class*="row" i]';
-  // Atlas bazı tablo sürümlerinde table/role=row kullanmıyor; sütun başlıklarını
-  // taşıyan CSS grid satırlarını da doğrudan çocuklarından tanı.
-  const headerCandidates = [...root.querySelectorAll(`${rowSelector}, div`)]
+  const headerCandidates = [...root.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
     .filter((element) => isVisible(element) && isOrderHeader(element))
     .sort((a, b) => textOf(a).length - textOf(b).length);
-  for (const headerRow of headerCandidates) {
-    const headers = headerCells(headerRow);
-    const norm = headers.map((header) => header.toLocaleLowerCase('tr'));
-    const index = (pattern) => norm.findIndex((header) => pattern.test(header));
-    const columns = {
-      code: index(/varlık|sembol|fon/),
-      status: index(/durum|statü|status/),
-      side: (() => {
-        const tradeColumn = index(/alış\s*\/\s*satış|işlem yönü|yön/);
-        return tradeColumn >= 0 ? tradeColumn : index(/emir tipi/);
-      })(),
-      units: index(/adet|miktar|lot/),
-      price: index(/fiyat|toplam/),
-      date: index(/emir tarihi|işlem tarihi|tarih/),
-    };
-    // Yalnızca gerçek emir tablosunu işle; sayfanın tamamını kapsayan listeleri
-    // ve işlem geçmişi kartlarını satır sanıp çoğaltma.
-    if (!isOrderHeader(headerRow)
-      || [columns.code, columns.side, columns.units, columns.date].some((column) => column < 0)) continue;
-    if (scanStats) scanStats.headers = headers;
+  const headerRow = headerCandidates[0];
+  if (!headerRow) return [];
+  const headerItems = headerCellItems(headerRow);
+  const headers = headerItems.map((item) => item.label);
+  const norm = headers.map((header) => header.toLocaleLowerCase('tr'));
+  const index = (pattern) => norm.findIndex((header) => pattern.test(header));
+  const columns = {
+    code: index(/varlık/), status: index(/durum/), side: index(/alış\s*\/\s*satış/),
+    units: index(/adet/), price: index(/^fiyat$/), date: index(/emir tarihi/),
+  };
+  if (scanStats) scanStats.headers = headers;
+  if ([columns.code, columns.status, columns.side, columns.units, columns.price, columns.date].some((column) => column < 0)) return [];
 
-    const semanticRoot = headerRow.closest('table, [role="table"]');
-    let rows = semanticRoot
-      ? [...semanticRoot.querySelectorAll(`tbody tr, ${rowSelector}, div, li`)]
-      : [];
-    if (!semanticRoot) {
-      // CSS grid satırları başlıkla aynı kapsayıcıda veya birkaç seviye aşağıda
-      // bulunur. Satır sayısı/sırası ve tarih/yön sütunlarıyla doğrula.
-      let scope = headerRow.parentElement;
-      for (let depth = 0; scope && root.contains(scope) && depth < 10; scope = scope.parentElement, depth += 1) {
-        const candidates = [...scope.querySelectorAll(`${rowSelector}, li, div`)]
-          .filter((row) => row !== headerRow && isVisible(row));
-        const matching = candidates.filter((row) => {
-          const cells = directCells(row);
-          return cells.length === headers.length && TRADE_WORDS.test(cells[columns.side] || '')
-            && DATE_WORDS.test(cells[columns.date] || '');
-        });
-        if (matching.length) { rows = matching; break; }
+  // Midas görsel tablosunda satır, semantic table/role=row kullanmadan iç içe
+  // div'lerle çizilebiliyor. Bu yüzden başlık satırının kardeşlerini varsaymak
+  // yerine, Emir geçmişi panelinde işlem yönü ve tarih taşıyan en küçük satır
+  // kapsayıcılarını bulup değer hücrelerini başlıkların x konumlarıyla eşle.
+  const nodes = [...root.querySelectorAll('tr, [role="row"], [class*="row" i], li, div')]
+    .filter((element) => element !== headerRow && isVisible(element))
+    .map((element) => ({ element, text: textOf(element) }))
+    .filter(({ text }) => text.length > 0 && text.length < 360
+      && TRADE_WORDS.test(text) && DATE_WORDS.test(text))
+    .sort((a, b) => a.text.length - b.text.length);
+  const uniqueRows = new Map();
+  for (const { element } of nodes) {
+    const cellContainers = [element, ...element.querySelectorAll('tr, [role="row"], [class*="row" i], li, div')]
+      .filter((container) => isVisible(container) && container.children.length >= 5 && container.children.length <= 12)
+      .sort((a, b) => textOf(a).length - textOf(b).length);
+    let cells = null;
+    let directCount = 0;
+    for (const container of cellContainers) {
+      const cellElements = directCellElements(container).filter(isVisible);
+      if (cellElements.length < 5 || cellElements.length > 12) continue;
+      const rawCells = cellElements.map(textOf);
+      const aligned = rawCells.length === headers.length ? rawCells : headerItems.map(({ box }) => {
+        const targetX = (box.left + box.right) / 2;
+        const nearest = cellElements.reduce((best, candidate) => {
+          const rect = candidate.getBoundingClientRect();
+          const distance = Math.abs((rect.left + rect.right) / 2 - targetX);
+          return !best || distance < best.distance ? { candidate, distance } : best;
+        }, null);
+        return nearest ? textOf(nearest.candidate) : '';
+      });
+      if (TRADE_WORDS.test(aligned[columns.side] || '') && DATE_WORDS.test(aligned[columns.date] || '')) {
+        cells = aligned;
+        directCount = rawCells.length;
+        break;
       }
     }
-    if (scanStats) scanStats.rowNodes += rows.length;
-    const uniqueRows = new Map();
-    for (const element of rows) {
-      const cells = directCells(element);
-      if (scanStats && cells.length === headers.length) scanStats.cellCountMatches += 1;
-      const status = columns.status >= 0 ? cells[columns.status] || '' : '';
-      if (scanStats && cells.length === headers.length) {
-        const category = statusCategory(status);
-        scanStats.statuses[category] = (scanStats.statuses[category] || 0) + 1;
-      }
-      const text = cells.join('\n');
-      const side = cells[columns.side] || '';
-      const date = cells[columns.date] || '';
-      const tradeAndDate = TRADE_WORDS.test(side) && DATE_WORDS.test(date);
-      if (scanStats && cells.length === headers.length && tradeAndDate) scanStats.tradeDateMatches += 1;
-      if (scanStats && cells.length === headers.length && columns.status >= 0 && executedStatus(status)) scanStats.completedStatuses += 1;
-      // Midas'ın emir tablosunda durum sütunu olmayabilir. Bu tabloda satır
-      // görünüyorsa ve doldurulmuş adet/fiyat varsa işlem gerçekleşmiştir;
-      // durum sütunu varsa bekleyen/iptal satırlarını kesinlikle dışarıda tut.
-      if ((columns.status >= 0 && !executedStatus(status)) || !tradeAndDate) continue;
-      const row = {
-        text,
-        headers,
-        cells,
-        sourceId: element.getAttribute('data-order-id')
-          || element.getAttribute('data-id')
-          || '',
-      };
-      const key = row.sourceId || text.replace(/\s+/g, ' ').trim();
-      if (key && !uniqueRows.has(key)) uniqueRows.set(key, row);
+    if (!cells) continue;
+    if (scanStats) {
+      scanStats.rowNodes += 1;
+      if (directCount === headers.length) scanStats.cellCountMatches += 1;
     }
-    if (uniqueRows.size) return [...uniqueRows.values()].slice(0, 500);
+    if (scanStats) scanStats.tradeDateMatches += 1;
+    const status = cells[columns.status] || '';
+    if (scanStats) {
+      const category = statusCategory(status);
+      scanStats.statuses[category] = (scanStats.statuses[category] || 0) + 1;
+      if (executedStatus(status)) scanStats.completedStatuses += 1;
+    }
+    // Yalnızca açıkça tamamlanan işlemleri içe aktar; bekleyen/iptal/kısmi emirleri atla.
+    if (!executedStatus(status)) continue;
+    const text = cells.join('\n');
+    const row = {
+      text, headers, cells,
+      sourceId: element.getAttribute('data-order-id') || element.getAttribute('data-id') || '',
+    };
+    const key = row.sourceId || text.replace(/\s+/g, ' ').trim();
+    if (key && !uniqueRows.has(key)) uniqueRows.set(key, row);
   }
-  return [];
+  return [...uniqueRows.values()].slice(0, 500);
 }
 
 function historyDiagnostics(root) {
