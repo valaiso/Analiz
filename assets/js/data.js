@@ -43,6 +43,15 @@ export async function loadCore({ bypassCache = false } = {}) {
   DB.meta = meta || {};
   DB.indexOf = new Map(calendar.map((d, i) => [d, i]));
   const localAssets = readLocalAssets();
+  // Upgrade asset histories saved by older releases in localStorage into the
+  // account-synced pool, so existing users do not need to fetch them again.
+  const syncedByCode = new Map((getMarketAssets() || []).map((asset) => [asset.code, asset]));
+  const needsSync = localAssets.some((asset) => {
+    const syncedDates = new Map((syncedByCode.get(asset.code)?.prices || [])
+      .map((point) => [point.date, point.price]));
+    return asset.prices.some((point) => syncedDates.get(point.date) !== point.price);
+  });
+  if (needsSync) saveMarketAssets(localAssets);
   const serverCodes = new Set(funds.map((fund) => fund.code));
   const localFunds = localAssets.filter((asset) => !serverCodes.has(asset.code))
     .map((asset) => installAssetInMemory(asset)).filter(Boolean);
