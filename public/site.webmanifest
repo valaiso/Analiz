@@ -1,0 +1,23 @@
+{
+  "name": "TEFAS Fon Analiz",
+  "short_name": "Analiz",
+  "start_url": "/Analiz/",
+  "scope": "/Analiz/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#ffffff",
+  "icons": [
+    {
+      "src": "/Analiz/favicon.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/Analiz/favicon.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
