@@ -46,6 +46,7 @@ export function renderDagilim(ctx) {
     }
     const securitiesValue = priced.filter((row) => !row.localRecord)
       .reduce((sum, row) => sum + row.pieValue, 0);
+    const valuesReconcile = !Number.isFinite(midasTotal) || securitiesValue <= midasTotal * 1.1;
     const cashValue = Number.isFinite(midasTotal) ? Math.max(0, midasTotal - securitiesValue) : 0;
     if (cashValue > 0.01) {
       byTypeMap.set('Nakit', (byTypeMap.get('Nakit') || 0) + cashValue);
@@ -58,7 +59,7 @@ export function renderDagilim(ctx) {
     const bistSlices = bistRows.filter((row) => row.pieValue > 0)
       .sort((a, b) => b.pieValue - a.pieValue)
       .map((row, index) => ({ label: row.code, value: row.pieValue, color: colorAt(index) }));
-    root.append(h('div', { class: 'grid grid-2' },
+    if (valuesReconcile) root.append(h('div', { class: 'grid grid-2' },
       sectionCard('Portföy Dağılımı', 'ETF · Fon · BIST hissesi · yabancı hisse · Nakit', donutWithLegend(byType, {
         centerTop: tl(Number.isFinite(midasTotal)
           ? midasTotal + localCrypto.reduce((sum, row) => sum + (row.value || 0), 0)
@@ -69,6 +70,8 @@ export function renderDagilim(ctx) {
         centerTop: tl(bistRows.reduce((sum, row) => sum + (row.pieValue || 0), 0), { compact: true }),
         centerBottom: 'BIST toplamı',
       }))));
+    else root.append(h('div', { class: 'notice warn' },
+      `Dağılım grafiği bekletiliyor: pozisyon fiyatlarından hesaplanan ${tl(securitiesValue)} değeri Midas hesap toplamı ${tl(midasTotal)} ile uyuşmuyor. Adet sütunlarını düzeltmek için Midas aktarımını yeniden çalıştır.`));
     root.append(h('div', { class: 'notice' },
       `ETF, fon ve hisse değerleri Midas’tan okunan adetlerle sitenin fiyat geçmişinden hesaplanır; ${live.filter((row) => row.marketValueTRY > 0).length}/${live.length} açık varlık grafiğe girdi. THF ve TP2 günlük değişimi %0 kabul edilir; değerleri portföye dahildir.`));
     const sortedGroups = groupAssetRows(positions).map((group) => ({
@@ -110,7 +113,7 @@ export function renderDagilim(ctx) {
       }))));
   }
 
-  /* Kâr/zarar katkısı, Midas pozisyon kodları + site fiyatı + kayıtlı adetlerden hesaplanır. */
+  /* Kâr/zarar katkısı, Midas pozisyon kodları + site fiyatı + Midas adetlerinden hesaplanır. */
   if (usingMidas) {
     for (const group of groupAssetRows(live)) {
       const rows = group.rows.filter((row) => isNum(row.totalPLTRY));

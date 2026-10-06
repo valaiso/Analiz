@@ -44,13 +44,16 @@ export function renderPanel(ctx) {
       allocationPct: null, localRecord: true,
     }))
     : [];
-  const completeMidasDaily = snapshotPositions.length > 0
-    && pricedSnapshotPositions.length === snapshotPositions.length;
   const siteDailyPL = pricedSnapshotPositions.reduce((sum, row) => sum + row.dailyPLTRY, 0)
     + localCrypto.reduce((sum, row) => sum + (row.dailyPLTRY || 0), 0);
   const siteDailyBase = pricedSnapshotPositions.reduce((sum, row) =>
     sum + (row.marketValuePrevTRY || 0), 0)
     + localCrypto.reduce((sum, row) => sum + (row.prevValue || 0), 0);
+  const calculatedPositionsValue = snapshotPositions.reduce((sum, row) =>
+    sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0);
+  const accountValueConsistent = !hasMidasTotal || calculatedPositionsValue <= midasSummary.totalValue * 1.1;
+  const dailyDataComplete = snapshotPositions.length > 0
+    && pricedSnapshotPositions.length === snapshotPositions.length && accountValueConsistent;
   const snapshotTime = midasSnapshot?.capturedAt
     ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(midasSnapshot.capturedAt))
     : null;
@@ -80,13 +83,15 @@ export function renderPanel(ctx) {
     plCard({
       label: 'Günlük Kazanç',
       amount: hasMidasTotal
-        ? (completeMidasDaily ? siteDailyPL : null) : totals.dayPL,
+        ? (dailyDataComplete ? siteDailyPL : null) : totals.dayPL,
       pct: hasMidasTotal
-        ? (completeMidasDaily && siteDailyBase > 0 ? (siteDailyPL / siteDailyBase) * 100 : null) : totals.dayPct,
+        ? (dailyDataComplete && siteDailyBase > 0 ? (siteDailyPL / siteDailyBase) * 100 : null) : totals.dayPct,
       formatMoney: tlSigned,
       formatPct: pctSigned,
       hint: hasMidasTotal
-        ? (completeMidasDaily
+        ? (!accountValueConsistent
+          ? `Günlük hesap bekletiliyor · Midas pozisyonlarından hesaplanan ${tl(calculatedPositionsValue)}, hesap toplamı ${tl(midasSummary.totalValue)} ile uyuşmuyor. Midas eşitlemesini yenile.`
+          : dailyDataComplete
           ? 'Her varlığın sitedeki son iki kapanış fiyatına göre; adet Midas’tan alınır'
           : `Günlük toplam bekletiliyor · ${missingDailyCodes.join(', ') || 'hesap verisi eksik'}`)
         : `${fmtDate(totals.prevDate)} kapanışına göre`,

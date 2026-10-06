@@ -53,8 +53,10 @@ export function addSiteMarketMetrics(positions) {
     if (!(units > 0)) return {
       ...position, units: null,
       dailyPLTRY: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null,
-      dailyPct: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null, totalPLTRY: null,
-      totalPct: null, marketValueTRY: null, marketValuePrevTRY: null, siteDataAvailable: false,
+      dailyPct: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null,
+      totalPLTRY: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null,
+      totalPct: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null,
+      marketValueTRY: null, marketValuePrevTRY: null, siteDataAvailable: false,
     };
     const latestIndex = Math.max(0, lastIndex());
     const hist = cachedHistory(position.code);
@@ -112,7 +114,9 @@ export function addSiteMarketMetrics(positions) {
       totalPLTRY,
       totalPct,
       marketValueTRY: hasSitePrice ? units * price * fx : null,
-      marketValuePrevTRY: hasPreviousPrice ? units * previousPrice * previousFx : null,
+      marketValuePrevTRY: noDailyChange && hasSitePrice
+        ? units * price * fx
+        : hasPreviousPrice ? units * previousPrice * previousFx : null,
       siteDataAvailable: hasSitePrice,
       quoteDate,
       noDailyChange,

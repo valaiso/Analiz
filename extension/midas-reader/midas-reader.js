@@ -150,18 +150,18 @@ function positionSnapshotRows() {
       const cellElements = directCellElements(container).filter(isVisible);
       if (cellElements.length < 4 || cellElements.length > 12) continue;
       const raw = cellElements.map(textOf);
-      // Midas bazen responsive tablolarda gizli/tekrarlı hücreleri satırın DOM'una
-      // ekliyor. Hücre sayısı başlık sayısına eşit olsa bile sıraları aynı olmayabilir;
-      // her alanı başlığın yatay konumuna göre, bir hücreyi yalnızca bir kez eşleştir.
+      // Hücre ve başlık sayıları eşitse sanal tablonun DOM sırası güvenilir ve
+      // başlıklardaki x koordinatları sticky kolonlarda kayabiliyor. Sayılar farklıysa
+      // başlık konumuyla eşleştir; uzak eşleşmeyi boş bırak, yanlış kolonu adet sanma.
       const unused = new Set(cellElements);
-      const aligned = headers.map(({ box }) => {
+      const aligned = raw.length === headers.length ? raw : headers.map(({ box }) => {
         const x = (box.left + box.right) / 2;
         const nearest = [...unused].reduce((best, candidate) => {
           const rect = candidate.getBoundingClientRect();
           const distance = Math.abs((rect.left + rect.right) / 2 - x);
           return !best || distance < best.distance ? { candidate, distance } : best;
         }, null);
-        if (!nearest) return '';
+        if (!nearest || nearest.distance > Math.max(24, box.width / 2)) return '';
         unused.delete(nearest.candidate);
         return textOf(nearest.candidate);
       });
