@@ -17,62 +17,59 @@ function multilineTextOf(element) {
     .split(/\r?\n/).map((line) => line.trim()).filter(Boolean).join('\n');
 }
 
+function directCells(row) {
+  const explicit = [...row.querySelectorAll(':scope > td, :scope > th, :scope > [role="cell"], :scope > [role="gridcell"]')];
+  return (explicit.length ? explicit : [...row.children]).map(textOf);
+}
+
+function executedStatus(status) {
+  const value = String(status || '').toLocaleLowerCase('tr');
+  if (/bekliyor|[iİ]ptal|kısmi|kismi|reddedildi/.test(value)) return false;
+  return /gerçekleş|tamamlan|filled|executed/.test(value);
+}
+
 function candidateElements() {
-  const isTransactionRow = (el) => {
-    if (!isVisible(el)) return false;
-    const text = textOf(el);
-    // Bekleyen/iptal edilmiş emirler portföy işlemi değildir; aktarıma alma.
-    if (/bekliyor|[iİ]ptal(?:\s+edildi)?/i.test(text)) return false;
-    return text.length >= 12 && text.length <= 700 && TRADE_WORDS.test(text) && DATE_WORDS.test(text);
-  };
-  const selectors = [
-    'tr', '[role="row"]', '[data-testid*="transaction" i]',
-    '[class*="transaction" i]', 'li',
-  ];
-  let elements = [];
-  for (const selector of selectors) {
-    elements = [...document.querySelectorAll(selector)].filter(isTransactionRow);
-    if (elements.length) {
-      if (selector.includes('transaction')) {
-        elements = elements.filter((el) => ![...el.children].some((child) => isTransactionRow(child)
-          && textOf(child).length < textOf(el).length));
-      }
-      break;
-    }
-  }
-
-  // Midas ekranında satır yapısı etiketsiz div'lerden oluşursa seçilecek en küçük
-  // kapsayıcıyı bulur; başlık ve bütün sayfa metnini işlem diye yorumlamaz.
-  if (!elements.length) {
-    elements = [...document.querySelectorAll('div, article, section')].filter((el) => {
-      if (!isVisible(el)) return false;
-      const text = textOf(el);
-      if (text.length < 20 || text.length > 700 || !TRADE_WORDS.test(text) || !DATE_WORDS.test(text)) return false;
-      return ![...el.children].some((child) => {
-        const childText = textOf(child);
-        return childText.length >= 20 && childText.length < text.length
-          && TRADE_WORDS.test(childText) && DATE_WORDS.test(childText);
-      });
-    });
-  }
-
-  return elements.map((element) => {
-    const text = textOf(element);
-    const table = element.closest('table');
-    const headers = table ? [...table.querySelectorAll('thead th')].map(textOf) : [];
-    const cells = element.matches('tr, [role="row"]')
-      ? [...element.querySelectorAll(':scope > td, :scope > th, :scope > [role="cell"]')].map(textOf)
-      : [];
-    return {
-      text: multilineTextOf(element),
-      headers,
-      cells,
-      sourceId: element.getAttribute('data-transaction-id')
-        || element.getAttribute('data-order-id')
-        || element.getAttribute('data-id')
-        || '',
+  const rowSelector = 'tr, [role="row"], [class*="row" i]';
+  const visibleRows = [...document.querySelectorAll(rowSelector)].filter(isVisible);
+  for (const headerRow of visibleRows) {
+    const headers = directCells(headerRow);
+    const norm = headers.map((header) => header.toLocaleLowerCase('tr'));
+    const index = (pattern) => norm.findIndex((header) => pattern.test(header));
+    const columns = {
+      code: index(/varlık|sembol|fon/),
+      status: index(/durum|statü|status/),
+      side: index(/alış\s*\/\s*satış|işlem yönü|yön/),
+      units: index(/adet|miktar|lot/),
+      price: index(/fiyat/),
+      date: index(/emir tarihi|işlem tarihi|tarih/),
     };
-  }).slice(0, 500);
+    // Yalnızca gerçek emir tablosunu işle; sayfanın tamamını kapsayan listeleri
+    // ve işlem geçmişi kartlarını satır sanıp çoğaltma.
+    if (Object.values(columns).some((column) => column < 0)) continue;
+
+    const root = headerRow.closest('table, [role="table"], [role="grid"]')
+      || headerRow.parentElement?.parentElement
+      || document;
+    const rows = [...root.querySelectorAll(rowSelector)]
+      .filter((row) => row !== headerRow && isVisible(row));
+    return rows.flatMap((element) => {
+      const cells = directCells(element);
+      const status = cells[columns.status] || '';
+      const text = cells.join('\n');
+      const side = cells[columns.side] || '';
+      const date = cells[columns.date] || '';
+      if (!executedStatus(status) || !TRADE_WORDS.test(side) || !DATE_WORDS.test(date)) return [];
+      return [{
+        text,
+        headers,
+        cells,
+        sourceId: element.getAttribute('data-order-id')
+          || element.getAttribute('data-id')
+          || '',
+      }];
+    }).slice(0, 500);
+  }
+  return [];
 }
 
 function parseLocaleNumber(value) {
@@ -107,10 +104,15 @@ function parseDate(text) {
 function normalizeRow(row) {
   const text = row.text;
   const lower = text.toLocaleLowerCase('tr');
-  const type = /satış|satım|sell/i.test(lower) ? 'SAT' : /alış|alım|buy/i.test(lower) ? 'AL' : '';
-  const date = parseDate(text);
   const cells = row.cells || [];
   const headers = row.headers || [];
+  const valueByHeader = (pattern) => {
+    const i = headers.findIndex((header) => pattern.test(header));
+    return i >= 0 ? cells[i] || '' : '';
+  };
+  const side = valueByHeader(/alış\s*\/\s*satış|işlem yönü|yön/) || text;
+  const type = /satış|satım|sell/i.test(side) ? 'SAT' : /alış|alım|buy/i.test(side) ? 'AL' : '';
+  const date = parseDate(valueByHeader(/emir tarihi|işlem tarihi|tarih/) || text);
   const fieldByHeader = (pattern) => {
     const i = headers.findIndex((header) => pattern.test(header));
     return i >= 0 ? cells[i] : '';
@@ -125,21 +127,24 @@ function normalizeRow(row) {
       return '';
     })();
 
-  let code = getLabel(/sembol|varlık|fon kodu|hisse kodu/i, 'sembol|varlık|fon kodu|hisse kodu')
+  let code = (valueByHeader(/varlık|sembol|fon kodu|hisse kodu/i)
+    || getLabel(/sembol|varlık|fon kodu|hisse kodu/i, 'sembol|varlık|fon kodu|hisse kodu'))
     .match(/[A-Z][A-Z0-9.-]{1,9}/)?.[0] || '';
   if (!code) {
     const excluded = new Set(['AL', 'SAT', 'ALIŞ', 'ALIM', 'SATIŞ', 'SATIM', 'BUY', 'SELL', 'USD', 'TRY', 'TL', 'ADET', 'LOT', 'FON']);
     code = text.match(/\b[A-Z][A-Z0-9.-]{1,6}\b/g)?.find((token) => !excluded.has(token)) || '';
   }
 
-  let units = parseLocaleNumber(getLabel(/miktar|adet|lot|gerçekleşen miktar|gerçekleşen adet/i, 'miktar|adet|lot|gerçekleşen miktar|gerçekleşen adet'));
+  let units = parseLocaleNumber(valueByHeader(/gerçekleşen miktar|gerçekleşen adet|adet|miktar|lot/i)
+    || getLabel(/miktar|adet|lot|gerçekleşen miktar|gerçekleşen adet/i, 'miktar|adet|lot|gerçekleşen miktar|gerçekleşen adet'));
   if (!(units > 0)) {
     const match = text.match(/([\d.,]+)\s*(?:adet|lot|pay|hisse)\b/i)
       || text.match(/(?:adet|lot|pay|hisse)\s*[:：]?\s*([\d.,]+)/i);
     units = match ? parseLocaleNumber(match[1]) : null;
   }
 
-  let price = parseLocaleNumber(getLabel(/birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat/i, 'birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat'));
+  let price = parseLocaleNumber(valueByHeader(/birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat/i)
+    || getLabel(/birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat/i, 'birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat'));
   const amount = parseLocaleNumber(getLabel(/işlem tutarı|gerçekleşen tutar|toplam tutar|tutar/i, 'işlem tutarı|gerçekleşen tutar|toplam tutar|tutar'));
   if (!(price > 0) && amount > 0 && units > 0) price = amount / units;
   const fee = parseLocaleNumber(getLabel(/komisyon|masraf|ücret/i, 'komisyon|masraf|ücret')) || 0;

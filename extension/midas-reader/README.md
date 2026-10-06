@@ -9,9 +9,10 @@ Midas'ın özel API uçlarına erişmez; ağ isteği ya da emir göndermez.
 1. Chrome/Edge'de `chrome://extensions` / `edge://extensions` sayfasını açın.
 2. Geliştirici modunu açın ve **Paketlenmemiş öğe yükle** seçeneğini kullanın.
 3. Bu klasörü seçin: `extension/midas-reader`.
-4. `https://atlas.getmidas.com/` sekmesini yenileyin ve Midas'ta **Yatırım İşlem Geçmişi** sayfasını açın.
-5. Analiz'i ayrı sekmede yenileyin. **İşlemler → Midas Aktarımı → Midas’tan İşlemleri Oku** düğmesine basın.
-6. Önizlemede otomatik eşleşen satırları kontrol edip içe aktarımı onaylayın.
+4. `https://atlas.getmidas.com/` sekmesini yenileyin ve Midas'ta **Emir geçmişi** tablosunu açın.
+5. Tablo sayfalamasında mümkün olan en yüksek **Sayfa başına** değerini seçin. Eklenti yalnızca ekranda yüklenmiş emir satırlarını okur.
+6. Analiz'i ayrı sekmede yenileyin. **İşlemler → Midas Aktarımı → Midas’tan İşlemleri Oku** düğmesine basın.
+7. Önizlemede sembol, alış/satış, tarih, adet ve fiyatı kontrol edip içe aktarımı onaylayın.
 
 Eklenti yalnızca iki site için erişim izni ister: Midas Atlas ve Analiz GitHub Pages adresi.
 İçe aktarılan işlemler `localStorage` içinde ayrı bir anahtarda tutulur; Supabase portföy
@@ -20,7 +21,8 @@ açtıysa mevcut davranış gereği Supabase'e eşitlenir. Midas kayıtları yed
 
 ## Sınırlar
 
-İlk sürüm, Atlas işlem geçmişinde o anda sayfaya yüklenmiş görünen satırları tarar.
-Eski kayıtlar için Midas'ta tarih aralığını değiştirip geçmiş satırlarını açın. Miktar,
-fiyat, tarih veya sembol satır metninden güvenle çıkarılamazsa önizlemede eksik gösterilir
-ve içe aktarılmaz. Midas arayüzü değişirse içerik okuyucusunun güncellenmesi gerekebilir.
+Eklenti yalnızca emir tablosunda durumu **Gerçekleşti/Tamamlandı** olan satırları alır;
+bekleyen, iptal edilmiş ve kısmi emirleri atlar. Yalnızca tablonun o anda yüklenmiş
+sayfası okunur. Eski kayıtlar için tabloyu sayfalayın veya tarih aralığını değiştirin.
+Miktar, fiyat, tarih ya da sembol güvenle okunamazsa satır içe aktarılmaz. Midas
+arayüzü değişirse içerik okuyucusunun güncellenmesi gerekebilir.

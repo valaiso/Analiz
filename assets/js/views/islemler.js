@@ -76,7 +76,9 @@ async function readMidas(ctx, button) {
   button.textContent = 'Midas sekmesi okunuyor…';
   try {
     const rows = await requestMidasHistory();
-    if (!rows.length) throw new Error('İşlem satırı bulunamadı. Midas’ta Yatırım İşlem Geçmişi ekranını aç.');
+    if (!rows.length) {
+      throw new Error('Tamamlanmış emir satırı bulunamadı. Midas “Emir geçmişi” tablosunda “Gerçekleşti/Tamamlandı” durumundaki kayıtları göster; bekleyen ve iptal emirleri aktarılmaz.');
+    }
     showMidasPreview(rows, ctx);
   } catch (error) {
     toast(error.message);
@@ -258,7 +260,7 @@ export function renderIslemler(ctx) {
     onclick: (event) => readMidas(ctx, event.currentTarget),
   }, multiProfile ? 'Önce tek profil seç' : 'Midas’tan İşlemleri Oku');
   root.append(sectionCard('Midas Aktarımı',
-    'Açık Midas işlem geçmişini oku; emir gönderilmez. İçe aktarılan kayıtlar bu tarayıcıda kalır ve Supabase’e eşitlenmez.',
+    'Midas Emir geçmişi tablosundaki tamamlanmış alış/satışları oku; bekleyen ve iptal emirlerini atla. Miktar ve fiyatı doğrulanan kayıtlar içe aktarılır; emir gönderilmez. Midas kayıtları bu tarayıcıda kalır.',
     h('div', { class: 'btn-row' }, midasButton)));
 
   /* --------------------------------------------------------------- ekleme formu */
