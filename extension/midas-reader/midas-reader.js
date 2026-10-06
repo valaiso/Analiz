@@ -150,39 +150,45 @@ function positionSnapshotRows() {
     for (const container of containers) {
       const cellElements = directCellElements(container).filter(isVisible);
       if (cellElements.length < 4 || cellElements.length > 12) continue;
-      const raw = cellElements.map(textOf);
-      // Hücre ve başlık sayıları eşitse sanal tablonun DOM sırası güvenilir ve
-      // başlıklardaki x koordinatları sticky kolonlarda kayabiliyor. Sayılar farklıysa
-      // başlık konumuyla eşleştir; uzak eşleşmeyi boş bırak, yanlış kolonu adet sanma.
+      // Bazı Midas satırlarında DOM hücre sayısı başlık sayısına eşit olsa da
+      // gizli/ek hücreler yüzünden sıra kayabiliyor. Her alanı başlığın x konumuyla
+      // eşleştir; uzak hücreyi boş bırakıp yanlış alanı adet/maliyet olarak okuma.
       const unused = new Set(cellElements);
-      const aligned = raw.length === headers.length ? raw : headers.map(({ box }) => {
+      const sourceAligned = [];
+      const aligned = headers.map(({ box }) => {
         const x = (box.left + box.right) / 2;
         const nearest = [...unused].reduce((best, candidate) => {
           const rect = candidate.getBoundingClientRect();
           const distance = Math.abs((rect.left + rect.right) / 2 - x);
           return !best || distance < best.distance ? { candidate, distance } : best;
         }, null);
-        if (!nearest || nearest.distance > Math.max(24, box.width / 2)) return '';
+        if (!nearest || nearest.distance > Math.max(32, box.width / 2)) {
+          sourceAligned.push('');
+          return '';
+        }
         unused.delete(nearest.candidate);
-        return textOf(nearest.candidate);
+        const value = textOf(nearest.candidate);
+        sourceAligned.push(value);
+        return value;
       });
       const code = assetCodeAtRow(root, container, headers[ix.code]);
       if (code && moneyFrom(aligned[ix.price]) !== null && moneyFrom(aligned[ix.avg]) !== null) {
         cells = aligned;
-        sourceCells = raw;
+        sourceCells = sourceAligned;
         rowElement = container;
         break;
       }
-      if (raw.length > 1 && raw.every((value) => value === raw[0])) {
+      const repeatedCell = cellElements.map(textOf);
+      if (repeatedCell.length > 1 && repeatedCell.every((value) => value === repeatedCell[0])) {
         const code = assetCodeAtRow(root, container, headers[ix.code]);
-        const moneyValues = [...raw[0].matchAll(/([−-])?\s*(?:₺|\$|€|USD|TRY)\s*([\d.,]+)/gi)]
+        const moneyValues = [...repeatedCell[0].matchAll(/([−-])?\s*(?:₺|\$|€|USD|TRY)\s*([\d.,]+)/gi)]
           .map((match) => {
             const amount = parseLocaleNumber(match[2]);
             return amount === null ? null : (match[1] ? -amount : amount);
           }).filter((value) => value !== null);
         if (code && moneyValues.length >= 2) {
-          const symbol = raw[0].match(/\$|€|USD|TRY|₺/i)?.[0] || '₺';
-          const percents = [...raw[0].matchAll(/([−+-])?\s*%\s*([\d.,]+)|([−+-])?\s*([\d.,]+)\s*%/g)]
+          const symbol = repeatedCell[0].match(/\$|€|USD|TRY|₺/i)?.[0] || '₺';
+          const percents = [...repeatedCell[0].matchAll(/([−+-])?\s*%\s*([\d.,]+)|([−+-])?\s*([\d.,]+)\s*%/g)]
             .map((match) => `${match[1] || match[3] || ''}${match[2] || match[4]}%`);
           cells = Array(headers.length).fill('');
           cells[ix.code] = code;
@@ -191,7 +197,7 @@ function positionSnapshotRows() {
           cells[ix.daily] = `${moneyValues[2] < 0 ? '-' : ''}${symbol}${Math.abs(moneyValues[2] || 0)} ${percents[1] || ''}`;
           cells[ix.total] = `${moneyValues[3] < 0 ? '-' : ''}${symbol}${Math.abs(moneyValues[3] || 0)} ${percents[2] || ''}`;
           cells[ix.allocation] = percents[0] || '';
-          sourceCells = raw;
+          sourceCells = sourceAligned;
           rowElement = container;
           break;
         }
@@ -214,7 +220,7 @@ function positionSnapshotRows() {
       totalPct: percentFrom(cells[ix.total]) ?? null,
       currency: /\$|USD/i.test(text) ? 'USD' : 'TRY',
     };
-    if (['THF', 'TP2', 'MGV', 'VIG', 'SCHD'].includes(code)) {
+    if (code) {
       fields.domCells = headers.map(({ label }, index) => ({
         header: label, raw: sourceCells[index] || '', selected: cells[index] || '',
       }));
