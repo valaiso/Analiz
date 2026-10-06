@@ -78,7 +78,7 @@ async function copyMidasLog(field) {
   toast('Aktarım mesajı kopyalandı');
 }
 
-function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}) {
+function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle = null) {
   const candidates = rows.map((row) => ({
     ...row,
     missing: [...(row.missing || [])],
@@ -129,8 +129,13 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}) {
   const actions = h('div', { class: 'btn-row', style: 'justify-content:flex-end' },
     h('button', { class: 'btn', type: 'button', onclick: () => close() }, 'Vazgeç'),
     h('button', {
-      class: 'btn btn-primary', type: 'button', disabled: !ready.length || unknownCodes.length > 0,
+      class: 'btn btn-primary', type: 'button',
+      disabled: (!ready.length && !applyLifecycle) || unknownCodes.length > 0,
       onclick: () => {
+        const lifecycleResult = applyLifecycle?.();
+        if (lifecycleResult && (lifecycleResult.removedTransactions || lifecycleResult.pruned.removed || lifecycleResult.pruned.trimmed)) {
+          logMidas(`Kapalı dönem temizliği: ${lifecycleResult.removedTransactions} Midas işlem kaydı, ${lifecycleResult.pruned.removed} fiyat geçmişi silindi; ${lifecycleResult.pruned.trimmed} açık varlığın geçmişi alış tarihinden başlatıldı.`);
+        }
         const result = addMidasTransactions(ready);
         logMidas(`${result.added} yeni işlem eklendi, ${result.updated} mevcut Midas işlemi güncellendi, ${result.skipped} kayıt atlandı.`);
         close();
@@ -236,11 +241,6 @@ async function readMidas(ctx, button) {
         closedCodes.push(code);
       }
     }
-    const removedTransactions = pruneMidasHistory(activeCycleStarts, closedCodes);
-    const pruned = pruneLocalMarketAssets(activeCycleStarts, closedCodes);
-    if (removedTransactions || pruned.removed || pruned.trimmed) {
-      logMidas(`Kapalı dönem temizliği: ${removedTransactions} Midas işlem kaydı, ${pruned.removed} fiyat geçmişi silindi; ${pruned.trimmed} açık varlığın geçmişi alış tarihinden başlatıldı.`);
-    }
     const closedSet = new Set(closedCodes);
     const cycleRows = rows.filter((row) => {
       if (closedSet.has(row.code)) return false;
@@ -265,7 +265,10 @@ async function readMidas(ctx, button) {
     }
     const stillUnknown = [...new Set(valid.filter((row) => !DB.byCode.has(row.code)).map((row) => row.code))];
     if (stillUnknown.length) logMidas(`Fiyat verisi alınamayan semboller: ${stillUnknown.join(', ')}. Bu semboller tamamlanmadan aktarım onayı açılmayacak.`);
-    showMidasPreview(cycleRows, result, ctx, result.marketErrors || {});
+    showMidasPreview(cycleRows, result, ctx, result.marketErrors || {}, () => ({
+      removedTransactions: pruneMidasHistory(activeCycleStarts, closedCodes),
+      pruned: pruneLocalMarketAssets(activeCycleStarts, closedCodes),
+    }));
   } catch (error) {
     if (!accountLogged && error.accountSummary) logMidasAccount(error.accountSummary);
     logMidas(`HATA: ${error.message}`);
