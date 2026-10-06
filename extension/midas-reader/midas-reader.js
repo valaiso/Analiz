@@ -28,6 +28,15 @@ function executedStatus(status) {
   return /gerçekleş|tamamlan|filled|executed/.test(value);
 }
 
+function hasOrderHistoryTable() {
+  const rowSelector = 'tr, [role="row"], [class*="row" i]';
+  const required = [/varlık|sembol|fon/, /durum|statü|status/, /alış\s*\/\s*satış|işlem yönü|yön/, /adet|miktar|lot/, /fiyat/, /emir tarihi|işlem tarihi|tarih/];
+  return [...document.querySelectorAll(rowSelector)].filter(isVisible).some((row) => {
+    const cells = directCells(row).map((cell) => cell.toLocaleLowerCase('tr'));
+    return required.every((pattern) => cells.some((cell) => pattern.test(cell)));
+  });
+}
+
 function candidateElements() {
   const rowSelector = 'tr, [role="row"], [class*="row" i]';
   const visibleRows = [...document.querySelectorAll(rowSelector)].filter(isVisible);
@@ -70,6 +79,82 @@ function candidateElements() {
     }).slice(0, 500);
   }
   return [];
+}
+
+function paginationState(direction) {
+  const labels = [...document.querySelectorAll('span, div, p')]
+    .filter((element) => isVisible(element) && /^\d+\s*[-–]\s*\d+\s*\/\s*\d+$/.test(textOf(element)))
+    .sort((a, b) => textOf(a).length - textOf(b).length);
+  const indicator = labels[0];
+  if (!indicator) return null;
+  const indicatorBox = indicator.getBoundingClientRect();
+
+  for (let container = indicator.parentElement, depth = 0; container && depth < 5; container = container.parentElement, depth += 1) {
+    const buttons = [...container.querySelectorAll('button')]
+      .filter((button) => isVisible(button))
+      .map((button) => ({ button, box: button.getBoundingClientRect() }))
+      .filter(({ box }) => box.bottom >= indicatorBox.top - 12 && box.top <= indicatorBox.bottom + 12);
+    const candidates = buttons.filter(({ box }) => direction === 'next'
+      ? box.left >= indicatorBox.right - 2
+      : box.right <= indicatorBox.left + 2);
+    if (candidates.length) {
+      candidates.sort((a, b) => direction === 'next' ? a.box.left - b.box.left : b.box.right - a.box.right);
+      return {
+        label: textOf(indicator),
+        button: candidates[0].button,
+        disabled: candidates[0].button.disabled
+          || candidates[0].button.getAttribute('aria-disabled') === 'true',
+      };
+    }
+  }
+  return { label: textOf(indicator), button: null, disabled: true };
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function collectCompletedHistory() {
+  const collected = new Map();
+  if (!hasOrderHistoryTable()) return [];
+  const start = paginationState('prev')?.label || '';
+  let pageCount = 0;
+
+  // Midas bazı hesaplarda yüzlerce emri 5'li sayfalarda gösteriyor. Yalnızca
+  // emir tablosunun sayfa okunu kullanarak ilerle; alım/satım kontrollerine dokunma.
+  while (pageCount < 300) {
+    for (const row of candidateElements()) {
+      const key = row.sourceId || row.text.replace(/\s+/g, ' ').trim();
+      if (key) collected.set(key, row);
+    }
+
+    const next = paginationState('next');
+    if (!next?.button || next.disabled) break;
+    const previousLabel = next.label;
+    next.button.click();
+    let changed = false;
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await wait(100);
+      const current = paginationState('next');
+      if (current?.label && current.label !== previousLabel) {
+        changed = true;
+        break;
+      }
+    }
+    if (!changed) break;
+    pageCount += 1;
+  }
+
+  // Kullanıcının başladığı tablo sayfasına geri dön.
+  for (let page = 0; page < pageCount; page += 1) {
+    const previous = paginationState('prev');
+    if (!previous?.button || previous.disabled) break;
+    const previousLabel = previous.label;
+    previous.button.click();
+    for (let attempt = 0; attempt < 30; attempt += 1) {
+      await wait(100);
+      if (paginationState('prev')?.label !== previousLabel) break;
+    }
+  }
+  return [...collected.values()].slice(0, 500);
 }
 
 function parseLocaleNumber(value) {
@@ -160,7 +245,10 @@ function normalizeRow(row) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'ANALIZ_SCAN_VISIBLE_HISTORY') return undefined;
-  const rows = candidateElements().map(normalizeRow);
-  sendResponse({ ok: true, rows });
-  return false;
+  collectCompletedHistory().then((rawRows) => {
+    sendResponse({ ok: true, rows: rawRows.map(normalizeRow) });
+  }).catch((error) => {
+    sendResponse({ ok: false, error: error.message || 'Midas emir geçmişi okunamadı.' });
+  });
+  return true;
 });

@@ -9,20 +9,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       return;
     }
 
-    const results = await Promise.all(tabs.map(async (tab) => {
-      try {
-        return await chrome.tabs.sendMessage(tab.id, { type: 'ANALIZ_SCAN_VISIBLE_HISTORY' });
-      } catch {
-        return null;
-      }
-    }));
-    const result = results.find((item) => item?.ok && item.rows?.length);
-    if (result) sendResponse(result);
-    else {
-      const page = results.find((item) => item?.ok);
-      sendResponse(page || {
+    // Sayfalar arasında gezen okuyucu aynı anda yalnızca tek sekmeye dokunmalı.
+    tabs.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
+    try {
+      const result = await chrome.tabs.sendMessage(tabs[0].id, { type: 'ANALIZ_SCAN_VISIBLE_HISTORY' });
+      sendResponse(result);
+    } catch {
+      sendResponse({
         ok: false,
-        error: 'Midas sekmesi bulundu ama okunabilir işlem satırı yok. İşlem Geçmişi ekranını açıp yeniden deneyin.',
+        error: 'Midas sekmesindeki okuyucuya ulaşılamadı. Midas sekmesini yenileyip tekrar deneyin.',
       });
     }
   }).catch((error) => sendResponse({ ok: false, error: error.message }));

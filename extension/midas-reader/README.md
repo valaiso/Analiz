@@ -10,7 +10,7 @@ Midas'ın özel API uçlarına erişmez; ağ isteği ya da emir göndermez.
 2. Geliştirici modunu açın ve **Paketlenmemiş öğe yükle** seçeneğini kullanın.
 3. Bu klasörü seçin: `extension/midas-reader`.
 4. `https://atlas.getmidas.com/` sekmesini yenileyin ve Midas'ta **Emir geçmişi** tablosunu açın.
-5. Tablo sayfalamasında mümkün olan en yüksek **Sayfa başına** değerini seçin. Eklenti yalnızca ekranda yüklenmiş emir satırlarını okur.
+5. Midas emir geçmişinde, eklenti son eriştiğiniz Midas sekmesindeki tablonun sayfalarını sırayla tarar ve başladığı sayfaya geri döner.
 6. Analiz'i ayrı sekmede yenileyin. **İşlemler → Midas Aktarımı → Midas’tan İşlemleri Oku** düğmesine basın.
 7. Önizlemede sembol, alış/satış, tarih, adet ve fiyatı kontrol edip içe aktarımı onaylayın.
 
@@ -22,7 +22,8 @@ açtıysa mevcut davranış gereği Supabase'e eşitlenir. Midas kayıtları yed
 ## Sınırlar
 
 Eklenti yalnızca emir tablosunda durumu **Gerçekleşti/Tamamlandı** olan satırları alır;
-bekleyen, iptal edilmiş ve kısmi emirleri atlar. Yalnızca tablonun o anda yüklenmiş
-sayfası okunur. Eski kayıtlar için tabloyu sayfalayın veya tarih aralığını değiştirin.
+bekleyen, iptal edilmiş ve kısmi emirleri atlar. Eklenti yalnızca sayfalama oklarını
+kullanır; alım/satım emirlerine dokunmaz. Midas'ın açık olan tablo aralığındaki tüm
+sayfalar taranır.
 Miktar, fiyat, tarih ya da sembol güvenle okunamazsa satır içe aktarılmaz. Midas
 arayüzü değişirse içerik okuyucusunun güncellenmesi gerekebilir.
