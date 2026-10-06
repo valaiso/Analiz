@@ -275,6 +275,15 @@ export function renderPanel(ctx) {
   }
 
   const durmus = open.filter(fiyatiDurmus);
+  const fiyatYok = open.filter((holding) => holding.missingPrice || holding.missingFx);
+  if (fiyatYok.length) {
+    root.append(h('div', { class: 'notice warn' },
+      `${fiyatYok.map((holding) => holding.code).join(', ')} için fiyat geçmişi bulunamadı. `
+      + 'Bu pozisyonların maliyeti ve adetleri işlem kaydında korunur; güncel değer/kâr-zarar toplamına katılmaz. '
+      + `Eksik fiyatlı pozisyon maliyeti: ${tl(analysis.totals.unpricedCost)}. `
+      + 'Toplam getiri yüzdesi ve XIRR fiyat verisi gelene kadar gösterilmez.'));
+  }
+
   if (durmus.length) {
     root.append(h('div', { class: 'notice warn' },
       `${durmus.map((x) => `${x.code} (son fiyat ${fmtDate(x.lastPriceDate)})`).join(', ')} `

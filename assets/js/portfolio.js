@@ -100,7 +100,7 @@ export async function analyze(txs) {
   /* ---------------------------------------------------- güncel pozisyon tablosu */
 
   const holdings = [];
-  let value = 0, cost = 0, dayPL = 0, prevValue = 0, realizedTotal = 0;
+  let value = 0, cost = 0, unpricedCost = 0, dayPL = 0, prevValue = 0, realizedTotal = 0;
   // prevValue, dünkü kapanışta gerçekten elde olan adetlerden hesaplanır;
   // bugün alınan paylar paydayı şişirmesin diye aşağıdaki döngüde toplanır.
 
@@ -120,6 +120,7 @@ export async function analyze(txs) {
       holdings.push({
         ...p, closed: true, name: meta?.name || p.code, cat: meta?.cat || '—',
         price, currency, currencySymbol, value: 0, avgCost: 0, unrealized: 0, unrealizedPct: null,
+        missingPrice: !isNum(price), missingFx: !isNum(fxRate),
         dayPL: 0, dayPct: null, totalPL: p.realized, weight: 0,
       });
       continue;
@@ -131,8 +132,12 @@ export async function analyze(txs) {
     const avgCost = p.nativeCost / p.units;
     const unrealized = hasPrice && hasFx ? holdingValue - p.cost : 0;
 
-    value += holdingValue;
-    cost += p.cost;
+    if (hasPrice && hasFx) {
+      value += holdingValue;
+      cost += p.cost;
+    } else {
+      unpricedCost += p.cost;
+    }
 
     holdings.push({
       ...p,
@@ -186,7 +191,10 @@ export async function analyze(txs) {
 
   /* ------------------------------------------------------------------ seriler */
 
-  const series = buildSeries(txs);
+  const unpricedOpen = holdings.filter((holding) => !holding.closed && (holding.missingPrice || holding.missingFx));
+  const hasUnpricedTransactions = txs.some((tx) => !isNum(priceAtIndex(cachedHistory(tx.code), last)));
+  const pricedTxs = txs.filter((tx) => isNum(priceAtIndex(cachedHistory(tx.code), last)));
+  const series = buildSeries(pricedTxs);
   const netInvested = series.invested.length ? series.invested[series.invested.length - 1] : 0;
   const unrealizedTotal = value - cost;
   const totalPL = unrealizedTotal + realizedTotal;
@@ -198,6 +206,8 @@ export async function analyze(txs) {
     totals: {
       value,
       cost,
+      unpricedCost,
+      unpricedCount: unpricedOpen.length,
       dayPL,
       dayPct: prevValue > EPS ? (dayPL / prevValue) * 100 : null,
       unrealized: unrealizedTotal,
@@ -205,13 +215,13 @@ export async function analyze(txs) {
       realized: realizedTotal,
       totalPL,
       netInvested,
-      totalPct: netInvested > EPS ? (totalPL / netInvested) * 100 : null,
+      totalPct: !hasUnpricedTransactions && netInvested > EPS ? (totalPL / netInvested) * 100 : null,
       lastDate: DB.calendar[last],
       prevDate: DB.calendar[prev],
       fundCount: holdings.filter((h) => !h.closed).length,
     },
     series,
-    xirr: xirrFromTx(txs, value, DB.calendar[last]),
+    xirr: hasUnpricedTransactions ? null : xirrFromTx(txs, value, DB.calendar[last]),
     // Veri takviminden eski işlem varsa arayüz bunu açıklar.
     preRange: hasPreRangeTx(txs),
   };

@@ -11,13 +11,38 @@ import {
 import { sectionCard, fundPicker } from './common.js';
 import { requestMidasHistory } from '../midas-import.js';
 
-function showMidasPreview(rows, ctx) {
+let midasActivity = [];
+let midasLogField = null;
+
+function logMidas(message) {
+  const stamp = new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'medium' }).format(new Date());
+  midasActivity.push(`[${stamp}] ${message}`);
+  midasActivity = midasActivity.slice(-80);
+  if (midasLogField) midasLogField.value = midasActivity.join('\n');
+}
+
+async function copyMidasLog(field) {
+  const text = field.value.trim();
+  if (!text) { toast('Kopyalanacak aktarım mesajı yok'); return; }
+  try {
+    await navigator.clipboard.writeText(text);
+  } catch {
+    field.focus(); field.select();
+    document.execCommand('copy');
+  }
+  toast('Aktarım mesajı kopyalandı');
+}
+
+function showMidasPreview(rows, scanInfo, ctx) {
   const candidates = rows.map((row) => ({
     ...row,
     missing: [...(row.missing || [])],
   }));
-  const ready = candidates.filter((row) => !row.missing.length && DB.byCode.has(row.code));
-  const unmatched = candidates.filter((row) => row.missing.length || !DB.byCode.has(row.code));
+  // Fiyat veritabanında henüz bulunmayan sembollerin işlemlerini de sakla.
+  // Böylece alım/satım kaydı korunur; pozisyon fiyat gelene kadar "fiyat yok" görünür.
+  const ready = candidates.filter((row) => !row.missing.length);
+  const unmatched = candidates.filter((row) => row.missing.length);
+  const unknownCodes = [...new Set(ready.filter((row) => !DB.byCode.has(row.code)).map((row) => row.code))];
   const line = (row) => h('tr', {},
     h('td', {}, row.date || '—'),
     h('td', {}, row.code || '—'),
@@ -40,7 +65,13 @@ function showMidasPreview(rows, ctx) {
   const readyContent = ready.length
     ? table(ready, 'Birim fiyat', 'Midas satırı')
     : h('div', { class: 'notice warn' },
-      'Henüz otomatik eşleşen işlem yok. Midas işlem geçmişindeki görünen satır biçimini kontrol et.');
+      'İçe aktarılacak işlem alanları henüz tam okunamadı. Eksik satırları aşağıdan inceleyin.');
+
+  const quoteNotice = unknownCodes.length
+    ? h('div', { class: 'notice warn' },
+      `İşlemler yine de içe aktarılabilir. ${unknownCodes.join(', ')} kodları uygulamanın fiyat geçmişinde yok; `
+      + 'bu varlıklar işlem geçmişinde ve portföyde “fiyat yok” görünür, güncel değer/kâr-zarar fiyat verisi eklenene kadar hesaplanmaz.')
+    : null;
 
   const unmatchedContent = unmatched.length
     ? h('details', {},
@@ -55,6 +86,7 @@ function showMidasPreview(rows, ctx) {
       class: 'btn btn-primary', type: 'button', disabled: !ready.length,
       onclick: () => {
         const count = addMidasTransactions(ready);
+        logMidas(`${count} işlem yerel tarayıcıya eklendi; ${ready.length - count} tekrar olduğu için atlandı.`);
         close();
         toast(count ? `${count} Midas işlemi yerel olarak eklendi` : 'Bu işlemler zaten kayıtlı');
         ctx.refresh();
@@ -63,9 +95,10 @@ function showMidasPreview(rows, ctx) {
 
   const body = h('div', { class: 'stack' },
     h('p', { class: 'dim' },
-      `${candidates.length} satır bulundu. ${ready.length} satır otomatik eşleşti; `
-      + `${unmatched.length} satır eksik bilgi veya tanınmayan varlık kodu nedeniyle atlanacak. `
+      `${candidates.length} satır okundu (${scanInfo.scannedPages} sayfa). ${ready.length} satır gerekli işlem alanlarıyla içe aktarılabilir; `
+      + `${unknownCodes.length} kodda fiyat geçmişi yok, ${unmatched.length} satırda tarih/kod/miktar/fiyat bilgisi eksik. `
       + 'Midas’a hiçbir emir gönderilmez. Onaylanan kayıtlar bu tarayıcıda yerel saklanır.'),
+    quoteNotice,
     readyContent,
     unmatchedContent,
     actions);
@@ -74,17 +107,24 @@ function showMidasPreview(rows, ctx) {
 async function readMidas(ctx, button) {
   button.disabled = true;
   button.textContent = 'Midas emir geçmişi taranıyor…';
+  logMidas('Midas emir geçmişi taraması başlatıldı.');
   try {
-    const rows = await requestMidasHistory();
+    const result = await requestMidasHistory();
+    const { rows } = result;
     if (!rows.length) {
       throw new Error('Tamamlanmış emir satırı bulunamadı. Midas “Emir geçmişi” tablosunda “Gerçekleşti/Tamamlandı” durumundaki kayıtları göster; bekleyen ve iptal emirleri aktarılmaz.');
     }
-    showMidasPreview(rows, ctx);
+    const valid = rows.filter((row) => !row.missing?.length);
+    const unknownCodes = [...new Set(valid.filter((row) => !DB.byCode.has(row.code)).map((row) => row.code))];
+    logMidas(`${result.scannedPages} sayfa tarandı; ${rows.length} satır okundu, ${valid.length} satır aktarılabilir, ${rows.length - valid.length} satır eksik bilgi içeriyor.`);
+    if (unknownCodes.length) logMidas(`Fiyat verisi bulunmayan semboller: ${unknownCodes.join(', ')}. İşlemleri yine de aktarabilirsiniz; portföyde geçici olarak “fiyat yok” görünür.`);
+    showMidasPreview(rows, result, ctx);
   } catch (error) {
+    logMidas(`HATA: ${error.message}`);
     toast(error.message);
   } finally {
     button.disabled = false;
-      button.textContent = 'Midas’tan İşlemleri Oku';
+    button.textContent = 'Midas’tan İşlemleri Oku';
   }
 }
 
@@ -259,9 +299,18 @@ export function renderIslemler(ctx) {
     class: 'btn btn-primary', type: 'button', disabled: multiProfile,
     onclick: (event) => readMidas(ctx, event.currentTarget),
   }, multiProfile ? 'Önce tek profil seç' : 'Midas’tan İşlemleri Oku');
+  const copyLogButton = h('button', {
+    class: 'btn', type: 'button', onclick: () => copyMidasLog(midasLogField),
+  }, 'Yanıtı kopyala');
+  midasLogField = h('textarea', {
+    readonly: true, rows: 5, 'aria-label': 'Midas aktarım yanıt geçmişi',
+    style: 'width:100%;resize:vertical;font: .85rem var(--mono);margin-top:10px',
+  }, midasActivity.length ? midasActivity.join('\n') : 'Henüz aktarım yapılmadı. Sonuçlar ve hatalar burada görünür.');
   root.append(sectionCard('Midas Aktarımı',
     'Midas Emir geçmişindeki sayfaları tarayıp tamamlanmış alış/satışları oku; bekleyen ve iptal emirlerini atla. Miktar ve fiyatı doğrulanan kayıtlar içe aktarılır; emir gönderilmez. Midas kayıtları bu tarayıcıda kalır.',
-    h('div', { class: 'btn-row' }, midasButton)));
+    h('div', { class: 'btn-row' }, midasButton, copyLogButton),
+    h('label', { style: 'display:block;margin-top:12px;font-weight:600' }, 'Aktarım yanıt geçmişi'),
+    midasLogField));
 
   /* --------------------------------------------------------------- ekleme formu */
 

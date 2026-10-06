@@ -53,6 +53,7 @@ EKSTRA_ENSTRUMANLAR = {
 
     # BIST Hisseleri
     "ASELS": {"symbol": "ASELS.IS", "title": "Aselsan Elektronik Sanayi", "type": "HISSE", "cat": "Hisse Senedi"},
+    "SISE":  {"symbol": "SISE.IS",  "title": "Türkiye Şişe ve Cam Fabrikaları", "type": "HISSE", "cat": "Hisse Senedi"},
     "TUPRS": {"symbol": "TUPRS.IS", "title": "TÜPRAŞ - Türkiye Petrol Rafinerileri", "type": "HISSE", "cat": "Hisse Senedi"},
     "FROTO": {"symbol": "FROTO.IS", "title": "Ford Otomotiv Sanayi", "type": "HISSE", "cat": "Hisse Senedi"},
     "TOASO": {"symbol": "TOASO.IS", "title": "Tofaş Türk Otomobil Fabrikası", "type": "HISSE", "cat": "Hisse Senedi"},

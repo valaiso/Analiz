@@ -16,7 +16,11 @@ export function requestMidasHistory(timeoutMs = 180_000) {
       clearTimeout(timer);
       window.removeEventListener('message', receive);
       if (!data.response?.ok) reject(new Error(data.response?.error || 'Midas geçmişi okunamadı.'));
-      else resolve(data.response.rows || []);
+      else resolve({
+        rows: data.response.rows || [],
+        scannedPages: data.response.scannedPages || 1,
+        unmatchedCount: data.response.unmatchedCount || 0,
+      });
     }
 
     window.addEventListener('message', receive);
