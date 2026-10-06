@@ -1,8 +1,21 @@
 {
   "manifest_version": 3,
   "name": "Analiz · Midas işlem aktarımı",
-  "version": "0.9.0",
+  "version": "0.10.0",
   "description": "Açık Midas işlem geçmişini kullanıcı isteğiyle Analiz'e yerel olarak aktarır.",
+  "icons": {
+    "16": "iconV1.png",
+    "48": "iconV1.png",
+    "128": "iconV1.png"
+  },
+  "action": {
+    "default_icon": {
+      "16": "iconV1.png",
+      "48": "iconV1.png",
+      "128": "iconV1.png"
+    },
+    "default_title": "Analiz · Midas işlem aktarımı"
+  },
   "host_permissions": [
     "https://atlas.getmidas.com/*",
     "https://valaiso.github.io/Analiz/*"

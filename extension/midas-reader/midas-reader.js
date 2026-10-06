@@ -28,6 +28,17 @@ function executedStatus(status) {
   return /gerçekleş|tamamlan|filled|executed/.test(value);
 }
 
+function statusCategory(status) {
+  const value = String(status || '').toLocaleLowerCase('tr');
+  if (!value) return 'boş';
+  if (/bekliyor/.test(value)) return 'bekliyor';
+  if (/iptal/.test(value)) return 'iptal';
+  if (/kısmi|kismi/.test(value)) return 'kısmi';
+  if (/reddedildi/.test(value)) return 'reddedildi';
+  if (/gerçekleş|tamamlan|filled|executed/.test(value)) return 'tamamlandı';
+  return 'diğer';
+}
+
 function isOrderHeader(element) {
   const cells = directCells(element).map((cell) => cell.toLocaleLowerCase('tr'));
   const checks = [
@@ -58,7 +69,7 @@ function orderHistoryRoot() {
   return null;
 }
 
-function candidateElements(root) {
+function candidateElements(root, scanStats) {
   const rowSelector = 'tr, [role="row"], [class*="row" i]';
   // Atlas bazı tablo sürümlerinde table/role=row kullanmıyor; sütun başlıklarını
   // taşıyan CSS grid satırlarını da doğrudan çocuklarından tanı.
@@ -83,6 +94,7 @@ function candidateElements(root) {
     // ve işlem geçmişi kartlarını satır sanıp çoğaltma.
     if (!isOrderHeader(headerRow)
       || [columns.code, columns.side, columns.units, columns.date].some((column) => column < 0)) continue;
+    if (scanStats) scanStats.headers = headers;
 
     const semanticRoot = headerRow.closest('table, [role="table"]');
     let rows = semanticRoot
@@ -103,18 +115,26 @@ function candidateElements(root) {
         if (matching.length) { rows = matching; break; }
       }
     }
+    if (scanStats) scanStats.rowNodes += rows.length;
     const uniqueRows = new Map();
     for (const element of rows) {
       const cells = directCells(element);
+      if (scanStats && cells.length === headers.length) scanStats.cellCountMatches += 1;
       const status = columns.status >= 0 ? cells[columns.status] || '' : '';
+      if (scanStats && cells.length === headers.length) {
+        const category = statusCategory(status);
+        scanStats.statuses[category] = (scanStats.statuses[category] || 0) + 1;
+      }
       const text = cells.join('\n');
       const side = cells[columns.side] || '';
       const date = cells[columns.date] || '';
+      const tradeAndDate = TRADE_WORDS.test(side) && DATE_WORDS.test(date);
+      if (scanStats && cells.length === headers.length && tradeAndDate) scanStats.tradeDateMatches += 1;
+      if (scanStats && cells.length === headers.length && columns.status >= 0 && executedStatus(status)) scanStats.completedStatuses += 1;
       // Midas'ın emir tablosunda durum sütunu olmayabilir. Bu tabloda satır
       // görünüyorsa ve doldurulmuş adet/fiyat varsa işlem gerçekleşmiştir;
       // durum sütunu varsa bekleyen/iptal satırlarını kesinlikle dışarıda tut.
-      if ((columns.status >= 0 && !executedStatus(status))
-        || !TRADE_WORDS.test(side) || !DATE_WORDS.test(date)) continue;
+      if ((columns.status >= 0 && !executedStatus(status)) || !tradeAndDate) continue;
       const row = {
         text,
         headers,
@@ -231,6 +251,7 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function collectCompletedHistory() {
   const collected = new Map();
+  const scanStats = { headers: [], rowNodes: 0, cellCountMatches: 0, tradeDateMatches: 0, completedStatuses: 0, statuses: {} };
   const root = orderHistoryRoot();
   if (!root) return {
     rows: [], pageCount: 0, paginationStop: 'Yatırım hesabındaki Emir geçmişi tablosu bulunamadı.',
@@ -243,7 +264,7 @@ async function collectCompletedHistory() {
   // Midas bazı hesaplarda yüzlerce emri 5'li sayfalarda gösteriyor. Yalnızca
   // emir tablosunun sayfa okunu kullanarak ilerle; alım/satım kontrollerine dokunma.
   while (pageCount < 300) {
-    for (const row of candidateElements(root)) {
+    for (const row of candidateElements(root, scanStats)) {
       const key = row.sourceId || row.text.replace(/\s+/g, ' ').trim();
       if (key) collected.set(key, row);
     }
@@ -282,7 +303,8 @@ async function collectCompletedHistory() {
       if (paginationState('prev', root)?.label !== previousLabel) break;
     }
   }
-  return { rows: [...collected.values()].slice(0, 500), pageCount, paginationStop, labels: historyDiagnostics(root), start, accountSummary: readAccountSummary() };
+  scanStats.pages = pageCount + 1;
+  return { rows: [...collected.values()].slice(0, 500), pageCount, paginationStop, labels: historyDiagnostics(root), start, accountSummary: readAccountSummary(), scanStats };
 }
 
 function parseLocaleNumber(value) {
@@ -409,12 +431,15 @@ function normalizeRow(row) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'ANALIZ_SCAN_VISIBLE_HISTORY') return undefined;
-  collectCompletedHistory().then(({ rows, pageCount, paginationStop, labels, start }) => {
+  collectCompletedHistory().then(({ rows, pageCount, paginationStop, labels, start, scanStats }) => {
     const normalized = rows.map(normalizeRow);
     const ready = normalized.filter((row) => !row.missing.length);
     if (!rows.length) {
       const evidence = labels.length ? `Ekranda algılanan başlık/durum metinleri: ${labels.join(' · ')}.` : 'Ekranda tanınan emir tablosu başlığı görünmüyor.';
-      sendResponse({ ok: false, accountSummary: readAccountSummary(), error: `Midas yatırım hesabı sayfasında tamamlanmış işlem satırı okunamadı. ${pageCount + 1} sayfa tarandı. ${start ? `Başlangıç sayfası: ${start}. ` : ''}${paginationStop ? `Sayfalama: ${paginationStop} ` : ''}${evidence} Yalnızca “Emir geçmişi” tablosu tarandı; kripto geçmişi dahil edilmedi.` });
+      const headers = scanStats?.headers?.length ? `Algılanan sütunlar: ${scanStats.headers.join(' · ')}.` : 'Satır sütunları eşleştirilemedi.';
+      const statuses = Object.entries(scanStats?.statuses || {}).map(([name, count]) => `${name}: ${count}`).join(', ') || 'durum okunamadı';
+      const rowStats = `Tablo teşhisi: ${scanStats?.pages || pageCount + 1} sayfa; ${scanStats?.rowNodes || 0} satır öğesi; ${scanStats?.cellCountMatches || 0} sütun sayısı uyan satır; ${scanStats?.tradeDateMatches || 0} alış/satış ve tarih uyan satır; ${scanStats?.completedStatuses || 0} tamamlandı durumlu satır. Durum dağılımı: ${statuses}.`;
+      sendResponse({ ok: false, accountSummary: readAccountSummary(), error: `Midas yatırım hesabı sayfasında tamamlanmış işlem satırı okunamadı. ${pageCount + 1} sayfa tarandı. ${start ? `Başlangıç sayfası: ${start}. ` : ''}${paginationStop ? `Sayfalama: ${paginationStop} ` : ''}${headers} ${rowStats} ${evidence} Yalnızca “Emir geçmişi” tablosu tarandı; kripto geçmişi dahil edilmedi.` });
       return;
     }
     sendResponse({ ok: true, rows: normalized, scannedPages: pageCount + 1, unmatchedCount: normalized.length - ready.length, accountSummary: readAccountSummary() });

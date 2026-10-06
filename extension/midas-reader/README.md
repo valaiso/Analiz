@@ -3,6 +3,7 @@
 Chrome ve Edge için Manifest V3 eklentisi. Midas Atlas'ta zaten açık olan oturumdan,
 yalnızca ekranda görünen işlem geçmişi satırlarını okur. Parolaya, çerezlere veya
 Midas'ın özel API uçlarına erişmez; ağ isteği ya da emir göndermez.
+Eklenti simgesi proje kökündeki `iconV1.png` görselini kullanır.
 
 ## Kurulum
 
