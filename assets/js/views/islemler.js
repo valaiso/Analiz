@@ -162,6 +162,7 @@ function transactionForm({ existing, onDone, prefillCode }) {
   const isEdit = Boolean(existing);
   const picker = fundPicker({
     value: existing?.code || prefillCode || '',
+    placeholder: 'Varlık kodu girin',
     onPick: () => { syncPrice(true); },
   });
 

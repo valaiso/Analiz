@@ -39,16 +39,38 @@ function statusCategory(status) {
   return 'diğer';
 }
 
+function canonicalHeader(value) {
+  const text = String(value || '').toLocaleLowerCase('tr').replace(/\s+/g, ' ').trim().replace(/[:：]$/, '');
+  if (/^(varlık|varlık kodu|sembol|sembol kodu)$/.test(text)) return 'Varlık';
+  if (/^(durum|statü|status)$/.test(text)) return 'Durum';
+  if (/^emir tipi$/.test(text)) return 'Emir tipi';
+  if (/^(alış\s*\/\s*satış|işlem yönü)$/.test(text)) return 'Alış/satış';
+  if (/^(adet|miktar|lot)$/.test(text)) return 'Adet';
+  if (/^toplam$/.test(text)) return 'Toplam';
+  if (/^fiyat$/.test(text)) return 'Fiyat';
+  if (/^(emir tarihi|işlem tarihi)$/.test(text)) return 'Emir tarihi';
+  return '';
+}
+
+function headerCells(element) {
+  const nodes = [element, ...element.querySelectorAll('*')]
+    .filter(isVisible)
+    .map((node) => ({ node, label: canonicalHeader(textOf(node)), box: node.getBoundingClientRect() }))
+    .filter((item) => item.label);
+  const bestByLabel = new Map();
+  for (const item of nodes) {
+    const previous = bestByLabel.get(item.label);
+    if (!previous || item.box.width * item.box.height < previous.box.width * previous.box.height) {
+      bestByLabel.set(item.label, item);
+    }
+  }
+  return [...bestByLabel.values()].sort((a, b) => a.box.left - b.box.left).map((item) => item.label);
+}
+
 function isOrderHeader(element) {
-  const cells = directCells(element)
-    .map((cell) => cell.toLocaleLowerCase('tr').replace(/\s+/g, ' ').trim().replace(/[:：]$/, ''));
-  if (cells.some((cell) => cell.length > 32)) return false;
-  const checks = [
-    /^(varlık|varlık kodu|sembol|sembol kodu)$/, /^(durum|statü|status)$/,
-    /^emir tipi$/, /^alış\s*\/\s*satış$|^işlem yönü$/,
-    /^(adet|miktar|lot)$/, /^fiyat$/, /^(emir tarihi|işlem tarihi)$/,
-  ];
-  return cells.length >= 7 && cells.length <= 12 && checks.every((pattern) => cells.some((cell) => pattern.test(cell)));
+  const cells = headerCells(element);
+  const required = ['Varlık', 'Durum', 'Emir tipi', 'Alış/satış', 'Adet', 'Fiyat', 'Emir tarihi'];
+  return required.every((label) => cells.includes(label));
 }
 
 function orderHistoryRoot() {
@@ -59,8 +81,7 @@ function orderHistoryRoot() {
     let headerScope = null;
     for (let scope = heading.parentElement, depth = 0; scope && depth < 12; scope = scope.parentElement, depth += 1) {
       const hasOrderHeader = [...scope.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
-        .some((element) => isVisible(element) && element.children.length >= 5
-          && element.children.length <= 12 && isOrderHeader(element));
+        .some((element) => isVisible(element) && isOrderHeader(element));
       if (!hasOrderHeader) continue;
       headerScope = scope;
       const hasPager = [...scope.querySelectorAll('span, div, p')]
@@ -77,9 +98,10 @@ function candidateElements(root, scanStats) {
   // Atlas bazı tablo sürümlerinde table/role=row kullanmıyor; sütun başlıklarını
   // taşıyan CSS grid satırlarını da doğrudan çocuklarından tanı.
   const headerCandidates = [...root.querySelectorAll(`${rowSelector}, div`)]
-    .filter((element) => isVisible(element) && element.children.length >= 5 && element.children.length <= 12);
+    .filter((element) => isVisible(element) && isOrderHeader(element))
+    .sort((a, b) => textOf(a).length - textOf(b).length);
   for (const headerRow of headerCandidates) {
-    const headers = directCells(headerRow);
+    const headers = headerCells(headerRow);
     const norm = headers.map((header) => header.toLocaleLowerCase('tr'));
     const index = (pattern) => norm.findIndex((header) => pattern.test(header));
     const columns = {
