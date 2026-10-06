@@ -187,7 +187,7 @@ function transactionForm({ existing, onDone, prefillCode }) {
   });
   const noteInput = h('input', { type: 'text', placeholder: 'İsteğe bağlı', value: existing?.note || '' });
 
-  const priceHint = h('div', { class: 'hint', text: 'Fon ve tarih seçince otomatik dolar' });
+  const priceHint = h('div', { class: 'hint', text: 'Varlık kodu ve tarih seçince otomatik dolar' });
   const nameHint = h('div', { class: 'hint' });
 
   // Dinamik etiket elementleri
@@ -213,7 +213,7 @@ function transactionForm({ existing, onDone, prefillCode }) {
     amountLabel.textContent = `Tutar (${sym})`;
     feeLabel.textContent = `Masraf (${sym})`;
 
-    nameHint.textContent = meta?.name || (code ? 'Bu kodda fon bulunamadı' : '');
+    nameHint.textContent = meta?.name || (code ? 'Bu varlık kodunda fiyat verisi bulunamadı' : '');
     nameHint.className = meta || !code ? 'hint' : 'hint warn';
     if (!code || !date || !meta) return;
 
@@ -263,7 +263,7 @@ function transactionForm({ existing, onDone, prefillCode }) {
     const code = picker.get();
     const qty = Number(unitsInput.value);
     const price = Number(priceInput.value);
-    if (!DB.byCode.get(code)) { error.textContent = 'Geçerli bir fon kodu seç.'; return; }
+    if (!DB.byCode.get(code)) { error.textContent = 'Geçerli bir varlık kodu seç.'; return; }
     if (!(qty > 0)) { error.textContent = 'Adet sıfırdan büyük olmalı.'; return; }
     if (!(price > 0)) { error.textContent = 'Birim fiyat sıfırdan büyük olmalı.'; return; }
     if (!dateInput.value) { error.textContent = 'Tarih seç.'; return; }
@@ -290,7 +290,7 @@ function transactionForm({ existing, onDone, prefillCode }) {
 
   const form = h('div', { class: 'stack' },
     h('div', { class: 'form-grid' },
-      field('Fon', picker.wrap, nameHint),
+      field('Varlık Kodu', picker.wrap, nameHint),
       field('İşlem', typeSel),
       field('Tarih', dateInput),
       fieldWithLabel(priceLabel, priceInput, priceHint),
@@ -337,7 +337,7 @@ export function renderIslemler(ctx) {
       'Şu an tüm profiller birlikte görüntüleniyor. Yeni işlem eklemek için üstten '
       + 'tek bir profil seç.'));
   } else {
-    root.append(sectionCard('Yeni İşlem', 'Fon ve tarihi seçince fiyat otomatik gelir',
+    root.append(sectionCard('Yeni İşlem', 'Varlık kodu ve tarihi seçince fiyat otomatik gelir',
       transactionForm({ prefillCode: ctx.prefill, onDone: () => ctx.refresh() })));
   }
 

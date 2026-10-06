@@ -40,12 +40,15 @@ function statusCategory(status) {
 }
 
 function isOrderHeader(element) {
-  const cells = directCells(element).map((cell) => cell.toLocaleLowerCase('tr'));
+  const cells = directCells(element)
+    .map((cell) => cell.toLocaleLowerCase('tr').replace(/\s+/g, ' ').trim().replace(/[:：]$/, ''));
+  if (cells.some((cell) => cell.length > 32)) return false;
   const checks = [
-    /varlık|sembol/, /durum|statü|status/, /emir tipi/, /alış\s*\/\s*satış|işlem yönü/,
-    /adet|miktar|lot/, /fiyat/, /emir tarihi|işlem tarihi/,
+    /^(varlık|varlık kodu|sembol|sembol kodu)$/, /^(durum|statü|status)$/,
+    /^emir tipi$/, /^alış\s*\/\s*satış$|^işlem yönü$/,
+    /^(adet|miktar|lot)$/, /^fiyat$/, /^(emir tarihi|işlem tarihi)$/,
   ];
-  return checks.every((pattern) => cells.some((cell) => pattern.test(cell)));
+  return cells.length >= 7 && cells.length <= 12 && checks.every((pattern) => cells.some((cell) => pattern.test(cell)));
 }
 
 function orderHistoryRoot() {
@@ -261,6 +264,22 @@ async function collectCompletedHistory() {
   let pageCount = 0;
   let paginationStop = '';
 
+  // Kullanıcı son sayfada bırakmış olsa bile taramayı en baştan yap.
+  let initialBackCount = 0;
+  while (initialBackCount < 300) {
+    const previous = paginationState('prev', root);
+    if (!previous?.button || previous.disabled) break;
+    const oldLabel = previous.label;
+    previous.button.click();
+    let changed = false;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      await wait(100);
+      if (paginationState('prev', root)?.label !== oldLabel) { changed = true; break; }
+    }
+    if (!changed) { paginationStop = 'Önceki ok tıklandı fakat başlangıç sayfasına dönüşte gösterge değişmedi.'; break; }
+    initialBackCount += 1;
+  }
+
   // Midas bazı hesaplarda yüzlerce emri 5'li sayfalarda gösteriyor. Yalnızca
   // emir tablosunun sayfa okunu kullanarak ilerle; alım/satım kontrollerine dokunma.
   while (pageCount < 300) {
@@ -292,8 +311,9 @@ async function collectCompletedHistory() {
     pageCount += 1;
   }
 
-  // Kullanıcının başladığı tablo sayfasına geri dön.
-  for (let page = 0; page < pageCount; page += 1) {
+  // Tarama en son sayfada biter; başlangıç sayfasına geri dön.
+  const restoreMoves = Math.max(0, pageCount - initialBackCount);
+  for (let page = 0; page < restoreMoves; page += 1) {
     const previous = paginationState('prev', root);
     if (!previous?.button || previous.disabled) break;
     const previousLabel = previous.label;
@@ -303,6 +323,7 @@ async function collectCompletedHistory() {
       if (paginationState('prev', root)?.label !== previousLabel) break;
     }
   }
+  if (paginationStop && initialBackCount) paginationStop = `${paginationStop} Başlangıç sayfasına dönmek için ${initialBackCount} önceki sayfa geçildi.`;
   scanStats.pages = pageCount + 1;
   return { rows: [...collected.values()].slice(0, 500), pageCount, paginationStop, labels: historyDiagnostics(root), start, accountSummary: readAccountSummary(), scanStats };
 }
