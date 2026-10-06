@@ -81,15 +81,34 @@ function isOrderHeader(element) {
   return required.every((label) => cells.includes(label));
 }
 
-function assetHintsFor(element) {
+function assetHintsFor(element, root) {
   const hints = [];
-  for (const node of [element, ...element.querySelectorAll('*')]) {
+  const addNodeHints = (node) => {
     for (const attribute of [...(node.attributes || [])]) {
       if (!/aria-label|title|alt|symbol|ticker|asset|code|href/i.test(attribute.name)) continue;
       const value = String(attribute.value || '').trim();
       if (value && value.length <= 100 && !hints.includes(value)) hints.push(value);
-      if (hints.length >= 20) return hints;
     }
+  };
+  for (const node of [element, ...element.querySelectorAll('*')]) {
+    addNodeHints(node);
+    if (hints.length >= 20) return hints;
+  }
+  // Bazen Midas tarih/yön hücresini ayrı bir alt ağaca koyuyor; varlık kodu
+  // aynı satırın komşu hücresinde kaldığı için satırın yakın kardeşlerini tara.
+  let current = element;
+  for (let depth = 0; depth < 3; depth += 1) {
+    const parent = current.parentElement;
+    if (!parent || !root.contains(parent)) break;
+    for (const sibling of parent.children) {
+      if (sibling === current || !isVisible(sibling)) continue;
+      const siblingText = textOf(sibling);
+      if (siblingText && siblingText.length <= 100 && !hints.includes(siblingText)) hints.push(siblingText);
+      addNodeHints(sibling);
+      for (const child of sibling.querySelectorAll('*')) addNodeHints(child);
+      if (hints.length >= 40) return hints;
+    }
+    current = parent;
   }
   return hints;
 }
@@ -185,7 +204,7 @@ function candidateElements(root, scanStats) {
     const row = {
       text, headers, cells,
       sourceId: element.getAttribute('data-order-id') || element.getAttribute('data-id') || '',
-      codeHints: assetHintsFor(element),
+      codeHints: assetHintsFor(element, root),
     };
     const key = row.sourceId || text.replace(/\s+/g, ' ').trim();
     if (key && !uniqueRows.has(key)) uniqueRows.set(key, row);
@@ -466,8 +485,14 @@ function normalizeRow(row) {
     .match(/[A-Z][A-Z0-9.-]{1,9}/)?.[0] || '';
   const codeExcluded = new Set(['AL', 'SAT', 'ALIŞ', 'ALIM', 'SATIŞ', 'SATIM', 'BUY', 'SELL', 'USD', 'TRY', 'TL', 'ADET', 'LOT', 'FON', 'PIYASA', 'LIMIT', 'GERCEKLESTI', 'TAMAMLANDI']);
   if (!code) {
-    const hintText = (row.codeHints || []).join(' ');
-    code = hintText.match(/\b[A-Z][A-Z0-9.-]{1,9}\b/g)?.find((token) => !codeExcluded.has(token)) || '';
+    for (const hint of row.codeHints || []) {
+      const value = String(hint).trim();
+      const direct = value.match(/^([A-Z][A-Z0-9.-]{1,9})$/)?.[1];
+      const labelled = value.match(/(?:symbol|ticker|asset(?:\s+code)?|sembol|varlık(?:\s+kodu)?)\s*[:=#/-]\s*([A-Z][A-Z0-9.-]{1,9})/i)?.[1];
+      const pathValue = value.match(/\/(?:symbols?|assets?|tickers?|funds?)\/([A-Z][A-Z0-9.-]{1,9})(?:\/|$|[?#])/i)?.[1];
+      const candidate = direct || labelled || pathValue || '';
+      if (candidate && !codeExcluded.has(candidate.toLocaleUpperCase('tr'))) { code = candidate.toLocaleUpperCase('tr'); break; }
+    }
   }
   if (!code) {
     code = text.match(/\b[A-Z][A-Z0-9.-]{1,9}\b/g)?.find((token) => !codeExcluded.has(token)) || '';
