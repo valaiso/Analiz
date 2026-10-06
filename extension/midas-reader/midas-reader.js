@@ -116,26 +116,54 @@ function paginationState(direction) {
   const indicator = labels[0];
   if (!indicator) return null;
   const indicatorBox = indicator.getBoundingClientRect();
+  const verticalMatch = (box) => box.bottom >= indicatorBox.top - 14 && box.top <= indicatorBox.bottom + 14;
+  const inDirection = (box) => direction === 'next'
+    ? box.left >= indicatorBox.right - 3 && box.left - indicatorBox.right < 110
+    : box.right <= indicatorBox.left + 3 && indicatorBox.left - box.right < 110;
+  const labelOf = (element) => [element.getAttribute('aria-label'), element.getAttribute('title'),
+    element.getAttribute('data-testid'), textOf(element)].filter(Boolean).join(' ').toLocaleLowerCase('tr');
+  const enabled = (element) => !element.disabled
+    && element.getAttribute('aria-disabled') !== 'true'
+    && !element.classList.contains('disabled');
 
-  for (let container = indicator.parentElement, depth = 0; container && depth < 5; container = container.parentElement, depth += 1) {
-    const buttons = [...container.querySelectorAll('button')]
-      .filter((button) => isVisible(button))
-      .map((button) => ({ button, box: button.getBoundingClientRect() }))
-      .filter(({ box }) => box.bottom >= indicatorBox.top - 12 && box.top <= indicatorBox.bottom + 12);
-    const candidates = buttons.filter(({ box }) => direction === 'next'
-      ? box.left >= indicatorBox.right - 2
-      : box.right <= indicatorBox.left + 2);
-    if (candidates.length) {
-      candidates.sort((a, b) => direction === 'next' ? a.box.left - b.box.left : b.box.right - a.box.right);
-      return {
-        label: textOf(indicator),
-        button: candidates[0].button,
-        disabled: candidates[0].button.disabled
-          || candidates[0].button.getAttribute('aria-disabled') === 'true',
-      };
-    }
+  // Önce erişilebilir etiketle doğru oku seç; burada üst çubuktaki diğer
+  // butonlarla karışmaması için sayfa göstergesiyle aynı satırda olmasını şart koş.
+  const named = [...document.querySelectorAll('button, [role="button"], a[aria-label]')]
+    .filter(isVisible)
+    .filter((element) => verticalMatch(element.getBoundingClientRect())
+      && inDirection(element.getBoundingClientRect()))
+    .filter((element) => direction === 'next'
+      ? /next|sonraki|ileri/.test(labelOf(element))
+      : /previous|önceki|onceki|geri/.test(labelOf(element)));
+  if (named.length) return { label: textOf(indicator), button: named[0], disabled: !enabled(named[0]) };
+
+  // Midas'ın ikon-only pager oku button etiketi taşımayabilir. Sayfa
+  // göstergesinin hemen sağı/solundaki gerçek butonu veya tıklanabilir SVG'yi bul.
+  const candidates = [...document.querySelectorAll('button, [role="button"], [tabindex="0"], a, svg, [class*="button" i]')]
+    .filter(isVisible)
+    .map((element) => {
+      const box = element.getBoundingClientRect();
+      const clickable = element.closest('button, [role="button"], [tabindex="0"], a') || element;
+      return { element: clickable, box: clickable.getBoundingClientRect(), source: element };
+    })
+    .filter(({ box }) => verticalMatch(box) && inDirection(box));
+  if (candidates.length) {
+    candidates.sort((a, b) => direction === 'next' ? a.box.left - b.box.left : b.box.right - a.box.right);
+    const item = candidates[0].element;
+    return { label: textOf(indicator), button: item, disabled: !enabled(item) };
   }
-  return { label: textOf(indicator), button: null, disabled: true };
+
+  // Son çare: sayfa okları div olabilir ve yalnızca cursor:pointer ile belli olur.
+  const nearby = [...document.querySelectorAll('div, span')]
+    .filter(isVisible)
+    .map((element) => ({ element, box: element.getBoundingClientRect(), cursor: getComputedStyle(element).cursor }))
+    .filter(({ box, cursor }) => cursor === 'pointer' && verticalMatch(box) && inDirection(box)
+      && box.width <= 48 && box.height <= 48);
+  if (nearby.length) {
+    nearby.sort((a, b) => direction === 'next' ? a.box.left - b.box.left : b.box.right - a.box.right);
+    return { label: textOf(indicator), button: nearby[0].element, disabled: false };
+  }
+  return { label: textOf(indicator), button: null, disabled: true, reason: `${direction} sayfa kontrolü göstergenin yanında bulunamadı.` };
 }
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -144,6 +172,7 @@ async function collectCompletedHistory() {
   const collected = new Map();
   const start = paginationState('prev')?.label || '';
   let pageCount = 0;
+  let paginationStop = '';
 
   // Midas bazı hesaplarda yüzlerce emri 5'li sayfalarda gösteriyor. Yalnızca
   // emir tablosunun sayfa okunu kullanarak ilerle; alım/satım kontrollerine dokunma.
@@ -154,11 +183,14 @@ async function collectCompletedHistory() {
     }
 
     const next = paginationState('next');
-    if (!next?.button || next.disabled) break;
+    if (!next?.button || next.disabled) {
+      paginationStop = next?.reason || (next?.disabled ? 'İleri oku pasif veya son sayfaya ulaşıldı.' : 'İleri oku bulunamadı.');
+      break;
+    }
     const previousLabel = next.label;
     next.button.click();
     let changed = false;
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
       await wait(100);
       const current = paginationState('next');
       if (current?.label && current.label !== previousLabel) {
@@ -166,7 +198,10 @@ async function collectCompletedHistory() {
         break;
       }
     }
-    if (!changed) break;
+    if (!changed) {
+      paginationStop = 'İleri oka tıklandı fakat sayfa göstergesi değişmedi.';
+      break;
+    }
     pageCount += 1;
   }
 
@@ -176,12 +211,12 @@ async function collectCompletedHistory() {
     if (!previous?.button || previous.disabled) break;
     const previousLabel = previous.label;
     previous.button.click();
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    for (let attempt = 0; attempt < 60; attempt += 1) {
       await wait(100);
       if (paginationState('prev')?.label !== previousLabel) break;
     }
   }
-  return { rows: [...collected.values()].slice(0, 500), pageCount, labels: historyDiagnostics(), start };
+  return { rows: [...collected.values()].slice(0, 500), pageCount, paginationStop, labels: historyDiagnostics(), start };
 }
 
 function parseLocaleNumber(value) {
@@ -272,12 +307,12 @@ function normalizeRow(row) {
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'ANALIZ_SCAN_VISIBLE_HISTORY') return undefined;
-  collectCompletedHistory().then(({ rows, pageCount, labels, start }) => {
+  collectCompletedHistory().then(({ rows, pageCount, paginationStop, labels, start }) => {
     const normalized = rows.map(normalizeRow);
     const ready = normalized.filter((row) => !row.missing.length);
     if (!rows.length) {
       const evidence = labels.length ? `Ekranda algılanan başlık/durum metinleri: ${labels.join(' · ')}.` : 'Ekranda tanınan emir tablosu başlığı görünmüyor.';
-      sendResponse({ ok: false, error: `Midas'tan tamamlanmış işlem satırı okunamadı. ${pageCount ? `${pageCount + 1} sayfa tarandı. ` : ''}${start ? `Tablo sayfası: ${start}. ` : ''}${evidence} Alt kısımdaki “Emir geçmişi” tablosunu açın; başlıkların ve işlem satırlarının göründüğünden emin olun.` });
+      sendResponse({ ok: false, error: `Midas'tan tamamlanmış işlem satırı okunamadı. ${pageCount + 1} sayfa tarandı. ${start ? `Başlangıç sayfası: ${start}. ` : ''}${paginationStop ? `Sayfalama: ${paginationStop} ` : ''}${evidence} Emir tablosunun sayfa oklarını görünür tutun.` });
       return;
     }
     sendResponse({ ok: true, rows: normalized, scannedPages: pageCount + 1, unmatchedCount: normalized.length - ready.length });

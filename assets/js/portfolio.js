@@ -195,7 +195,13 @@ export async function analyze(txs) {
   const hasUnpricedTransactions = txs.some((tx) => !isNum(priceAtIndex(cachedHistory(tx.code), last)));
   const pricedTxs = txs.filter((tx) => isNum(priceAtIndex(cachedHistory(tx.code), last)));
   const series = buildSeries(pricedTxs);
-  const netInvested = series.invested.length ? series.invested[series.invested.length - 1] : 0;
+  // Net yatırılan tutar işlem akışlarından hesaplanır; fiyat geçmişi eksik
+  // sembollerin alım/satımları da ana para toplamına dahil kalmalıdır.
+  const netInvested = txs.reduce((sum, tx) => {
+    const cash = tx.units * tx.price + (Number(tx.fee) || 0);
+    const flow = tx.type === 'SAT' ? -(tx.units * tx.price - (Number(tx.fee) || 0)) : cash;
+    return sum + flow * fxToTRY(tx.code, Math.max(0, indexForDate(tx.date)));
+  }, 0);
   const unrealizedTotal = value - cost;
   const totalPL = unrealizedTotal + realizedTotal;
 
