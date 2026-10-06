@@ -146,6 +146,7 @@ function positionSnapshotRows() {
       .sort((a, b) => textOf(a).length - textOf(b).length);
     let cells = null;
     let rowElement = element;
+    let sourceCells = [];
     for (const container of containers) {
       const cellElements = directCellElements(container).filter(isVisible);
       if (cellElements.length < 4 || cellElements.length > 12) continue;
@@ -168,6 +169,7 @@ function positionSnapshotRows() {
       const code = assetCodeAtRow(root, container, headers[ix.code]);
       if (code && moneyFrom(aligned[ix.price]) !== null && moneyFrom(aligned[ix.avg]) !== null) {
         cells = aligned;
+        sourceCells = raw;
         rowElement = container;
         break;
       }
@@ -189,6 +191,7 @@ function positionSnapshotRows() {
           cells[ix.daily] = `${moneyValues[2] < 0 ? '-' : ''}${symbol}${Math.abs(moneyValues[2] || 0)} ${percents[1] || ''}`;
           cells[ix.total] = `${moneyValues[3] < 0 ? '-' : ''}${symbol}${Math.abs(moneyValues[3] || 0)} ${percents[2] || ''}`;
           cells[ix.allocation] = percents[0] || '';
+          sourceCells = raw;
           rowElement = container;
           break;
         }
@@ -213,7 +216,7 @@ function positionSnapshotRows() {
     };
     if (['THF', 'TP2', 'MGV', 'VIG', 'SCHD'].includes(code)) {
       fields.domCells = headers.map(({ label }, index) => ({
-        header: label, raw: raw[index] || '', selected: cells[index] || '',
+        header: label, raw: sourceCells[index] || '', selected: cells[index] || '',
       }));
     }
     // Bu Midas görünümünde bazı sanal satırlarda fiyat hücresi yanlışlıkla
