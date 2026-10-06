@@ -5,9 +5,9 @@ import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, money, cls, isNum, 
 import { DB } from '../data.js';
 import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
-import { timingQuality, cashflowCalendar, consistencyChecks } from '../insights.js';
+import { timingQuality, cashflowCalendar } from '../insights.js';
 import { transactions, daysSinceBackup, getMidasAccountSnapshot } from '../store.js';
-import { currentMidasPositions, groupAssetRows } from '../asset-groups.js';
+import { currentMidasPositions, addSiteMarketMetrics, groupAssetRows } from '../asset-groups.js';
 import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable } from './common.js';
 
 /**
@@ -29,9 +29,13 @@ export function renderPanel(ctx) {
   const midasSnapshot = getMidasAccountSnapshot();
   const midasSummary = midasSnapshot?.summary;
   const hasMidasTotal = isNum(midasSummary?.totalValue) && midasSummary.totalValue > 0;
-  const hasMidasDaily = isNum(midasSummary?.dailyChange);
-  const snapshotPositions = currentMidasPositions() || [];
+  const rawSnapshotPositions = currentMidasPositions() || [];
+  const snapshotPositions = addSiteMarketMetrics(rawSnapshotPositions, open);
   const snapshotCodes = new Set(snapshotPositions.map((row) => row.code));
+  const pricedSnapshotPositions = snapshotPositions.filter((row) => isNum(row.dailyPLTRY));
+  const siteDailyPL = pricedSnapshotPositions.reduce((sum, row) => sum + row.dailyPLTRY, 0);
+  const siteDailyBase = pricedSnapshotPositions.reduce((sum, row) =>
+    sum + (row.marketValuePrevTRY || 0), 0);
   const localCrypto = hasMidasTotal
     ? open.filter((row) => DB.byCode.get(row.code)?.kind === 'CRYPTO' && !snapshotCodes.has(row.code)).map((row) => ({
       ...row, dailyPLTRY: row.dayPL, totalPLTRY: row.totalPL,
@@ -42,7 +46,7 @@ export function renderPanel(ctx) {
     ? new Intl.DateTimeFormat('tr-TR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(midasSnapshot.capturedAt))
     : null;
 
-  if (!open.length && !closed.length && !snapshotPositions.length && !hasMidasTotal) {
+  if (!open.length && !analysis.closed.length && !snapshotPositions.length && !hasMidasTotal) {
     return emptyState(
       'Henüz işlem yok',
       'Portföyünü görmek için önce fon alım işlemlerini gir. Fon kodunu ve tarihi seçince '
@@ -66,14 +70,14 @@ export function renderPanel(ctx) {
     }),
     plCard({
       label: 'Günlük Kazanç',
-      amount: hasMidasDaily ? midasSummary.dailyChange : totals.dayPL,
-      pct: hasMidasDaily && hasMidasTotal && midasSummary.totalValue !== midasSummary.dailyChange
-        ? (midasSummary.dailyChange / (midasSummary.totalValue - midasSummary.dailyChange)) * 100
-        : totals.dayPct,
+      amount: hasMidasTotal
+        ? (pricedSnapshotPositions.length ? siteDailyPL : null) : totals.dayPL,
+      pct: hasMidasTotal
+        ? (siteDailyBase > 0 ? (siteDailyPL / siteDailyBase) * 100 : null) : totals.dayPct,
       formatMoney: tlSigned,
       formatPct: pctSigned,
-      hint: hasMidasDaily
-        ? `Midas günlük değişimi · ${snapshotTime || 'son aktarım'}`
+      hint: hasMidasTotal
+        ? `${fmtDate(totals.prevDate)} kapanışına göre · site fiyatları ve kayıtlı adetler (${pricedSnapshotPositions.length}/${snapshotPositions.length} pozisyon)`
         : `${fmtDate(totals.prevDate)} kapanışına göre`,
     }),
     plCard({
@@ -103,37 +107,7 @@ export function renderPanel(ctx) {
           : null),
     })));
 
-  /* -------------------------------------------------- işlem tutarlılık denetimi */
-
   const txs = transactions();
-  const uyarilar = consistencyChecks(txs);
-  if (uyarilar.length) {
-    const gruplar = {
-      fiyat: 'Girilen işlem fiyatı piyasa verisinden farklı',
-      mukerrer: 'Aynı işlem iki kez girilmiş olabilir',
-      erken: 'Fonun o tarihte fiyatı yok',
-    };
-    root.append(h('div', { class: 'notice warn' },
-      h('b', {}, `${uyarilar.length} işlem kaydı gözden geçirilmeli`),
-      h('div', { style: 'margin-top:6px;display:grid;gap:3px;font-size:.84rem' },
-        uyarilar.slice(0, 6).map((u) => h('div', {}, u.message)),
-        uyarilar.length > 6
-          ? h('div', { class: 'dim' }, `…ve ${uyarilar.length - 6} kayıt daha`)
-          : null),
-      h('div', { style: 'margin-top:8px' },
-        h('button', {
-          class: 'btn btn-sm', type: 'button', onclick: () => navigate('islemler'),
-        }, 'İşlemleri aç')),
-      h('div', { class: 'dim', style: 'margin-top:6px;font-size:.78rem' },
-        `${Object.values(gruplar).join(' · ')} · Bu bölüm geçmiş işlem kayıtlarını denetler; Midas’taki açık pozisyon listesi değildir.`)));
-  }
-
-  if (hasMidasTotal) {
-    root.append(h('div', { class: snapshotPositions.length ? 'notice' : 'notice warn' },
-      snapshotPositions.length
-        ? `Toplam değer ve açık varlık satırları Midas ekranından ${snapshotTime || 'son aktarımda'} okundu. Kâr/zarar geçmiş işlem kayıtlarından hesaplanır.`
-        : `Midas hesap toplamı ${snapshotTime || 'son aktarımda'} okundu, ancak açık Pozisyonlar tablosu okunamadı. Aşağıdaki işlem geçmişi portföyü bu nedenle güncel Midas pozisyonu sayılmaz.`));
-  }
 
   if (txs.length >= 5 && daysSinceBackup() === null) {
     root.append(h('div', { class: 'notice' },
@@ -178,10 +152,7 @@ export function renderPanel(ctx) {
       drawChart();
     }));
 
-  if (hasMidasTotal) {
-    root.append(h('div', { class: 'notice' },
-      'Geçmiş portföy grafiği, alınan ve satılan işlemlerden hesaplanır. Midas geçmişi tam olmadığı için bu grafiği göstermiyorum; güncel toplam ve pozisyonlar Midas ekranından alınır.'));
-  } else {
+  if (!hasMidasTotal) {
     root.append(h('section', { class: 'card' }, head, chartBox));
     drawChart();
   }
@@ -201,20 +172,21 @@ export function renderPanel(ctx) {
       return `${value > 0 ? '+' : value < 0 ? '−' : ''}${formatted}`;
     };
     const positionsTable = (rows) => sortableTable({
-      initialSort: { key: 'allocationPct', dir: 'desc' },
+      initialSort: { key: 'marketValueTRY', dir: 'desc' },
       columns: [
         { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', { class: 'code-chip' }, r.code) },
-        { key: 'price', label: 'Fiyat', render: (r) => moneyByCurrency(r.price, r.currency) },
+        { key: 'marketValueTRY', label: 'Portföy Değeri', render: (r) => isNum(r.marketValueTRY) ? tl(r.marketValueTRY) : '—' },
+        { key: 'price', label: 'Site Fiyatı', render: (r) => moneyByCurrency(r.price, r.currency) },
         { key: 'avgCost', label: 'Ort. Maliyet', render: (r) => moneyByCurrency(r.avgCost, r.currency) },
-        { key: 'dailyPL', label: 'Günlük', render: (r) => h('span', { class: cls(r.dailyPL) }, `${signedByCurrency(r.dailyPL, r.currency)}${isNum(r.dailyPct) ? ` · ${pctSigned(r.dailyPct)}` : ''}`) },
-        { key: 'totalPL', label: 'Toplam', render: (r) => h('span', { class: cls(r.totalPL) }, `${signedByCurrency(r.totalPL, r.currency)}${isNum(r.totalPct) ? ` · ${pctSigned(r.totalPct)}` : ''}`) },
+        { key: 'dailyPLTRY', label: 'Günlük', render: (r) => h('span', { class: cls(r.dailyPLTRY) }, `${isNum(r.dailyPLTRY) ? tlSigned(r.dailyPLTRY) : '—'}${isNum(r.dailyPct) ? ` · ${pctSigned(r.dailyPct)}` : ''}`) },
+        { key: 'totalPLTRY', label: 'Ort. Maliyete Göre K/Z', render: (r) => h('span', { class: cls(r.totalPLTRY) }, `${isNum(r.totalPLTRY) ? tlSigned(r.totalPLTRY) : '—'}${isNum(r.totalPct) ? ` · ${pctSigned(r.totalPct)}` : ''}`) },
         { key: 'allocationPct', label: 'Dağılım', render: (r) => isNum(r.allocationPct) ? pct(r.allocationPct, 2) : '—' },
       ],
       rows,
     });
     const groupTitles = { ETF: 'ETF’ler', Fon: 'Fonlar', Hisse: 'Hisseler', Kripto: 'Kripto', Diğer: 'Diğer Varlıklar' };
     for (const group of groupAssetRows(snapshotPositions)) {
-      root.append(sectionCard(`Midas · Açık ${groupTitles[group.label] || group.label}`,
+      root.append(sectionCard(`Açık ${groupTitles[group.label] || group.label}`,
         `${group.rows.length} varlık · Midas ekranından okundu`, positionsTable(group.rows).element));
     }
     if (localCrypto.length) {

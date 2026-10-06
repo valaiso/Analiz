@@ -1,4 +1,4 @@
-import { DB, lastIndex } from './data.js';
+import { DB } from './data.js';
 import { getMidasAccountSnapshot } from './store.js';
 
 const GROUP_ORDER = ['ETF', 'Fon', 'Hisse', 'Kripto', 'Diğer'];
@@ -25,8 +25,6 @@ export function currentMidasPositions() {
   return snapshot.positions.map((row) => {
     const meta = DB.byCode.get(row.code) || {};
     const currency = row.currency || meta.currency || (meta.kind === 'US_ETF' || meta.kind === 'CRYPTO' ? 'USD' : 'TRY');
-    const rate = DB.benchmarks?.USDTRY?.values?.[Math.max(0, lastIndex())];
-    const fx = currency === 'USD' && Number.isFinite(rate) && rate > 0 ? rate : 1;
     return {
       ...row,
       name: meta.name || row.code,
@@ -36,9 +34,53 @@ export function currentMidasPositions() {
       allocationPct: Number.isFinite(row.allocationPct) ? row.allocationPct : null,
       value: Number.isFinite(row.allocationPct) ? row.allocationPct : 0,
       weight: Number.isFinite(row.allocationPct) ? row.allocationPct : 0,
-      totalPLTRY: Number.isFinite(row.totalPL) ? row.totalPL * fx : null,
-      dailyPLTRY: Number.isFinite(row.dailyPL) ? row.dailyPL * fx : null,
+      // Midas'ın getiri hücrelerini kullanmıyoruz: arayüz yapısı değiştiğinde
+      // yanlış sütunlar okunabiliyor. K/Z, site fiyat geçmişiyle hesaplanır.
+      totalPLTRY: null,
+      dailyPLTRY: null,
       closed: false,
+    };
+  });
+}
+
+/** Midas'ın açık sembollerini site fiyat geçmişi ve yerel işlem adetleriyle birleştir. */
+export function addSiteMarketMetrics(positions, localHoldings = []) {
+  const holdings = new Map((localHoldings || []).map((row) => [row.code, row]));
+  return (positions || []).map((position) => {
+    const holding = holdings.get(position.code);
+    if (!holding || !(holding.units > 0)) return {
+      ...position,
+      dailyPLTRY: null,
+      dailyPct: null,
+      totalPLTRY: null,
+      totalPct: null,
+      marketValueTRY: null,
+      marketValuePrevTRY: null,
+      siteDataAvailable: false,
+    };
+    const price = Number.isFinite(holding.price) ? holding.price : null;
+    const avgCost = Number.isFinite(position.avgCost) && position.avgCost > 0
+      ? position.avgCost : holding.avgCost;
+    const fx = Number.isFinite(holding.fxRate) ? holding.fxRate : 1;
+    const hasSitePrice = Number.isFinite(price) && !holding.missingFx;
+    const dailyPLTRY = hasSitePrice && Number.isFinite(holding.dayPct) && Number.isFinite(holding.dayPL)
+      ? holding.dayPL : null;
+    const totalPLTRY = hasSitePrice && Number.isFinite(avgCost)
+      ? holding.units * (price - avgCost) * fx : null;
+    const totalPct = hasSitePrice && Number.isFinite(avgCost) && avgCost > 0
+      ? ((price / avgCost) - 1) * 100 : null;
+    return {
+      ...position,
+      price,
+      units: holding.units,
+      avgCost,
+      dailyPLTRY,
+      dailyPct: holding.dayPct,
+      totalPLTRY,
+      totalPct,
+      marketValueTRY: hasSitePrice && Number.isFinite(holding.value) ? holding.value : null,
+      marketValuePrevTRY: dailyPLTRY !== null && Number.isFinite(holding.prevValue) ? holding.prevValue : null,
+      siteDataAvailable: hasSitePrice,
     };
   });
 }

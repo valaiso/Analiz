@@ -4,7 +4,7 @@ import { h, tl, tlSigned, pct, pctSigned, colorAt, isNum } from '../util.js';
 import { donutWithLegend, barChart, stackedAreaChart } from '../charts.js';
 import { weightHistory, attribution } from '../insights.js';
 import { transactions } from '../store.js';
-import { currentMidasPositions, groupAssetRows, assetType } from '../asset-groups.js';
+import { currentMidasPositions, addSiteMarketMetrics, groupAssetRows, assetType } from '../asset-groups.js';
 import { sectionCard, emptyState } from './common.js';
 
 const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
@@ -12,9 +12,10 @@ const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
 export function renderDagilim(ctx) {
   const { analysis, navigate } = ctx;
   const { open, totals } = analysis;
-  const live = currentMidasPositions();
-  const usingMidas = Boolean(live?.length);
-  const liveCodes = new Set((live || []).map((row) => row.code));
+  const liveRaw = currentMidasPositions();
+  const usingMidas = Boolean(liveRaw?.length);
+  const liveCodes = new Set((liveRaw || []).map((row) => row.code));
+  const live = addSiteMarketMetrics(liveRaw || [], open);
   const localCrypto = usingMidas ? open.filter((row) => assetType(row.code) === 'Kripto' && !liveCodes.has(row.code)).map((row) => ({
     ...row, kind: 'CRYPTO', currency: 'TRY', allocationPct: null,
     dailyPLTRY: row.dayPL, totalPLTRY: row.totalPL, localRecord: true,
@@ -29,23 +30,50 @@ export function renderDagilim(ctx) {
 
   const root = h('div', { class: 'stack' });
   if (usingMidas) {
+    const priced = open.filter((row) => row.value > 0
+      && (liveCodes.has(row.code) || localCrypto.some((crypto) => crypto.code === row.code)));
+    const byTypeMap = new Map();
+    for (const row of priced) {
+      if (!(row.value > 0)) continue;
+      const baseType = assetType(row.code, row.kind);
+      const type = baseType === 'Hisse' && row.currency !== 'USD' ? 'BIST Hisse' : baseType;
+      byTypeMap.set(type, (byTypeMap.get(type) || 0) + row.value);
+    }
+    const byType = [...byTypeMap.entries()].sort((a, b) => b[1] - a[1])
+      .map(([label, value], index) => ({ label, value, color: colorAt(index) }));
+    const bistRows = priced.filter((row) => assetType(row.code, row.kind) === 'Hisse'
+      && row.currency !== 'USD' && row.kind !== 'US_ETF' && row.kind !== 'CRYPTO');
+    const bistSlices = bistRows.filter((row) => row.value > 0)
+      .sort((a, b) => b.value - a.value)
+      .map((row, index) => ({ label: row.code, value: row.value, color: colorAt(index) }));
+    root.append(h('div', { class: 'grid grid-2' },
+      sectionCard('Portföy Dağılımı', 'ETF · Fon · BIST hissesi · yabancı hisse · Kripto', donutWithLegend(byType, {
+        centerTop: tl(priced.reduce((sum, row) => sum + (row.value || 0), 0), { compact: true }),
+        centerBottom: 'fiyat bulunanlar',
+      })),
+      sectionCard('BIST Hisseleri', 'Açık BIST hisselerinin kendi içindeki dağılımı', donutWithLegend(bistSlices, {
+        centerTop: tl(bistRows.reduce((sum, row) => sum + (row.value || 0), 0), { compact: true }),
+        centerBottom: 'BIST toplamı',
+      }))));
     root.append(h('div', { class: 'notice' },
-      'Açık ETF, fon ve hisse listesi Midas’tan okunur. “Dağılım” yüzdesi Midas satırında gösterildiği gibi aktarılır; farklı varlık gruplarının yüzdeleri toplanmaz. Kripto satırları varsa işlem kayıtlarından ayrı gösterilir.'));
+      `Grafikler sitenin fiyat geçmişi ve kayıtlı işlem adetleriyle hesaplanır; ${priced.length}/${positions.length} açık varlık için adet ve fiyat bulundu. Eksik adetli varlıklar parasal pasta dilimlerine katılmaz. Midas’ın günlük/toplam getiri hücreleri kullanılmaz.`));
     for (const group of groupAssetRows(positions)) {
       const localOnly = group.label === 'Kripto';
+      const rows = [...group.rows].sort((a, b) => (b.marketValueTRY || 0) - (a.marketValueTRY || 0));
       const table = h('div', { class: 'table-wrap' }, h('table', {},
         h('thead', {}, h('tr', {},
           h('th', { style: 'text-align:left' }, 'Varlık'),
-          h('th', {}, 'Fiyat'), h('th', {}, 'Ort. Maliyet'), h('th', {}, 'Dağılım'),
-          h('th', {}, 'Toplam K/Z'), h('th', {}, 'Bugünkü K/Z'))),
-        h('tbody', {}, group.rows.map((row) => h('tr', {},
+          h('th', {}, 'Portföy Değeri'), h('th', {}, 'Site Fiyatı'), h('th', {}, 'Ort. Maliyet'), h('th', {}, 'Dağılım'),
+          h('th', {}, 'Ort. Maliyete Göre K/Z'), h('th', {}, 'Günlük · Site'))),
+        h('tbody', {}, rows.map((row) => h('tr', {},
           h('td', {}, h('span', { class: 'code-chip' }, row.code)),
+          h('td', {}, isNum(row.marketValueTRY) ? tl(row.marketValueTRY) : '—'),
           h('td', {}, `${row.price == null ? '—' : new Intl.NumberFormat('tr-TR', { style: 'currency', currency: row.currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2 }).format(row.price)}`),
           h('td', {}, `${row.avgCost == null ? '—' : new Intl.NumberFormat('tr-TR', { style: 'currency', currency: row.currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2 }).format(row.avgCost)}`),
           h('td', {}, row.localRecord || !isNum(row.allocationPct) ? '—' : pct(row.allocationPct, 2)),
-          h('td', { class: cls2(row.totalPLTRY) }, isNum(row.totalPLTRY) ? tlSigned(row.totalPLTRY) : '—'),
-          h('td', { class: cls2(row.dailyPLTRY) }, isNum(row.dailyPLTRY) ? tlSigned(row.dailyPLTRY) : '—'))))));
-      root.append(sectionCard(localOnly ? 'Kripto · İşlem Kayıtları' : `Midas · ${group.label}`,
+          h('td', { class: cls2(row.totalPLTRY) }, isNum(row.totalPLTRY) ? `${tlSigned(row.totalPLTRY)}${isNum(row.totalPct) ? ` · ${pctSigned(row.totalPct)}` : ''}` : '—'),
+          h('td', { class: cls2(row.dailyPLTRY) }, isNum(row.dailyPLTRY) ? `${tlSigned(row.dailyPLTRY)}${isNum(row.dailyPct) ? ` · ${pctSigned(row.dailyPct)}` : ''}` : '—'))))));
+      root.append(sectionCard(localOnly ? 'Kripto · İşlem Kayıtları' : `Açık ${group.label}`,
         `${group.rows.length} varlık · ${localOnly ? 'Midas yatırım pozisyonlarından ayrı' : 'açık pozisyonlar'}`, table));
     }
   } else {
@@ -64,7 +92,7 @@ export function renderDagilim(ctx) {
       }))));
   }
 
-  /* Kâr/zarar katkısı: canlı görünümde Midas satırlarındaki güncel P/L kullanılır. */
+  /* Kâr/zarar katkısı, Midas pozisyon kodları + site fiyatı + kayıtlı adetlerden hesaplanır. */
   if (usingMidas) {
     for (const group of groupAssetRows(live)) {
       const rows = group.rows.filter((row) => isNum(row.totalPLTRY));
@@ -79,7 +107,7 @@ export function renderDagilim(ctx) {
           h('td', { class: cls2(row.totalPLTRY) }, tlSigned(row.totalPLTRY)),
           h('td', { class: cls2(row.totalPct) }, isNum(row.totalPct) ? pctSigned(row.totalPct, 2) : '—'))))));
       root.append(sectionCard(`${group.label} · Kâr/Zarar Katkısı`,
-        'Midas Pozisyonlar tablosundaki toplam getiri; TL’ye çevrilmiştir', box, table));
+        'Sitenin güncel fiyatı ve Midas’tan okunan ortalama maliyetle; işlem adetleri varsa TL tutarı hesaplanır', box, table));
       barChart(box, { items: rows.map((row) => ({ label: row.code, value: row.totalPLTRY })), format: tlSigned });
     }
 
@@ -146,7 +174,7 @@ export function renderDagilim(ctx) {
   }
 
   const top = positions.filter((row) => isNum(row.weight)).sort((a, b) => b.weight - a.weight)[0];
-  if (top && top.weight > 40) {
+  if (!usingMidas && top && top.weight > 40) {
     root.append(h('div', { class: 'notice warn' },
       `Portföy ağırlığının ${pct(top.weight, 0)}’ı tek varlıkta (${top.code}).`));
   }

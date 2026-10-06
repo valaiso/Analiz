@@ -161,6 +161,7 @@ export async function analyze(txs) {
         ? (price / pricePrev - 1) * 100 : null,
       totalPL: unrealized + p.realized,
       weight: 0,
+      prevValue: 0,
     });
   }
 
@@ -176,8 +177,9 @@ export async function analyze(txs) {
       && isNum(holding.pricePrev) && isNum(holding.fxRatePrev)) {
       holding.dayPL = units * (holding.price * holding.fxRate
         - holding.pricePrev * holding.fxRatePrev);
+      holding.prevValue = units * holding.pricePrev * holding.fxRatePrev;
       dayPL += holding.dayPL;
-      prevValue += units * holding.pricePrev * holding.fxRatePrev;
+      prevValue += holding.prevValue;
       holding.dayPct = holding.pricePrev * holding.fxRatePrev > 0
         ? ((holding.price * holding.fxRate) / (holding.pricePrev * holding.fxRatePrev) - 1) * 100
         : null;
