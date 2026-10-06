@@ -15,11 +15,15 @@ export function requestMidasHistory(timeoutMs = 180_000) {
       if (data?.channel !== CHANNEL || data.type !== 'RESULT' || data.requestId !== requestId) return;
       clearTimeout(timer);
       window.removeEventListener('message', receive);
-      if (!data.response?.ok) reject(new Error(data.response?.error || 'Midas geçmişi okunamadı.'));
-      else resolve({
+      if (!data.response?.ok) {
+        const error = new Error(data.response?.error || 'Midas geçmişi okunamadı.');
+        error.accountSummary = data.response?.accountSummary || null;
+        reject(error);
+      } else resolve({
         rows: data.response.rows || [],
         scannedPages: data.response.scannedPages || 1,
         unmatchedCount: data.response.unmatchedCount || 0,
+        accountSummary: data.response.accountSummary || null,
       });
     }
 

@@ -28,11 +28,41 @@ function executedStatus(status) {
   return /gerçekleş|tamamlan|filled|executed/.test(value);
 }
 
-function candidateElements() {
+function isOrderHeader(element) {
+  const cells = directCells(element).map((cell) => cell.toLocaleLowerCase('tr'));
+  const checks = [
+    /varlık|sembol/, /durum|statü|status/, /emir tipi/, /alış\s*\/\s*satış|işlem yönü/,
+    /adet|miktar|lot/, /fiyat/, /emir tarihi|işlem tarihi/,
+  ];
+  return checks.every((pattern) => cells.some((cell) => pattern.test(cell)));
+}
+
+function orderHistoryRoot() {
+  const headings = [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div')]
+    .filter((element) => isVisible(element) && /^emir\s+geçmişi$/iu.test(textOf(element)))
+    .sort((a, b) => textOf(a).length - textOf(b).length);
+  for (const heading of headings) {
+    let headerScope = null;
+    for (let scope = heading.parentElement, depth = 0; scope && depth < 12; scope = scope.parentElement, depth += 1) {
+      const hasOrderHeader = [...scope.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
+        .some((element) => isVisible(element) && element.children.length >= 5
+          && element.children.length <= 12 && isOrderHeader(element));
+      if (!hasOrderHeader) continue;
+      headerScope = scope;
+      const hasPager = [...scope.querySelectorAll('span, div, p')]
+        .some((element) => isVisible(element) && /^\d+\s*[-–]\s*\d+\s*\/\s*\d+$/.test(textOf(element)));
+      if (hasPager) return scope;
+    }
+    if (headerScope) return headerScope;
+  }
+  return null;
+}
+
+function candidateElements(root) {
   const rowSelector = 'tr, [role="row"], [class*="row" i]';
   // Atlas bazı tablo sürümlerinde table/role=row kullanmıyor; sütun başlıklarını
   // taşıyan CSS grid satırlarını da doğrudan çocuklarından tanı.
-  const headerCandidates = [...document.querySelectorAll(`${rowSelector}, div`)]
+  const headerCandidates = [...root.querySelectorAll(`${rowSelector}, div`)]
     .filter((element) => isVisible(element) && element.children.length >= 5 && element.children.length <= 12);
   for (const headerRow of headerCandidates) {
     const headers = directCells(headerRow);
@@ -51,7 +81,8 @@ function candidateElements() {
     };
     // Yalnızca gerçek emir tablosunu işle; sayfanın tamamını kapsayan listeleri
     // ve işlem geçmişi kartlarını satır sanıp çoğaltma.
-    if ([columns.code, columns.side, columns.units, columns.date].some((column) => column < 0)) continue;
+    if (!isOrderHeader(headerRow)
+      || [columns.code, columns.side, columns.units, columns.date].some((column) => column < 0)) continue;
 
     const semanticRoot = headerRow.closest('table, [role="table"]');
     let rows = semanticRoot
@@ -61,7 +92,7 @@ function candidateElements() {
       // CSS grid satırları başlıkla aynı kapsayıcıda veya birkaç seviye aşağıda
       // bulunur. Satır sayısı/sırası ve tarih/yön sütunlarıyla doğrula.
       let scope = headerRow.parentElement;
-      for (let depth = 0; scope && depth < 5; scope = scope.parentElement, depth += 1) {
+      for (let depth = 0; scope && root.contains(scope) && depth < 10; scope = scope.parentElement, depth += 1) {
         const candidates = [...scope.querySelectorAll(`${rowSelector}, li, div`)]
           .filter((row) => row !== headerRow && isVisible(row));
         const matching = candidates.filter((row) => {
@@ -100,8 +131,8 @@ function candidateElements() {
   return [];
 }
 
-function historyDiagnostics() {
-  const labels = [...document.querySelectorAll('button, [role="button"], h1, h2, h3, span, div')]
+function historyDiagnostics(root) {
+  const labels = [...root.querySelectorAll('button, [role="button"], h1, h2, h3, span, div')]
     .filter(isVisible)
     .map(textOf)
     .filter((text) => text && text.length < 40)
@@ -109,8 +140,8 @@ function historyDiagnostics() {
   return [...new Set(labels)].slice(0, 40);
 }
 
-function paginationState(direction) {
-  const labels = [...document.querySelectorAll('span, div, p')]
+function paginationState(direction, root) {
+  const labels = [...root.querySelectorAll('span, div, p')]
     .filter((element) => isVisible(element) && /^\d+\s*[-–]\s*\d+\s*\/\s*\d+$/.test(textOf(element)))
     .sort((a, b) => textOf(a).length - textOf(b).length);
   const indicator = labels[0];
@@ -128,7 +159,7 @@ function paginationState(direction) {
 
   // Önce erişilebilir etiketle doğru oku seç; burada üst çubuktaki diğer
   // butonlarla karışmaması için sayfa göstergesiyle aynı satırda olmasını şart koş.
-  const named = [...document.querySelectorAll('button, [role="button"], a[aria-label]')]
+  const named = [...root.querySelectorAll('button, [role="button"], a[aria-label]')]
     .filter(isVisible)
     .filter((element) => verticalMatch(element.getBoundingClientRect())
       && inDirection(element.getBoundingClientRect()))
@@ -139,7 +170,7 @@ function paginationState(direction) {
 
   // Midas'ın ikon-only pager oku button etiketi taşımayabilir. Sayfa
   // göstergesinin hemen sağı/solundaki gerçek butonu veya tıklanabilir SVG'yi bul.
-  const candidates = [...document.querySelectorAll('button, [role="button"], [tabindex="0"], a, svg, [class*="button" i]')]
+  const candidates = [...root.querySelectorAll('button, [role="button"], [tabindex="0"], a, svg, [class*="button" i]')]
     .filter(isVisible)
     .map((element) => {
       const box = element.getBoundingClientRect();
@@ -154,7 +185,7 @@ function paginationState(direction) {
   }
 
   // Son çare: sayfa okları div olabilir ve yalnızca cursor:pointer ile belli olur.
-  const nearby = [...document.querySelectorAll('div, span')]
+  const nearby = [...root.querySelectorAll('div, span')]
     .filter(isVisible)
     .map((element) => ({ element, box: element.getBoundingClientRect(), cursor: getComputedStyle(element).cursor }))
     .filter(({ box, cursor }) => cursor === 'pointer' && verticalMatch(box) && inDirection(box)
@@ -170,19 +201,24 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function collectCompletedHistory() {
   const collected = new Map();
-  const start = paginationState('prev')?.label || '';
+  const root = orderHistoryRoot();
+  if (!root) return {
+    rows: [], pageCount: 0, paginationStop: 'Yatırım hesabındaki Emir geçmişi tablosu bulunamadı.',
+    labels: [], start: '', accountSummary: readAccountSummary(),
+  };
+  const start = paginationState('prev', root)?.label || '';
   let pageCount = 0;
   let paginationStop = '';
 
   // Midas bazı hesaplarda yüzlerce emri 5'li sayfalarda gösteriyor. Yalnızca
   // emir tablosunun sayfa okunu kullanarak ilerle; alım/satım kontrollerine dokunma.
   while (pageCount < 300) {
-    for (const row of candidateElements()) {
+    for (const row of candidateElements(root)) {
       const key = row.sourceId || row.text.replace(/\s+/g, ' ').trim();
       if (key) collected.set(key, row);
     }
 
-    const next = paginationState('next');
+    const next = paginationState('next', root);
     if (!next?.button || next.disabled) {
       paginationStop = next?.reason || (next?.disabled ? 'İleri oku pasif veya son sayfaya ulaşıldı.' : 'İleri oku bulunamadı.');
       break;
@@ -192,7 +228,7 @@ async function collectCompletedHistory() {
     let changed = false;
     for (let attempt = 0; attempt < 60; attempt += 1) {
       await wait(100);
-      const current = paginationState('next');
+      const current = paginationState('next', root);
       if (current?.label && current.label !== previousLabel) {
         changed = true;
         break;
@@ -207,16 +243,16 @@ async function collectCompletedHistory() {
 
   // Kullanıcının başladığı tablo sayfasına geri dön.
   for (let page = 0; page < pageCount; page += 1) {
-    const previous = paginationState('prev');
+    const previous = paginationState('prev', root);
     if (!previous?.button || previous.disabled) break;
     const previousLabel = previous.label;
     previous.button.click();
     for (let attempt = 0; attempt < 60; attempt += 1) {
       await wait(100);
-      if (paginationState('prev')?.label !== previousLabel) break;
+      if (paginationState('prev', root)?.label !== previousLabel) break;
     }
   }
-  return { rows: [...collected.values()].slice(0, 500), pageCount, paginationStop, labels: historyDiagnostics(), start };
+  return { rows: [...collected.values()].slice(0, 500), pageCount, paginationStop, labels: historyDiagnostics(root), start, accountSummary: readAccountSummary() };
 }
 
 function parseLocaleNumber(value) {
@@ -248,6 +284,42 @@ function parseDate(text) {
   if (!match[3] && Number(months[monthKey]) > now.getMonth() + 1) year -= 1;
   return `${year}-${months[monthKey]}-${String(Number(match[1])).padStart(2, '0')}`;
 }
+
+function readAccountSummary() {
+  const headings = [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div')]
+    .filter((element) => isVisible(element) && /^yatırım hesabı$/iu.test(textOf(element)))
+    .sort((a, b) => textOf(a).length - textOf(b).length);
+  for (const heading of headings) {
+    for (let scope = heading.parentElement, depth = 0; scope && depth < 8; scope = scope.parentElement, depth += 1) {
+      const lines = multilineTextOf(scope);
+      if (!lines.some((line) => /alım gücü/i.test(line)) || !lines.some((line) => /nakit bakiye/i.test(line))) continue;
+      const headingIndex = lines.findIndex((line) => /^yatırım hesabı$/iu.test(line));
+      const valueLine = lines.slice(Math.max(headingIndex, 0))
+        .find((line) => /₺|TRY/i.test(line) && !/günlük|alım gücü|nakit bakiye|takas bekleyen/i.test(line));
+      const amountAfter = (pattern) => {
+        const index = lines.findIndex((entry) => pattern.test(entry));
+        if (index < 0) return null;
+        for (const line of lines.slice(index, index + 3)) {
+          if (/₺|\$|TRY|USD/i.test(line)) {
+            const amount = parseLocaleNumber(line.replace(/^.*?(?:alım gücü|nakit bakiye|takas bekleyen bakiye)/i, ''));
+            if (amount !== null) return amount;
+          }
+        }
+        return null;
+      };
+      const dailyLine = lines.find((line) => /günlük/i.test(line));
+      return {
+        totalValue: valueLine ? parseLocaleNumber(valueLine) : null,
+        dailyChange: dailyLine ? parseLocaleNumber(dailyLine) : null,
+        tryBuyingPower: amountAfter(/alım gücü/i),
+        tryCash: amountAfter(/nakit bakiye/i),
+        trySettlement: amountAfter(/takas bekleyen bakiye/i),
+      };
+    }
+  }
+  return null;
+}
+
 function normalizeRow(row) {
   const text = row.text;
   const lower = text.toLocaleLowerCase('tr');
@@ -312,10 +384,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const ready = normalized.filter((row) => !row.missing.length);
     if (!rows.length) {
       const evidence = labels.length ? `Ekranda algılanan başlık/durum metinleri: ${labels.join(' · ')}.` : 'Ekranda tanınan emir tablosu başlığı görünmüyor.';
-      sendResponse({ ok: false, error: `Midas'tan tamamlanmış işlem satırı okunamadı. ${pageCount + 1} sayfa tarandı. ${start ? `Başlangıç sayfası: ${start}. ` : ''}${paginationStop ? `Sayfalama: ${paginationStop} ` : ''}${evidence} Emir tablosunun sayfa oklarını görünür tutun.` });
+      sendResponse({ ok: false, accountSummary: readAccountSummary(), error: `Midas yatırım hesabı sayfasında tamamlanmış işlem satırı okunamadı. ${pageCount + 1} sayfa tarandı. ${start ? `Başlangıç sayfası: ${start}. ` : ''}${paginationStop ? `Sayfalama: ${paginationStop} ` : ''}${evidence} Yalnızca “Emir geçmişi” tablosu tarandı; kripto geçmişi dahil edilmedi.` });
       return;
     }
-    sendResponse({ ok: true, rows: normalized, scannedPages: pageCount + 1, unmatchedCount: normalized.length - ready.length });
+    sendResponse({ ok: true, rows: normalized, scannedPages: pageCount + 1, unmatchedCount: normalized.length - ready.length, accountSummary: readAccountSummary() });
   }).catch((error) => {
     sendResponse({ ok: false, error: error.message || 'Midas emir geçmişi okunamadı.' });
   });

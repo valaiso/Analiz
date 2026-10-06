@@ -372,7 +372,8 @@ def build_site(conn: sqlite3.Connection, out_dir: Path, years: int) -> dict:
 
     shutil.copy2(ROOT / "index.html", out_dir / "index.html")
     shutil.copytree(ROOT / "assets", out_dir / "assets")
-    shutil.copy2(ROOT / "public" / "icon.jpg", out_dir / "icon.jpg")
+    shutil.copy2(ROOT / "iconV1.png", out_dir / "iconV1.png")
+    shutil.copy2(ROOT / "public" / "site.webmanifest", out_dir / "site.webmanifest")
     (out_dir / ".nojekyll").write_text("", encoding="utf-8")
 
     return info

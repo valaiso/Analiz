@@ -21,6 +21,18 @@ function logMidas(message) {
   if (midasLogField) midasLogField.value = midasActivity.join('\n');
 }
 
+function logMidasAccount(summary) {
+  if (!summary) return;
+  const fmt = (value) => Number.isFinite(value)
+    ? new Intl.NumberFormat('tr-TR', { style: 'currency', currency: 'TRY' }).format(value)
+    : 'okunamadı';
+  logMidas(`Midas yatırım hesabı toplam değeri: ${fmt(summary.totalValue)}. Bu güncel hesap değeridir; yatırılan ana para ile aynı şey değildir.`);
+  if (Number.isFinite(summary.dailyChange)) logMidas(`Midas günlük hesap değişimi: ${fmt(summary.dailyChange)}.`);
+  if (Number.isFinite(summary.tryCash)) logMidas(`Midas TL nakit bakiye: ${fmt(summary.tryCash)}.`);
+  if (Number.isFinite(summary.tryBuyingPower)) logMidas(`Midas TL alım gücü: ${fmt(summary.tryBuyingPower)}.`);
+  if (Number.isFinite(summary.trySettlement)) logMidas(`Midas TL takas bekleyen bakiye: ${fmt(summary.trySettlement)}.`);
+}
+
 async function copyMidasLog(field) {
   const text = field.value.trim();
   if (!text) { toast('Kopyalanacak aktarım mesajı yok'); return; }
@@ -108,8 +120,13 @@ async function readMidas(ctx, button) {
   button.disabled = true;
   button.textContent = 'Midas emir geçmişi taranıyor…';
   logMidas('Midas emir geçmişi taraması başlatıldı.');
+  let accountLogged = false;
   try {
     const result = await requestMidasHistory();
+    if (result.accountSummary) {
+      logMidasAccount(result.accountSummary);
+      accountLogged = true;
+    }
     const { rows } = result;
     if (!rows.length) {
       throw new Error('Tamamlanmış emir satırı bulunamadı. Midas “Emir geçmişi” tablosunda “Gerçekleşti/Tamamlandı” durumundaki kayıtları göster; bekleyen ve iptal emirleri aktarılmaz.');
@@ -120,6 +137,7 @@ async function readMidas(ctx, button) {
     if (unknownCodes.length) logMidas(`Fiyat verisi bulunmayan semboller: ${unknownCodes.join(', ')}. İşlemleri yine de aktarabilirsiniz; portföyde geçici olarak “fiyat yok” görünür.`);
     showMidasPreview(rows, result, ctx);
   } catch (error) {
+    if (!accountLogged && error.accountSummary) logMidasAccount(error.accountSummary);
     logMidas(`HATA: ${error.message}`);
     toast(error.message);
   } finally {
@@ -307,7 +325,7 @@ export function renderIslemler(ctx) {
     style: 'width:100%;resize:vertical;font: .85rem var(--mono);margin-top:10px',
   }, midasActivity.length ? midasActivity.join('\n') : 'Henüz aktarım yapılmadı. Sonuçlar ve hatalar burada görünür.');
   root.append(sectionCard('Midas Aktarımı',
-    'Midas Emir geçmişindeki sayfaları tarayıp tamamlanmış alış/satışları oku; bekleyen ve iptal emirlerini atla. Miktar ve fiyatı doğrulanan kayıtlar içe aktarılır; emir gönderilmez. Midas kayıtları bu tarayıcıda kalır.',
+    'Yatırım hesabındaki Emir geçmişini sayfalar boyunca tarar; kripto işlem geçmişini dışarıda bırakır. Bekleyen/iptal emirlerini atlar ve Yatırım hesabı toplam değerini yanıt geçmişine yazar. Emir göndermez; işlemler bu tarayıcıda kalır.',
     h('div', { class: 'btn-row' }, midasButton, copyLogButton),
     h('label', { style: 'display:block;margin-top:12px;font-weight:600' }, 'Aktarım yanıt geçmişi'),
     midasLogField));
