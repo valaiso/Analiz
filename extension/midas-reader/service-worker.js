@@ -7,7 +7,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
   if (message?.type === 'ANALIZ_FETCH_LIVE_QUOTES') {
     const codes = [...new Set((message.codes || []).map((code) => String(code).trim().toUpperCase()).filter(Boolean))];
-    Promise.all(codes.map(async (code) => [code, await yahooIntradayQuote(code)]))
+    const cryptoCodes = new Set((message.cryptoCodes || []).map((code) => String(code).trim().toUpperCase()).filter(Boolean));
+    const allCodes = [...new Set([...codes, ...cryptoCodes])];
+    Promise.all(allCodes.map(async (code) => [code, await (cryptoCodes.has(code)
+      ? yahooCryptoIntradayQuote(code) : yahooIntradayQuote(code))]))
       .then((entries) => sendResponse({ ok: true, quotes: Object.fromEntries(entries.filter(([, quote]) => quote)) }))
       .catch((error) => sendResponse({ ok: false, error: error.message || 'Canlı fiyatlar alınamadı.' }));
     return true;
@@ -139,6 +142,46 @@ async function yahooIntradayQuote(code) {
       };
     } catch {
       // Try the next Yahoo symbol spelling.
+    }
+  }
+  return null;
+}
+
+async function yahooCryptoIntradayQuote(code) {
+  const normalized = String(code || '').toUpperCase().replace(/[-_/]?(TRY|USD|USDT|USDC)$/, '');
+  if (!normalized || ['USDT', 'USDC'].includes(normalized)) return null;
+  for (const ticker of [`${normalized}-TRY`, `${normalized}-USD`]) {
+    try {
+      const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?range=1d&interval=1m`;
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) continue;
+      const payload = await response.json();
+      const chart = payload?.chart?.result?.[0];
+      const timestamps = chart?.timestamp || [];
+      const closes = chart?.indicators?.quote?.[0]?.close || [];
+      let latestIndex = -1;
+      for (let index = closes.length - 1; index >= 0; index -= 1) {
+        if (Number.isFinite(Number(closes[index])) && Number(closes[index]) > 0) {
+          latestIndex = index;
+          break;
+        }
+      }
+      const price = latestIndex >= 0 ? Number(closes[latestIndex]) : Number(chart?.meta?.regularMarketPrice);
+      const previousClose = Number(chart?.meta?.chartPreviousClose ?? chart?.meta?.previousClose);
+      if (!(price > 0) || !(previousClose > 0)) continue;
+      const timestamp = timestamps[latestIndex] || chart?.meta?.regularMarketTime || Date.now() / 1000;
+      return {
+        code: normalized, price, previousClose,
+        date: isoDate(timestamp, chart?.meta?.exchangeTimezoneName || 'UTC'),
+        timestamp: timestamp * 1000,
+        exchangeTimezoneName: chart?.meta?.exchangeTimezoneName || 'UTC',
+        isRegularSessionNow: true,
+        isRegularSessionBar: true,
+        currency: chart?.meta?.currency || (ticker.endsWith('-TRY') ? 'TRY' : 'USD'),
+        source: 'Yahoo Finance',
+      };
+    } catch {
+      // Try the dollar pair when Yahoo has no TRY market for this coin.
     }
   }
   return null;

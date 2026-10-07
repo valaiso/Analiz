@@ -351,7 +351,9 @@ function updateQuoteTimestamp() {
   const label = $('#quoteTime');
   if (!label) return;
   const snapshot = getMidasAccountSnapshot();
-  const activeCodes = new Set((snapshot?.positions || []).map((position) => String(position.code || '').toUpperCase()));
+  const activeCodes = new Set([
+    ...(snapshot?.positions || []), ...(snapshot?.cryptoPositions || []),
+  ].map((position) => String(position.code || '').toUpperCase()));
   const quoteTimes = Object.entries(snapshot?.liveQuotes || {})
     .filter(([code]) => !activeCodes.size || activeCodes.has(String(code).toUpperCase()))
     .map(([, quote]) => Number(quote?.timestamp))
@@ -367,16 +369,21 @@ function updateQuoteTimestamp() {
 
 async function refreshIntradayQuotes() {
   if (intradayQuoteBusy || document.visibilityState === 'hidden') return;
-  const positions = getMidasAccountSnapshot()?.positions || [];
+  const snapshot = getMidasAccountSnapshot();
+  const positions = snapshot?.positions || [];
   const codes = [...new Set(positions.filter((position) => {
     const kind = String(DB.byCode.get(position.code)?.kind || position.kind || '').toUpperCase();
     return !['YAT', 'EMK', 'GYF', 'GSYF', 'CRYPTO'].includes(kind)
       && (kind || position.currency === 'USD');
   }).map((position) => position.code).filter(Boolean))].slice(0, 40);
-  if (!codes.length) return;
+  const cryptoCodes = snapshot?.cryptoPositionsSource === 'midas-visible-v1'
+    && snapshot.cryptoPositionsCaptured === true
+    ? [...new Set((snapshot.cryptoPositions || []).map((position) => String(position.code || '').toUpperCase())
+      .filter((code) => code && !['USDT', 'USDC'].includes(code)))].slice(0, 20) : [];
+  if (!codes.length && !cryptoCodes.length) return;
   intradayQuoteBusy = true;
   try {
-    const received = await requestMidasLiveQuotes(codes);
+    const received = await requestMidasLiveQuotes(codes, 20_000, cryptoCodes);
     if (Object.keys(received).length && saveMidasLiveQuotes(received)) {
       updateQuoteTimestamp();
       await render({ preserveScroll: true });
@@ -463,6 +470,14 @@ function navigate(view, opts = {}) {
   render();
 }
 
+function todayInIstanbul() {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(new Date());
+  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return `${values.year}-${values.month}-${values.day}`;
+}
+
 /* -------------------------------------------------------------------- çizim */
 
 async function render({ preserveScroll = false } = {}) {
@@ -483,8 +498,17 @@ async function render({ preserveScroll = false } = {}) {
       changeAccount: signOutFromAccount,
     };
     if (currentView === 'panel' || currentView === 'dagilim') {
-      const positions = getMidasAccountSnapshot()?.positions || [];
-      if (positions.length) await loadHistories(positions.map((position) => position.code));
+      const snapshot = getMidasAccountSnapshot();
+      const today = todayInIstanbul();
+      const positions = [
+        ...(snapshot?.positions || []),
+        ...(snapshot?.cryptoPositions || []),
+      ].map((position) => position.code);
+      const sameDayTradeCodes = transactions()
+        .filter((tx) => tx.source === 'midas' && String(tx.date || '').slice(0, 10) === today)
+        .map((tx) => tx.code);
+      const marketCodes = [...new Set([...positions, ...sameDayTradeCodes].filter(Boolean))];
+      if (marketCodes.length) await loadHistories(marketCodes);
     }
     if (view.needsAnalysis) {
       const txs = transactions();

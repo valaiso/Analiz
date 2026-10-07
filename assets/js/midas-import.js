@@ -1,5 +1,5 @@
 const CHANNEL = 'ANALIZ_MIDAS_EXTENSION';
-const REQUIRED_READER_VERSION = '0.28.4';
+const REQUIRED_READER_VERSION = '0.28.5';
 
 function compareVersions(left, right) {
   const a = String(left || '').split('.').map((part) => Number(part) || 0);
@@ -91,7 +91,7 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
 }
 
 /** Fetch fresh intraday quotes through the installed extension, without a Midas tab. */
-export function requestMidasLiveQuotes(codes = [], timeoutMs = 20_000) {
+export function requestMidasLiveQuotes(codes = [], timeoutMs = 20_000, cryptoCodes = []) {
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -110,6 +110,6 @@ export function requestMidasLiveQuotes(codes = [], timeoutMs = 20_000) {
     }
 
     window.addEventListener('message', receive);
-    window.postMessage({ channel: CHANNEL, type: 'LIVE_QUOTES', requestId, codes }, location.origin);
+    window.postMessage({ channel: CHANNEL, type: 'LIVE_QUOTES', requestId, codes, cryptoCodes }, location.origin);
   });
 }

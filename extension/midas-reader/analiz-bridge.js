@@ -18,6 +18,7 @@ window.addEventListener('message', async (event) => {
     const response = await chrome.runtime.sendMessage({
       type: request.type === 'LIVE_QUOTES' ? 'ANALIZ_FETCH_LIVE_QUOTES' : 'ANALIZ_READ_MIDAS_HISTORY',
       codes: request.codes || [], knownCodes: request.knownCodes || [],
+      cryptoCodes: request.cryptoCodes || [],
       localAssets: request.localAssets || [], fundCodes: request.fundCodes || [],
       cryptoOnly: request.cryptoOnly === true,
     });

@@ -190,7 +190,7 @@ async function showComparison(codes, ctx) {
   let rangeKey = '1y';
   const head = h('div', { class: 'card-head' },
     h('div', {}, h('h3', {}, 'Getiri Karşılaştırması'),
-      h('span', { class: 'sub' }, 'Dönem başı 100 kabul edilerek')),
+      h('span', { class: 'sub' }, 'Ortak dönem başında her fon 100 birim kabul edilir')),
     h('div', { class: 'seg' }, RANGES.map((r) => h('button', {
       type: 'button', 'aria-pressed': r.key === rangeKey ? 'true' : 'false',
       onclick: (e) => {
@@ -208,17 +208,29 @@ async function showComparison(codes, ctx) {
 
   function draw() {
     const days = RANGES.find((r) => r.key === rangeKey)?.days ?? 0;
-    const from = days
+    const requestedFrom = days
       ? Math.max(0, indexForDate(addDays(DB.calendar[end], -days)))
       : Math.min(...fonlar.map((f) => f.i0 ?? 0));
-    const dates = [];
-    for (let i = from; i <= end; i++) dates.push(DB.calendar[i]);
+    const histories = fonlar.map((fund) => cachedHistory(fund.code));
+    const availableStart = Math.max(requestedFrom, ...histories.map((history) => history?.i ?? end));
+    let commonStart = -1;
+    for (let index = availableStart; index <= end; index += 1) {
+      if (histories.every((history) => {
+        const price = priceAtIndex(history, index);
+        return isNum(price) && price > 0;
+      })) { commonStart = index; break; }
+    }
+    if (commonStart < 0 || commonStart >= end) {
+      chartBox.replaceChildren(h('p', { class: 'dim', style: 'padding:18px 0;text-align:center' },
+        'Seçilen fonlar için ortak dönem fiyat geçmişi yetersiz.'));
+      return;
+    }
+    const dates = DB.calendar.slice(commonStart, end + 1);
 
     const seriler = fonlar.map((f, k) => {
-      const hist = cachedHistory(f.code);
-      const ham = [];
-      for (let i = from; i <= end; i++) ham.push(priceAtIndex(hist, i));
-      const taban = ham.find((v) => isNum(v) && v > 0);
+      const hist = histories[k];
+      const taban = priceAtIndex(hist, commonStart);
+      const ham = dates.map((_, offset) => priceAtIndex(hist, commonStart + offset));
       return {
         name: f.code,
         color: colorAt(k),
@@ -228,7 +240,7 @@ async function showComparison(codes, ctx) {
     lineChart(chartBox, {
       dates, series: seriler, height: 300, baseline: 100,
       yFormat: (v) => num(v, 0),
-      valueFormat: (v) => `${num(v, 1)} (${pctSigned(v - 100, 1)})`,
+      valueFormat: (v) => `${num(v, 2)} birim (${pctSigned(v - 100, 2)})`,
     });
   }
   draw();
@@ -439,11 +451,11 @@ export function renderFonlar(ctx) {
         height: 320,
         baseline: 100,
         yFormat: (value) => num(value, 0),
-        valueFormat: (value) => `${num(value, 2)} · ${pctSigned(value - 100, 2)}`,
+        valueFormat: (value) => `${num(value, 2)} birim · ${pctSigned(value - 100, 2)}`,
       });
       fundCompareSummary.replaceChildren(...endingValues.map(({ fund, value }, index) => h('div', {
         class: 'pill', style: `border-color:${colorAt(index)}`,
-      }, `${fund.code}: 100 → ${num(value, 2)} · ${pctSigned(value - 100, 2)}`)));
+      }, `${fund.code}: 100 birim → ${num(value, 2)} birim · ${pctSigned(value - 100, 2)}`)));
     };
     fundCompareChart.replaceChildren(h('p', { class: 'dim', style: 'padding:18px 0;text-align:center' },
       'Fon fiyat geçmişleri yükleniyor…'));

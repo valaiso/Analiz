@@ -7,7 +7,10 @@ import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
 import { cashflowCalendar } from '../insights.js';
 import { transactions, daysSinceBackup, getMidasAccountSnapshot } from '../store.js';
-import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType } from '../asset-groups.js';
+import {
+  currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics,
+  applyDailyMarketTransactions, groupAssetRows, assetType,
+} from '../asset-groups.js';
 import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
 /**
@@ -58,11 +61,15 @@ export function renderPanel(ctx) {
     .reduce((sum, row) => sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0);
   const stockMidasTotal = Math.max(stockSummaryCaptured ? midasSummary.totalValue : 0,
     stockPositionsCaptured ? stockPositionValue : 0);
+  const cryptoRows = measuredSnapshotPositions.filter((row) => row.midasCryptoSnapshot);
+  const measuredCryptoValue = cryptoRows.reduce((sum, row) =>
+    sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0);
+  const liveCryptoValuationComplete = cryptoRows.length > 0
+    && cryptoRows.every((row) => row.liveQuoteUsed && isNum(row.marketValueTRY));
   const cryptoTotal = cryptoPositionsCaptured
-    ? Math.max(Number(midasSnapshot?.cryptoSummarySource === 'midas-visible-v1'
-      ? midasSnapshot.cryptoSummary?.totalValue : 0) || 0,
-    measuredSnapshotPositions.filter((row) => row.midasCryptoSnapshot)
-      .reduce((sum, row) => sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0))
+    ? liveCryptoValuationComplete ? measuredCryptoValue
+      : Math.max(Number(midasSnapshot?.cryptoSummarySource === 'midas-visible-v1'
+        ? midasSnapshot.cryptoSummary?.totalValue : 0) || 0, measuredCryptoValue)
     : 0;
   const midasPortfolioTotal = stockMidasTotal + cryptoTotal;
   const accountTransactions = transactions();
@@ -88,64 +95,46 @@ export function renderPanel(ctx) {
       || midasSnapshot?.positionsSource === 'midas-visible-v1'
       || midasSnapshot?.cryptoPositionsSource === 'midas-visible-v1');
   const positionsVerified = stockPositionsCaptured || cryptoPositionsCaptured;
-  const hasTodayMidasTransaction = accountTransactions.some((tx) =>
-    tx.source === 'midas' && String(tx.date || '').slice(0, 10) === todayInIstanbul());
   const snapshotPositions = measuredSnapshotPositions.map((row) =>
     row.midasCryptoSnapshot && midasPortfolioTotal > 0 && isNum(row.marketValueTRY)
       ? { ...row, allocationPct: row.marketValueTRY / midasPortfolioTotal * 100 }
       : row);
+  const todayMidasTransactions = accountTransactions.filter((tx) => tx.source === 'midas'
+    && String(tx.date || '').slice(0, 10) === todayInIstanbul());
+  const dailyPositionCoverageComplete = (stockPositionsCaptured || !expectsStockSnapshot)
+    && (cryptoPositionsCaptured || !expectsCryptoSnapshot);
+  const dailyMarket = applyDailyMarketTransactions(snapshotPositions, todayMidasTransactions,
+    todayInIstanbul(), { positionsComplete: dailyPositionCoverageComplete });
+  const dailyPositions = dailyMarket.rows;
   // Do not infer an open holding from Midas order history.
-  const displayPositions = positionsVerified ? snapshotPositions
+  const displayPositions = positionsVerified ? dailyPositions
     : hasMidasTotal ? [] : open.filter((row) => !row.closed);
   const calculatedPositionsValue = snapshotPositions.reduce((sum, row) =>
     sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0);
   const accountValueConsistent = !hasMidasTotal || calculatedPositionsValue <= midasPortfolioTotal * 1.1;
   const positionSnapshotConsistent = accountValueConsistent
     && snapshotPositions.every((row) => isNum(row.marketValueTRY));
-  const dailyRows = snapshotPositions;
-  const stockSummaryDailyCaptured = stockSummaryCaptured && isNum(midasSummary?.dailyChange);
-  const cryptoDailyMissing = cryptoPositionsCaptured
-    && dailyRows.some((row) => row.midasCryptoSnapshot && !isNum(row.dailyPLTRY));
-  const dailyRowsWithValue = dailyRows.filter((row) => isNum(row.dailyPLTRY));
-  const dailyComplete = dailyRows.length > 0 && dailyRowsWithValue.length === dailyRows.length;
+  const dailyRows = dailyPositions;
   const dailyMissing = dailyRows.filter((row) => !isNum(row.dailyPLTRY)).map((row) => {
     if (!(row.units > 0)) return `${row.code} (adet yok)`;
     if (row.quoteStale) return row.quoteAgeMinutes === null
       ? `${row.code} (kotasyon zamanı yok; günlük hesaba alınmadı)`
       : `${row.code} (kotasyon ${row.quoteAgeMinutes} dk eski; günlük hesaba alınmadı)`;
-    if (row.quoteMissing) return `${row.code} (${row.quoteMissingReason}; son fiyat korunuyor)`;
+    if (row.quoteMissing) return `${row.code} (${row.quoteMissingReason})`;
     if (!row.siteDataAvailable) return `${row.code} (fiyat yok)`;
     return `${row.code} (önceki fiyat yok)`;
   });
-  const dailyIncompleteHint = [
+  const dailyIncompleteHint = [...new Set([
+    ...dailyMarket.missingCodes,
+    missingStockSnapshot ? 'yatırım pozisyonları doğrulanmadı' : '',
     missingCryptoSnapshot ? 'kripto hesabı doğrulanmadı' : '',
-    cryptoDailyMissing ? 'kripto günlük değişimi bulunamadı' : '',
     ...dailyMissing,
-    hasTodayMidasTransaction && !stockSummaryDailyCaptured
-      ? 'bugünkü Midas işlemleri için hesap günlük özeti yok' : '',
-  ].filter(Boolean).join(', ');
-  const cryptoRows = dailyRows.filter((row) => row.midasCryptoSnapshot);
-  const cryptoDailyChange = cryptoRows.filter((row) => isNum(row.dailyPLTRY))
-    .reduce((sum, row) => sum + row.dailyPLTRY, 0);
-  const cryptoDailyBase = cryptoRows.filter((row) => isNum(row.marketValuePrevTRY))
-    .reduce((sum, row) => sum + row.marketValuePrevTRY, 0);
-  const cryptoDailyComplete = !cryptoPositionsCaptured || cryptoRows.every((row) => isNum(row.dailyPLTRY));
-  const dailyCanBeReported = stockSummaryDailyCaptured
-    ? !missingCryptoSnapshot && cryptoDailyComplete
-    : dailyComplete && !hasTodayMidasTransaction;
-  const siteDailyChange = dailyCanBeReported
-    ? stockSummaryDailyCaptured ? midasSummary.dailyChange + cryptoDailyChange
-      : dailyRowsWithValue.reduce((sum, row) => sum + row.dailyPLTRY, 0)
-    : null;
-  const summaryDailyBase = stockSummaryDailyCaptured && isNum(midasSummary?.dailyPct)
-    && midasSummary.dailyPct !== 0
-    ? midasSummary.dailyChange / (midasSummary.dailyPct / 100)
-    : stockMidasTotal - (stockSummaryDailyCaptured ? midasSummary.dailyChange : 0);
-  const siteDailyBase = stockSummaryDailyCaptured
-    ? summaryDailyBase + cryptoDailyBase
-    : dailyRowsWithValue.reduce((sum, row) => sum
-      + (isNum(row.marketValuePrevTRY) ? row.marketValuePrevTRY : 0), 0);
-  const siteDailyPct = siteDailyBase > 0 && isNum(siteDailyChange)
+  ].filter(Boolean))].join(', ');
+  const dailyCryptoScope = cryptoPositionsCaptured ? 'kripto dahil'
+    : missingCryptoSnapshot ? 'kripto hariç' : '';
+  const siteDailyChange = dailyIncompleteHint ? null : dailyMarket.total;
+  const siteDailyBase = dailyMarket.base;
+  const siteDailyPct = !dailyIncompleteHint && siteDailyBase > 0 && isNum(siteDailyChange)
     ? siteDailyChange / siteDailyBase * 100 : null;
   const snapshotAt = [
     stockPositionsCaptured ? midasSnapshot.stockCapturedAt : null,
@@ -239,8 +228,8 @@ export function renderPanel(ctx) {
       formatPct: pctSigned,
       hint: hasMidasTotal
         ? (isNum(siteDailyChange)
-          ? `${stockSummaryDailyCaptured ? 'Midas yatırım hesabının günlük değişimi' : 'Açık pozisyonların günlük değişimi'}${cryptoPositionsCaptured ? ' · kripto dahil' : missingCryptoSnapshot ? ' · kripto hariç' : ''}`
-          : `Günlük toplam gösterilmiyor; eksik: ${dailyIncompleteHint || 'açık pozisyon fiyatı bulunamadı'}`)
+          ? `Piyasa fiyatlarından hesaplandı${dailyCryptoScope ? ` · ${dailyCryptoScope}` : ''}${dailyIncompleteHint ? ` · kısmi: ${dailyIncompleteHint}` : ''}`
+          : `Günlük fiyat hareketi hesaplanamadı; eksik: ${dailyIncompleteHint || 'açık pozisyon fiyatı bulunamadı'}`)
         : hasMidasImportState
           ? 'Midas pozisyonları doğrulanana kadar günlük değişim hesaplanmıyor'
           : `${fmtDate(totals.prevDate)} kapanışına göre`,
@@ -398,7 +387,7 @@ export function renderPanel(ctx) {
         { key: 'price', label: 'Güncel Fiyat', render: (r) => moneyByCurrency(r.price, r.currency) },
         { key: 'marketValueTRY', label: 'Portföy Değeri', render: (r) => positionSnapshotConsistent && isNum(r.marketValueTRY) ? tl(r.marketValueTRY) : '—' },
         { key: 'avgCost', label: 'Ort. Maliyet', render: (r) => moneyByCurrency(r.avgCost, r.currency) },
-        { key: 'dailyPLTRY', label: 'Günlük', render: (r) => h('span', { class: cls(r.dailyPLTRY) }, `${r.noDailyChange || positionSnapshotConsistent ? signedCurrency(r.dailyPLNative, r.currency) : '—'}${(r.noDailyChange || positionSnapshotConsistent) && isNum(r.dailyPct) ? ` · ${pctSigned(r.dailyPct)}` : ''}`) },
+        { key: 'dailyPLTRY', label: 'Günlük', render: (r) => h('span', { class: cls(r.dailyPLTRY) }, `${r.noDailyChange || isNum(r.dailyPLNative) ? signedCurrency(r.dailyPLNative, r.currency) : '—'}${(r.noDailyChange || isNum(r.dailyPct)) && isNum(r.dailyPct) ? ` · ${pctSigned(r.dailyPct)}` : ''}`) },
         { key: 'totalPLTRY', label: 'Toplam K/Z', render: (r) => h('span', { class: cls(r.totalPLTRY) }, `${r.noDailyChange || positionSnapshotConsistent ? signedCurrency(r.totalPLNative, r.currency) : '—'}${(r.noDailyChange || positionSnapshotConsistent) && isNum(r.totalPct) ? ` · ${pctSigned(r.totalPct)}` : ''}`) },
         { key: 'allocationPct', label: 'Dağılım', render: (r) => isNum(r.allocationPct) ? pct(r.allocationPct, 2) : '—' },
       ],

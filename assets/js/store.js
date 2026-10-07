@@ -320,10 +320,12 @@ export function addMidasTransactions(rows) {
       source: 'midas',
       sourceId: String(tx.sourceId || ''),
       date: String(tx.date || ''),
+      time: String(tx.time || ''),
       code: String(tx.code || '').trim().toLocaleUpperCase('tr'),
       type: tx.type === 'SAT' ? 'SAT' : 'AL',
       units: Number(tx.units),
       price: Number(tx.price),
+      currency: tx.currency === 'USD' ? 'USD' : tx.currency === 'TRY' ? 'TRY' : '',
       fee: Number(tx.fee || 0),
       withholdingTax: Number(tx.withholdingTax || 0),
       note: tx.note || 'Midas aktarımı',
@@ -337,9 +339,15 @@ export function addMidasTransactions(rows) {
       batchIds.add(record.sourceId);
       const existing = importedById.get(record.sourceId);
       if (existing) {
-        const changed = ['date', 'code', 'type', 'units', 'price', 'fee', 'withholdingTax'].some((key) => existing[key] !== record[key]);
+        const changed = ['date', 'code', 'type', 'units', 'price', 'fee', 'withholdingTax'].some((key) => existing[key] !== record[key])
+          || Boolean(record.currency && existing.currency !== record.currency)
+          || Boolean(record.time && existing.time !== record.time);
         if (changed) {
-          Object.assign(existing, record, { id: existing.id, profile: existing.profile });
+          Object.assign(existing, record, {
+            id: existing.id, profile: existing.profile,
+            currency: record.currency || existing.currency || '',
+            time: record.time || existing.time || '',
+          });
           updated += 1;
         } else skipped += 1;
         continue;
@@ -349,9 +357,15 @@ export function addMidasTransactions(rows) {
       if (sameCore.length === 1) {
         const existing = sameCore[0];
         const changed = existing.price !== record.price || existing.fee !== record.fee
-          || Number(existing.withholdingTax || 0) !== record.withholdingTax;
+          || Number(existing.withholdingTax || 0) !== record.withholdingTax
+          || Boolean(record.currency && existing.currency !== record.currency)
+          || Boolean(record.time && existing.time !== record.time);
         if (changed) {
-          Object.assign(existing, record, { id: existing.id, profile: existing.profile });
+          Object.assign(existing, record, {
+            id: existing.id, profile: existing.profile,
+            currency: record.currency || existing.currency || '',
+            time: record.time || existing.time || '',
+          });
           updated += 1;
         } else skipped += 1;
         continue;
