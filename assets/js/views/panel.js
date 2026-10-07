@@ -85,10 +85,21 @@ export function renderPanel(ctx) {
   const root = h('div', { class: 'stack' });
   const txs = transactions();
   const recordedStopaj = txs.reduce((sum, tx) => sum + (Number(tx.withholdingTax) || 0), 0);
-  const taxableFundProfit = analysis.holdings
+  const taxableFundPL = new Map(analysis.holdings
     .filter((holding) => assetType(holding.code, holding.kind, holding.cat) === 'Fon'
       && !['THF', 'TP2'].includes(holding.code))
-    .reduce((sum, holding) => sum + (Number(holding.totalPL) || 0), 0);
+    .map((holding) => [holding.code, Number(holding.totalPL) || 0]));
+  // Midas positions may have no corresponding transaction history in the app.
+  // Use their live cost-based P/L when available so taxable funds like GPN count.
+  for (const position of snapshotPositions) {
+    if (assetType(position.code, position.kind, position.category) !== 'Fon'
+      || ['THF', 'TP2'].includes(position.code)) continue;
+    const profit = Number.isFinite(position.totalPLTRY) ? position.totalPLTRY
+      : Number.isFinite(position.totalPLNative) ? position.totalPLNative
+        : Number.isFinite(position.totalPL) ? position.totalPL : taxableFundPL.get(position.code);
+    if (Number.isFinite(profit)) taxableFundPL.set(position.code, profit);
+  }
+  const taxableFundProfit = [...taxableFundPL.values()].reduce((sum, profit) => sum + profit, 0);
   const stopajEstimate = Math.max(0, taxableFundProfit) * 0.175;
 
   /* ------------------------------------------------------------------ KPI'lar */
@@ -144,7 +155,7 @@ export function renderPanel(ctx) {
       label: 'Stopaj Kesintileri',
       tone: 'teal',
       value: tl(stopajEstimate),
-      sub: 'Tahmin · kârın %17,5’i',
+      sub: 'Vergili fon kârının %17,5’i',
       hint: `Fon kârına göre tahmin · kayıtlardaki gerçek stopaj: ${tl(recordedStopaj)}`,
     })));
 
