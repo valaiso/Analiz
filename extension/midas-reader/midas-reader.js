@@ -1,5 +1,6 @@
 // Salt DOM okuma: mevcut Atlas oturumunu kullanır, ağ çağrısı/emir göndermez.
 const TRADE_WORDS = /alış|alım|satış|satım|buy|sell/i;
+const GENERIC_CRYPTO_CODES = new Set(['KRIPTO', 'CRYPTO', 'COIN', 'COINS']);
 const DATE_WORDS = /(?:\b\d{1,2}[./-]\d{1,2}[./-]\d{2,4}\b|(?:^|\s)\d{1,2}\s+(?:oca(?:k)?|şub(?:at)?|sub(?:at)?|mar(?:t)?|nis(?:an)?|may(?:ıs|is)?|haz(?:iran)?|tem(?:muz)?|ağu(?:stos)?|agu(?:stos)?|eyl(?:ül|ul)?|eki(?:m)?|kas(?:ım|im)?|ara(?:lık|lik)?)(?:\s+\d{4})?\b)/iu;
 
 function isVisible(element) {
@@ -298,6 +299,10 @@ function positionSnapshotRows(cryptoOnly = false, diagnostics = {}) {
     const code = assetCodeAtRow(root, rowElement, headers[ix.code], cryptoOnly)
       || String(cells[ix.code] || '').match(/\b[A-Z][A-Z0-9.-]{1,9}\b/)?.[0] || '';
     if (!code) { diagnostics.rejected.noSymbol += 1; continue; }
+    if (cryptoOnly && GENERIC_CRYPTO_CODES.has(code.toLocaleUpperCase('en-US'))) {
+      diagnostics.rejected.noSymbol += 1;
+      continue;
+    }
     diagnostics.rowsWithSymbol += 1;
     if (found.has(code)) continue;
     const text = cells.join(' ');
@@ -1175,6 +1180,7 @@ function normalizeRow(row, cryptoOnly = false) {
   if (!code) {
     code = text.match(/\b(?=[A-Z0-9.-]*[A-Z])[A-Z0-9][A-Z0-9.-]{1,14}\b/g)?.find((token) => !codeExcluded.has(token)) || '';
   }
+  if (cryptoOnly && GENERIC_CRYPTO_CODES.has(String(code).toLocaleUpperCase('en-US'))) code = '';
 
   const unitsValue = valueByHeader(/gerçekleşen miktar|gerçekleşen adet|adet|miktar|lot/i)
     || getLabel(/miktar|adet|lot|gerçekleşen miktar|gerçekleşen adet/i, 'miktar|adet|lot|gerçekleşen miktar|gerçekleşen adet');

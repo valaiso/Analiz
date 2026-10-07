@@ -10,7 +10,7 @@ import {
 import { lineChart, donutWithLegend, scatterChart, correlationTable } from '../charts.js';
 import { dailyReturns, correlation } from '../portfolio.js';
 import { rollingReturns } from '../insights.js';
-import { sectionCard, sortableTable, RANGES } from './common.js';
+import { sectionCard, sortableTable, RANGES, rangeSelector } from './common.js';
 
 const PAGE_SIZE = 60;
 const MAX_KARSILASTIRMA = 5;
@@ -354,12 +354,14 @@ export function renderFonlar(ctx) {
   const fundCompareSuggestions = h('div', {
     style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:10px',
   });
-  const fundCompareTable = h('div');
-  const comparePeriods = [
-    ['1h', '1 Hafta'], ['1a', '1 Ay'], ['3a', '3 Ay'],
-    ['6a', '6 Ay'], ['1y', '1 Yıl'], ['3y', '3 Yıl'],
-  ];
+  const fundCompareChart = h('div', { class: 'chart' });
+  const fundCompareSelectedList = h('div', { class: 'btn-row', style: 'margin-top:10px' });
+  const fundCompareSummary = h('div', { class: 'btn-row', style: 'margin-top:10px' });
+  let fundCompareRange = '1y';
+  let fundCompareRenderId = 0;
   const renderFundComparison = () => {
+    const renderId = ++fundCompareRenderId;
+    fundCompareSummary.replaceChildren();
     const query = fundCompareSearch.value.trim().toLocaleUpperCase('tr');
     const matches = query
       ? comparableFunds.filter((fund) => fund.code.toLocaleUpperCase('tr').includes(query)
@@ -375,28 +377,77 @@ export function renderFonlar(ctx) {
     const selected = [...fundCompareSelected]
       .map((code) => DB.byCode.get(code))
       .filter((fund) => fund && comparableFunds.includes(fund));
-    if (!selected.length) {
-      fundCompareTable.replaceChildren(h('p', { class: 'dim', style: 'margin:0' },
-        'Karşılaştırmak için yukarıdan fon kodu veya adı ara.'));
+    fundCompareSelectedList.replaceChildren(...selected.map((fund) => h('button', {
+      class: 'btn btn-sm', type: 'button',
+      'aria-label': `${fund.code} fonunu karşılaştırmadan çıkar`,
+      onclick: () => { fundCompareSelected.delete(fund.code); renderFundComparison(); },
+    }, `${fund.code} ×`)));
+    if (selected.length < 2) {
+      fundCompareChart.replaceChildren(h('p', { class: 'dim', style: 'margin:0;padding:18px 0;text-align:center' },
+        selected.length
+          ? 'Getiri çizgisini görmek için karşılaştırmaya en az bir fon daha ekle.'
+          : 'Karşılaştırmak için yukarıdan en az iki fon ara ve ekle.'));
       return;
     }
-    fundCompareTable.replaceChildren(h('div', { class: 'table-wrap' }, h('table', {},
-      h('thead', {}, h('tr', {},
-        h('th', { style: 'text-align:left' }, 'Fon'),
-        h('th', { style: 'text-align:left' }, 'Kategori'),
-        comparePeriods.map(([, label]) => h('th', {}, label)),
-        h('th', {}, ''))),
-      h('tbody', {}, selected.map((fund) => h('tr', {},
-        h('td', { style: 'text-align:left' },
-          h('span', { class: 'code-chip' }, fund.code),
-          h('span', { class: 'dim', style: 'margin-left:7px' }, fund.name)),
-        h('td', { style: 'text-align:left' }, fund.cat || '—'),
-        comparePeriods.map(([key]) => h('td', { class: cls(fund.ret?.[key]) }, pctSigned(fund.ret?.[key], 1))),
-        h('td', {}, h('button', {
-          class: 'btn btn-sm', type: 'button',
-          'aria-label': `${fund.code} fonunu karşılaştırmadan çıkar`,
-          onclick: () => { fundCompareSelected.delete(fund.code); renderFundComparison(); },
-        }, 'Çıkar'))))))));
+    const renderSelected = async () => {
+      const histories = await loadHistories(selected.map((fund) => fund.code));
+      if (renderId !== fundCompareRenderId) return;
+      const byCode = new Map(selected.map((fund, index) => [fund.code, histories[index]]));
+      const validHistories = selected.map((fund) => byCode.get(fund.code))
+        .filter((history) => history && history.p?.length && history.filled?.length);
+      if (validHistories.length < 2) {
+        fundCompareChart.replaceChildren(h('p', { class: 'dim', style: 'padding:18px 0;text-align:center' },
+          'Seçilen fonların en az ikisi için fiyat geçmişi bulunamadı.'));
+        return;
+      }
+      const period = RANGES.find((range) => range.key === fundCompareRange) || RANGES[3];
+      const latestIndex = Math.min(lastIndex(), ...validHistories.map((history) => history.i + history.p.length - 1));
+      const earliestIndex = Math.max(...validHistories.map((history) => history.i));
+      const requestedDate = period.days ? addDays(DB.calendar[latestIndex], -period.days) : DB.calendar[0];
+      const requestedStart = Math.max(0, indexForDate(requestedDate));
+      const startIndex = Math.max(requestedStart, earliestIndex);
+      if (latestIndex <= startIndex) {
+        fundCompareChart.replaceChildren(h('p', { class: 'dim', style: 'padding:18px 0;text-align:center' },
+          'Seçilen dönem için ortak fiyat geçmişi yetersiz.'));
+        return;
+      }
+      const dates = DB.calendar.slice(startIndex, latestIndex + 1);
+      const lines = [];
+      const endingValues = [];
+      for (const fund of selected) {
+        const history = byCode.get(fund.code);
+        if (!history?.p?.length) continue;
+        const basePrice = priceAtIndex(history, startIndex);
+        if (!isNum(basePrice) || basePrice <= 0) continue;
+        const values = dates.map((_, offset) => {
+          const price = priceAtIndex(history, startIndex + offset);
+          return isNum(price) && price > 0 ? (price / basePrice) * 100 : null;
+        });
+        const finalValue = values.at(-1);
+        lines.push({ name: fund.code, values, color: colorAt(lines.length), width: 2 });
+        endingValues.push({ fund, value: finalValue });
+      }
+      if (lines.length < 2) {
+        fundCompareChart.replaceChildren(h('p', { class: 'dim', style: 'padding:18px 0;text-align:center' },
+          'Seçilen fonların ortak başlangıç tarihinde fiyat verisi yetersiz.'));
+        return;
+      }
+      fundCompareChart.replaceChildren();
+      lineChart(fundCompareChart, {
+        dates,
+        series: lines,
+        height: 320,
+        baseline: 100,
+        yFormat: (value) => num(value, 0),
+        valueFormat: (value) => `${num(value, 2)} · ${pctSigned(value - 100, 2)}`,
+      });
+      fundCompareSummary.replaceChildren(...endingValues.map(({ fund, value }, index) => h('div', {
+        class: 'pill', style: `border-color:${colorAt(index)}`,
+      }, `${fund.code}: 100 → ${num(value, 2)} · ${pctSigned(value - 100, 2)}`)));
+    };
+    fundCompareChart.replaceChildren(h('p', { class: 'dim', style: 'padding:18px 0;text-align:center' },
+      'Fon fiyat geçmişleri yükleniyor…'));
+    renderSelected();
   };
   const addFundToCompare = (fund) => {
     if (!fund || fundCompareSelected.has(fund.code)) return;
@@ -421,12 +472,18 @@ export function renderFonlar(ctx) {
   root.append(h('section', { class: 'card' },
     h('div', { class: 'card-head' }, h('div', {},
       h('h2', {}, 'Fon Getiri Karşılaştırması'),
-      h('span', { class: 'sub' }, 'Yalnızca yatırım ve emeklilik fonları · en fazla 5 fon'))),
+      h('span', { class: 'sub' }, 'Yalnızca yatırım ve emeklilik fonları · aynı tarihte 100’den başlar')),
+      rangeSelector(fundCompareRange, (range) => {
+        fundCompareRange = range.key;
+        renderFundComparison();
+      })),
     h('p', { class: 'dim', style: 'margin:0 0 10px;font-size:.85rem' },
-      'Fon getirileri kendi fiyat geçmişlerine göre karşılaştırılır; enflasyon ve endeks eklenmez.'),
+      'Her fon için aynı başlangıç gününde 100 birim yatırım varsayılır; çizgiler günlük fiyat değişimine göre kıyaslanır.'),
     fundCompareSearch,
     fundCompareSuggestions,
-    h('div', { style: 'margin-top:12px' }, fundCompareTable)));
+    fundCompareSelectedList,
+    fundCompareSummary,
+    h('div', { style: 'margin-top:12px' }, fundCompareChart)));
   renderFundComparison();
 
   /* ------------------------------------------------------------------- tablo */

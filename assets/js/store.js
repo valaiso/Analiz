@@ -7,6 +7,7 @@ const KEY = 'tefas-portfoy-v1';
 // Midas'tan içe aktarılan işlemler yerel kalır; getState() / Supabase durumuna girmez.
 const MIDAS_KEY = 'tefas-midas-import-v1';
 const MIDAS_SNAPSHOT_KEY = 'tefas-midas-account-snapshot-v1';
+const GENERIC_CRYPTO_CODES = new Set(['KRIPTO', 'CRYPTO', 'COIN', 'COINS']);
 const listeners = new Set();
 
 const uid = () => Math.random().toString(36).slice(2, 10) + Date.now().toString(36).slice(-4);
@@ -49,7 +50,8 @@ let midasSnapshot = loadMidasSnapshot();
 function loadMidasTransactions() {
   try {
     const value = JSON.parse(localStorage.getItem(MIDAS_KEY));
-    return Array.isArray(value) ? value : [];
+    return Array.isArray(value) ? value.filter((tx) => !(tx?.source === 'midas'
+      && GENERIC_CRYPTO_CODES.has(String(tx.code || '').toLocaleUpperCase('en-US')))) : [];
   } catch {
     return [];
   }
@@ -58,7 +60,20 @@ function loadMidasTransactions() {
 function loadMidasSnapshot() {
   try {
     const value = JSON.parse(localStorage.getItem(MIDAS_SNAPSHOT_KEY));
-    return value && typeof value === 'object' ? value : null;
+    if (!value || typeof value !== 'object') return null;
+    const originalCryptoPositions = Array.isArray(value.cryptoPositions) ? value.cryptoPositions : [];
+    const cryptoPositions = Array.isArray(value.cryptoPositions)
+      ? originalCryptoPositions.filter((position) => !GENERIC_CRYPTO_CODES.has(
+        String(position?.code || '').toLocaleUpperCase('en-US')))
+      : value.cryptoPositions;
+    if (Array.isArray(value.cryptoPositions) && cryptoPositions.length !== originalCryptoPositions.length) {
+      const removedPlaceholder = cryptoPositions.length !== originalCryptoPositions.length;
+      const cleaned = { ...value, cryptoPositions,
+        ...(removedPlaceholder ? { cryptoSummary: null, cryptoSummarySource: null, cryptoSummaryCapturedAt: null } : {}) };
+      try { localStorage.setItem(MIDAS_SNAPSHOT_KEY, JSON.stringify(cleaned)); } catch { /* Bellekteki temiz kayıt yeterli. */ }
+      return cleaned;
+    }
+    return value;
   } catch {
     return null;
   }
@@ -77,6 +92,9 @@ export function saveMidasAccountSnapshot(snapshot) {
     && Array.isArray(snapshot.positions);
   const cryptoCaptured = snapshot.cryptoPositionsCaptured === true
     && Array.isArray(snapshot.cryptoPositions);
+  const validCryptoPositions = cryptoCaptured ? snapshot.cryptoPositions.filter((position) => !GENERIC_CRYPTO_CODES.has(
+    String(position?.code || '').toLocaleUpperCase('en-US'))) : [];
+  const removedGenericCrypto = cryptoCaptured && validCryptoPositions.length !== snapshot.cryptoPositions.length;
   const prior = midasSnapshot || {};
   midasSnapshot = { ...prior, capturedAt };
   if (hasStockUpdate) {
@@ -115,10 +133,10 @@ export function saveMidasAccountSnapshot(snapshot) {
     if (cryptoCaptured) {
       midasSnapshot = {
         ...midasSnapshot,
-        cryptoSummary: snapshot.cryptoSummary || null,
-        cryptoSummarySource: snapshot.cryptoSummary ? 'midas-visible-v1' : null,
-        cryptoSummaryCapturedAt: snapshot.cryptoSummary ? capturedAt : null,
-        cryptoPositions: snapshot.cryptoPositions,
+        cryptoSummary: removedGenericCrypto ? null : snapshot.cryptoSummary || null,
+        cryptoSummarySource: !removedGenericCrypto && snapshot.cryptoSummary ? 'midas-visible-v1' : null,
+        cryptoSummaryCapturedAt: !removedGenericCrypto && snapshot.cryptoSummary ? capturedAt : null,
+        cryptoPositions: validCryptoPositions,
         cryptoPositionsCaptured: true,
         cryptoPositionsSource: 'midas-visible-v1',
         cryptoCapturedAt: capturedAt,
@@ -260,7 +278,8 @@ export function removeProfile(id) {
 
 /** Aktif profilin (veya 'ALL' ise tümünün) işlemleri, tarihe göre sıralı. */
 export function transactions(profileId = state.activeProfile) {
-  const all = [...state.tx, ...midasTx];
+  const all = [...state.tx, ...midasTx.filter((tx) => !GENERIC_CRYPTO_CODES.has(
+    String(tx.code || '').toLocaleUpperCase('en-US')))];
   const list = profileId === 'ALL'
     ? all
     : all.filter((t) => t.profile === profileId);
@@ -310,6 +329,7 @@ export function addMidasTransactions(rows) {
       note: tx.note || 'Midas aktarımı',
     };
     if (!record.date || !record.code || !(record.units > 0) || !(record.price > 0)) { skipped += 1; continue; }
+    if (GENERIC_CRYPTO_CODES.has(record.code.toLocaleUpperCase('en-US'))) { skipped += 1; continue; }
     const fingerprint = transactionFingerprint(record);
     if (manualFingerprints.has(fingerprint)) { skipped += 1; continue; }
     if (record.sourceId) {
