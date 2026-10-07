@@ -91,6 +91,34 @@ async function copyMidasLog(field) {
   toast('Aktarım mesajı kopyalandı');
 }
 
+function paginatedRows(items, renderTable, itemLabel = 'işlem') {
+  const pageSize = 10;
+  const pageCount = Math.max(1, Math.ceil(items.length / pageSize));
+  let page = 0;
+  const content = h('div', { class: 'stack', style: 'gap:10px' });
+  const render = () => {
+    page = Math.max(0, Math.min(page, pageCount - 1));
+    const start = page * pageSize;
+    const visible = items.slice(start, start + pageSize);
+    const range = items.length ? `${start + 1}–${start + visible.length} / ${items.length} ${itemLabel}` : `0 ${itemLabel}`;
+    const controls = h('div', { class: 'pagination' },
+      h('span', { class: 'dim', text: range }),
+      pageCount > 1 ? h('div', { class: 'pagination-controls' },
+        h('button', {
+          class: 'btn btn-sm', type: 'button', disabled: page === 0,
+          'aria-label': 'Önceki sayfa', onclick: () => { page -= 1; render(); },
+        }, '‹ Önceki'),
+        h('span', { class: 'dim', 'aria-live': 'polite' }, `Sayfa ${page + 1} / ${pageCount}`),
+        h('button', {
+          class: 'btn btn-sm', type: 'button', disabled: page >= pageCount - 1,
+          'aria-label': 'Sonraki sayfa', onclick: () => { page += 1; render(); },
+        }, 'Sonraki ›')) : null);
+    content.replaceChildren(renderTable(visible), controls);
+  };
+  render();
+  return content;
+}
+
 function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle = null) {
   const candidates = rows.map((row) => ({
     ...row,
@@ -110,16 +138,17 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
     h('td', { style: 'text-align:left;max-width:360px;white-space:normal' },
       row.missing?.length ? `${row.rawText} · ${row.diagnostic || `Okunamayan: ${row.missing.join(', ')}`}` : row.rawText));
 
-  const table = (items, priceHeading, textHeading) => h('div', { class: 'table-wrap' },
-    h('table', {},
-      h('thead', {}, h('tr', {},
-        h('th', {}, 'Tarih'),
-        h('th', {}, 'Kod'),
-        h('th', {}, 'Tür'),
-        h('th', {}, 'Miktar'),
-        h('th', {}, priceHeading),
-        h('th', { style: 'text-align:left' }, textHeading))),
-      h('tbody', {}, items.map(line))));
+  const table = (items, priceHeading, textHeading) => paginatedRows(items, (pageItems) =>
+    h('div', { class: 'table-wrap' },
+      h('table', {},
+        h('thead', {}, h('tr', {},
+          h('th', {}, 'Tarih'),
+          h('th', {}, 'Kod'),
+          h('th', {}, 'Tür'),
+          h('th', {}, 'Miktar'),
+          h('th', {}, priceHeading),
+          h('th', { style: 'text-align:left' }, textHeading))),
+        h('tbody', {}, pageItems.map(line)))));
 
   const readyContent = ready.length
     ? table(ready, 'Birim fiyat', 'Midas satırı')
@@ -652,54 +681,52 @@ export function renderIslemler(ctx) {
     return root;
   }
 
-  const historyRows = list.slice().reverse().slice(0, 20);
-  const rows = historyRows.map((t) => {
-    const meta = DB.byCode.get(t.code);
-    const { sym } = getAssetCurrency(t.code);
-    const amount = t.units * t.price;
-    const finalAmount = t.type === 'SAT' ? amount - (t.fee || 0) : amount + (t.fee || 0);
+  const historyRows = list.slice().reverse();
+  const historyTable = paginatedRows(historyRows, (pageRows) => {
+    const rows = pageRows.map((t) => {
+      const meta = DB.byCode.get(t.code);
+      const { sym } = getAssetCurrency(t.code);
+      const amount = t.units * t.price;
+      const finalAmount = t.type === 'SAT' ? amount - (t.fee || 0) : amount + (t.fee || 0);
 
-    return h('tr', {},
-      h('td', {}, fmtDate(t.date)),
-      h('td', {},
-        h('span', { class: 'code-chip' }, t.code),
-        t.source === 'midas'
-          ? h('span', { class: 'dim', style: 'margin-left:6px;font-size:.76rem' }, 'Midas')
-          : null,
-        multiProfile
-          ? h('span', { class: 'dim', style: 'margin-left:7px;font-size:.76rem' },
-            profileName.get(t.profile) || '')
-          : null),
-      h('td', { class: 'name', style: 'text-align:left' }, meta?.name || '—'),
-      h('td', {}, h('span', { class: `pill ${t.type === 'SAT' ? 'down' : 'up'}` },
-        t.type === 'SAT' ? 'Satış' : 'Alış')),
-      h('td', {}, fmtUnits(t.units)),
-      h('td', {}, `${money(t.price)} ${sym}`),
-      h('td', {}, `${sym}${money(finalAmount)}`),
-      h('td', {}, Number(t.withholdingTax) > 0 ? tl(t.withholdingTax) : '—'),
-      h('td', { style: 'text-align:right;white-space:nowrap' },
-        h('button', {
-          class: 'btn btn-sm', type: 'button', title: 'Düzenle',
-          onclick: () => {
-            const close = openModal('İşlemi Düzenle',
-              transactionForm({ existing: t, onDone: () => { close(); ctx.refresh(); } }));
-          },
-        }, '✎'),
-        ' ',
-        h('button', {
-          class: 'btn btn-sm btn-danger', type: 'button', title: 'Sil',
-          onclick: async () => {
-            const ok = await confirmDialog('İşlemi sil',
-              `${fmtDate(t.date)} tarihli ${t.code} işlemi silinecek. Emin misin?`,
-              { danger: true, okLabel: 'Sil' });
-            if (ok) { removeTransaction(t.id); toast('İşlem silindi'); ctx.refresh(); }
-          },
-        }, '🗑')));
-  });
-
-  root.append(sectionCard('İşlem Geçmişi',
-    `${historyRows.length} kayıt gösteriliyor · ${list.length} toplam · en yeniden eskiye`,
-    h('div', { class: 'table-wrap' }, h('table', {},
+      return h('tr', {},
+        h('td', {}, fmtDate(t.date)),
+        h('td', {},
+          h('span', { class: 'code-chip' }, t.code),
+          t.source === 'midas'
+            ? h('span', { class: 'dim', style: 'margin-left:6px;font-size:.76rem' }, 'Midas')
+            : null,
+          multiProfile
+            ? h('span', { class: 'dim', style: 'margin-left:7px;font-size:.76rem' },
+              profileName.get(t.profile) || '')
+            : null),
+        h('td', { class: 'name', style: 'text-align:left' }, meta?.name || '—'),
+        h('td', {}, h('span', { class: `pill ${t.type === 'SAT' ? 'down' : 'up'}` },
+          t.type === 'SAT' ? 'Satış' : 'Alış')),
+        h('td', {}, fmtUnits(t.units)),
+        h('td', {}, `${money(t.price)} ${sym}`),
+        h('td', {}, `${sym}${money(finalAmount)}`),
+        h('td', {}, Number(t.withholdingTax) > 0 ? tl(t.withholdingTax) : '—'),
+        h('td', { style: 'text-align:right;white-space:nowrap' },
+          h('button', {
+            class: 'btn btn-sm', type: 'button', title: 'Düzenle',
+            onclick: () => {
+              const close = openModal('İşlemi Düzenle',
+                transactionForm({ existing: t, onDone: () => { close(); ctx.refresh(); } }));
+            },
+          }, '✎'),
+          ' ',
+          h('button', {
+            class: 'btn btn-sm btn-danger', type: 'button', title: 'Sil',
+            onclick: async () => {
+              const ok = await confirmDialog('İşlemi sil',
+                `${fmtDate(t.date)} tarihli ${t.code} işlemi silinecek. Emin misin?`,
+                { danger: true, okLabel: 'Sil' });
+              if (ok) { removeTransaction(t.id); toast('İşlem silindi'); ctx.refresh(); }
+            },
+          }, '🗑')));
+    });
+    return h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {},
         h('th', { style: 'text-align:left' }, 'Tarih'),
         h('th', { style: 'text-align:left' }, 'Fon'),
@@ -710,7 +737,11 @@ export function renderIslemler(ctx) {
         h('th', {}, 'Tutar'),
         h('th', {}, 'Stopaj'),
         h('th', { style: 'text-align:right' }, ''))),
-      h('tbody', {}, rows)))));
+      h('tbody', {}, rows)));
+  });
+
+  root.append(sectionCard('İşlem Geçmişi',
+    `${list.length} kayıt · sayfa başına 10 · en yeniden eskiye`, historyTable));
 
   return root;
 }

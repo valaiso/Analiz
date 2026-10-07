@@ -131,7 +131,9 @@ export function cashflowCalendar(txs) {
   const gerceklesenYil = new Map();
   const pozisyon = new Map();                 // ortalama maliyet takibi
 
-  for (const t of [...txs].sort((a, b) => (a.date < b.date ? -1 : 1))) {
+  // The store supplies a stable chronological sequence (including same-day
+  // Midas fill times); keep it intact so realized totals match portfolio.js.
+  for (const t of txs) {
     if (!isNum(t.units) || !isNum(t.price)) continue;
     const ay = t.date.slice(0, 7);
     const yil = Number(t.date.slice(0, 4));

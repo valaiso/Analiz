@@ -285,6 +285,8 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
 .btn-danger { color: var(--down); border-color: color-mix(in srgb, var(--down) 40%, var(--border)); }
 .btn-sm { padding: 4px 9px; min-height: 30px; font-size: .84rem; }
 .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.pagination { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.pagination-controls { display: flex; align-items: center; gap: 8px; }
 
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: var(--radius-sm); overflow: hidden; }
 .seg button {

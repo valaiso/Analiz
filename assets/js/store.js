@@ -283,7 +283,21 @@ export function transactions(profileId = state.activeProfile) {
   const list = profileId === 'ALL'
     ? all
     : all.filter((t) => t.profile === profileId);
-  return list.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+  const byDate = new Map();
+  for (const row of list) {
+    const date = String(row.date || '');
+    if (!byDate.has(date)) byDate.set(date, []);
+    byDate.get(date).push(row);
+  }
+  return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).flatMap(([, dayRows]) => {
+    // Midas provides a clock time for its fills. Sort same-day trades by time
+    // only when every row has one; manual fills without a time keep their
+    // original order rather than being guessed before/after Midas fills.
+    if (dayRows.length > 1 && dayRows.every((row) => /^\d{1,2}:\d{2}(?::\d{2})?$/.test(String(row.time || '')))) {
+      dayRows.sort((a, b) => String(a.time).localeCompare(String(b.time)));
+    }
+    return dayRows;
+  });
 }
 
 function transactionFingerprint(tx) {

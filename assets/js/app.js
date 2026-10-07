@@ -9,6 +9,7 @@ import {
   saveMidasLiveQuotes,
 } from './store.js';
 import { requestMidasLiveQuotes } from './midas-import.js';
+import { needsIntradayQuote } from './asset-groups.js';
 import { supabase } from './supabase-client.js';
 import { renderPanel } from './views/panel.js';
 import { renderDagilim } from './views/dagilim.js';
@@ -371,11 +372,8 @@ async function refreshIntradayQuotes() {
   if (intradayQuoteBusy || document.visibilityState === 'hidden') return;
   const snapshot = getMidasAccountSnapshot();
   const positions = snapshot?.positions || [];
-  const codes = [...new Set(positions.filter((position) => {
-    const kind = String(DB.byCode.get(position.code)?.kind || position.kind || '').toUpperCase();
-    return !['YAT', 'EMK', 'GYF', 'GSYF', 'CRYPTO'].includes(kind)
-      && (kind || position.currency === 'USD');
-  }).map((position) => position.code).filter(Boolean))].slice(0, 40);
+  const codes = [...new Set(positions.filter(needsIntradayQuote)
+    .map((position) => position.code).filter(Boolean))].slice(0, 40);
   const cryptoCodes = snapshot?.cryptoPositionsSource === 'midas-visible-v1'
     && snapshot.cryptoPositionsCaptured === true
     ? [...new Set((snapshot.cryptoPositions || []).map((position) => String(position.code || '').toUpperCase())
@@ -512,23 +510,13 @@ async function render({ preserveScroll = false } = {}) {
     }
     if (view.needsAnalysis) {
       const txs = transactions();
-      const accountSnapshot = getMidasAccountSnapshot();
-      const verifiedMidasCodes = new Set([
-        ...(accountSnapshot?.positionsSource === 'midas-visible-v1' && accountSnapshot.positionsCaptured === true
-          ? accountSnapshot.positions || [] : []),
-        ...(accountSnapshot?.cryptoPositionsSource === 'midas-visible-v1' && accountSnapshot.cryptoPositionsCaptured === true
-          ? accountSnapshot.cryptoPositions || [] : []),
-      ].map((position) => String(position.code || '').toUpperCase()).filter(Boolean));
-      // The stock/fund and Crypto live Positions tables are authoritative.
-      // Closed or otherwise absent symbols in order history must not reappear as holdings.
-      const analysisTransactions = txs.filter((tx) => {
-        if (tx.source !== 'midas') return true;
-        return verifiedMidasCodes.has(String(tx.code || '').toUpperCase());
-      });
-      ctx.analysisTransactions = analysisTransactions;
-      if (analysisTransactions.length) app.replaceChildren(h('div', { class: 'loading' },
+      // Keep closed Midas orders in the ledger: their realized gains/losses
+      // must remain in totals and yearly cashflow. The live Midas snapshot
+      // separately controls which open positions are shown on the panel.
+      ctx.analysisTransactions = txs;
+      if (txs.length) app.replaceChildren(h('div', { class: 'loading' },
         h('div', { class: 'spinner' }), h('p', {}, 'Hesaplanıyor…')));
-      ctx.analysis = await analyze(analysisTransactions);
+      ctx.analysis = await analyze(txs);
     }
     const node = view.render(ctx);
     const warning = stalenessNotice();

@@ -5,6 +5,20 @@ import { getMidasAccountSnapshot } from './store.js';
 
 const GROUP_ORDER = ['ETF', 'Fon', 'Hisse', 'Kripto', 'Diğer'];
 const NO_DAILY_CHANGE_CODES = new Set(['THF', 'TP2']);
+const INTRADAY_QUOTE_KINDS = new Set([
+  'US_ETF', 'BIST_ETF', 'BYF', 'HISSE', 'BIST_STOCK', 'BIST_HISSE', 'US_STOCK',
+]);
+const NON_INTRADAY_KINDS = new Set(['YAT', 'EMK', 'GYF', 'GSYF', 'CRYPTO']);
+
+/** Include unclassified Midas equity tickers such as five-letter BIST symbols. */
+export function needsIntradayQuote(position) {
+  const code = String(position?.code || '').trim().toLocaleUpperCase('tr');
+  const meta = DB.byCode.get(code) || {};
+  const kind = String(meta.kind || position?.kind || '').toUpperCase();
+  if (INTRADAY_QUOTE_KINDS.has(kind)) return true;
+  if (kind) return false;
+  return position?.currency === 'USD' || /^[A-Z][A-Z0-9.-]{3,7}$/.test(code);
+}
 
 function marketDateInTimezone(timeZone) {
   const parts = new Intl.DateTimeFormat('en-CA', {
@@ -326,7 +340,7 @@ export function addSiteMarketMetrics(positions) {
     const meta = DB.byCode.get(position.code) || {};
     const kind = String(meta.kind || position.kind || '').toUpperCase();
     const currency = position.currency || meta.currency || 'TRY';
-    const canUseIntraday = ['US_ETF', 'BIST_ETF', 'BYF', 'HISSE', 'BIST_STOCK', 'BIST_HISSE', 'US_STOCK'].includes(kind);
+    const canUseIntraday = needsIntradayQuote(position);
     const liveQuote = canUseIntraday ? liveQuotes[position.code] : null;
     const hasLiveQuote = Number.isFinite(liveQuote?.price) && liveQuote.price > 0
       && Number.isFinite(liveQuote?.previousClose) && liveQuote.previousClose > 0;
@@ -466,9 +480,15 @@ export function applyDailyMarketTransactions(positions, transactions, date, { po
     const bought = fills.filter((tx) => tx.type === 'AL').reduce((sum, tx) => sum + Number(tx.units || 0), 0);
     const sold = fills.filter((tx) => tx.type === 'SAT').reduce((sum, tx) => sum + Number(tx.units || 0), 0);
     const openingUnits = currentUnits - bought + sold;
-    if (!Number.isFinite(previousUnitTRY) || openingUnits < -1e-6
-      || currentUnits > 1e-8 && !Number.isFinite(currentUnitTRY)) {
-      missingCodes.push(`${row.code} (günlük fiyat veya işlem adedi tutarsız)`);
+    const rowIssues = [];
+    if (!Number.isFinite(previousUnitTRY)) rowIssues.push(`${row.code} (önceki kapanış fiyatı yok)`);
+    if (openingUnits < -1e-6) {
+      const formatUnits = (value) => value.toLocaleString('tr-TR', { maximumFractionDigits: 6 });
+      rowIssues.push(`${row.code} (Midas adedi ${formatUnits(currentUnits)}, bugünkü net alım ${formatUnits(bought - sold)}; açılış adedi negatif)`);
+    }
+    if (currentUnits > 1e-8 && !Number.isFinite(currentUnitTRY)) rowIssues.push(`${row.code} (güncel fiyat yok)`);
+    if (rowIssues.length) {
+      missingCodes.push(...rowIssues);
       return { ...row, dailyPLTRY: null, dailyPLNative: null, dailyPct: null, marketValuePrevTRY: null };
     }
     let adjustmentTRY = 0;

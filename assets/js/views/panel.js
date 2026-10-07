@@ -115,15 +115,17 @@ export function renderPanel(ctx) {
   const positionSnapshotConsistent = accountValueConsistent
     && snapshotPositions.every((row) => isNum(row.marketValueTRY));
   const dailyRows = dailyPositions;
-  const dailyMissing = dailyRows.filter((row) => !isNum(row.dailyPLTRY)).map((row) => {
-    if (!(row.units > 0)) return `${row.code} (adet yok)`;
-    if (row.quoteStale) return row.quoteAgeMinutes === null
-      ? `${row.code} (kotasyon zamanı yok; günlük hesaba alınmadı)`
-      : `${row.code} (kotasyon ${row.quoteAgeMinutes} dk eski; günlük hesaba alınmadı)`;
-    if (row.quoteMissing) return `${row.code} (${row.quoteMissingReason})`;
-    if (!row.siteDataAvailable) return `${row.code} (fiyat yok)`;
-    return `${row.code} (önceki fiyat yok)`;
-  });
+  const dailyMissing = dailyRows.filter((row) => !isNum(row.dailyPLTRY)
+    && !dailyMarket.missingCodes.some((message) => message === `${row.code} (önceki kapanış fiyatı yok)`))
+    .map((row) => {
+      if (!(row.units > 0)) return `${row.code} (adet yok)`;
+      if (row.quoteStale) return row.quoteAgeMinutes === null
+        ? `${row.code} (kotasyon zamanı yok; günlük hesaba alınmadı)`
+        : `${row.code} (kotasyon ${row.quoteAgeMinutes} dk eski; günlük hesaba alınmadı)`;
+      if (row.quoteMissing) return `${row.code} (${row.quoteMissingReason})`;
+      if (!row.siteDataAvailable) return `${row.code} (fiyat yok)`;
+      return `${row.code} (önceki kapanış fiyatı yok)`;
+    });
   const dailyIncompleteHint = [...new Set([
     ...dailyMarket.missingCodes,
     missingStockSnapshot ? 'yatırım pozisyonları doğrulanmadı' : '',
@@ -184,7 +186,7 @@ export function renderPanel(ctx) {
   }
   const txs = ctx.analysisTransactions || transactions();
   const taxableFundPL = new Map(analysis.holdings
-    .filter((holding) => assetType(holding.code, holding.kind, holding.cat) === 'Fon'
+    .filter((holding) => !holding.closed && assetType(holding.code, holding.kind, holding.cat) === 'Fon'
       && !['THF', 'TP2'].includes(holding.code))
     .map((holding) => [holding.code, Number(holding.totalPL) || 0]));
   // Midas positions may have no corresponding transaction history in the app.
@@ -442,6 +444,13 @@ export function renderPanel(ctx) {
   /* --------------------------------------------------------------- nakit akışı */
 
   const nakit = cashflowCalendar(txs);
+  const yearlyRealizedTotal = nakit.realizedByYear.reduce((sum, year) => sum + year.amount, 0);
+  const realizedDifference = Math.round((totals.realized - yearlyRealizedTotal) * 100) / 100;
+  if (nakit.realizedByYear.length && Math.abs(realizedDifference) > 0.01) {
+    root.append(h('div', { class: 'notice warn' },
+      `Gerçekleşen K/Z kartı ile yıllık tablonun toplamı ${tlSigned(realizedDifference)} farklı. `
+      + 'İşlem tarihi, adet ve fiyat kayıtlarını kontrol et.'));
+  }
   let nakitSection = null;
   if (nakit.monthly.length > 1) {
     const kutu = h('div');
@@ -494,11 +503,11 @@ export function renderPanel(ctx) {
       + 'Bu pozisyonların değeri son bilinen fiyattan hesaplanıyor, yani güncel değil.'));
   }
 
-  const oversold = hasMidasTotal ? [] : analysis.holdings.filter((x) => x.oversold);
+  const oversold = analysis.holdings.filter((x) => x.oversold);
   if (oversold.length) {
     root.append(h('div', { class: 'notice warn' },
-      `Dikkat: ${oversold.map((x) => x.code).join(', ')} için elde olandan fazla satış girilmiş. `
-      + 'Fazla kısım yok sayıldı - İşlemler sekmesinden kontrol et.'));
+      `Dikkat: ${oversold.map((x) => x.code).join(', ')} satış adetleri kayıtlı alışları aşıyor. `
+      + 'Eşleşmeyen fazla adetlerin kâr/zararı hesaplanmadı; eksik alış kaydını veya satış miktarını İşlemler sekmesinden kontrol et.'));
   }
 
   return root;

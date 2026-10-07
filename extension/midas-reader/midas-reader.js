@@ -1134,7 +1134,7 @@ function normalizeRow(row, cryptoOnly = false) {
   const type = /satış|satım|sell/i.test(side) ? 'SAT' : /alış|alım|buy/i.test(side) ? 'AL' : '';
   const dateValue = valueByHeader(/emir tarihi|işlem tarihi|tarih/);
   const date = parseDate(dateValue || text);
-  const time = String(dateValue || text).match(/\b\d{1,2}:\d{2}:\d{2}\b/)?.[0] || '';
+  const time = String(dateValue || text).match(/\b\d{1,2}:\d{2}(?::\d{2})?\b/)?.[0] || '';
   const fieldByHeader = (pattern) => {
     const i = headers.findIndex((header) => pattern.test(header));
     return i >= 0 ? cells[i] : '';
@@ -1241,7 +1241,7 @@ function normalizeRow(row, cryptoOnly = false) {
 function deduplicateOrders(rows) {
   const unique = new Map();
   for (const row of rows) {
-    const time = row.time || String(row.rawText || '').match(/\b\d{1,2}:\d{2}:\d{2}\b/)?.[0] || '';
+    const time = row.time || String(row.rawText || '').match(/\b\d{1,2}:\d{2}(?::\d{2})?\b/)?.[0] || '';
     const key = row.sourceId
       ? `id:${row.sourceId}`
       : [row.date, row.code, row.type, time, row.units, row.price, row.fee, row.withholdingTax].join('|');
