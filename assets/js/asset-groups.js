@@ -258,11 +258,12 @@ export function addSiteMarketMetrics(positions) {
     if (position.midasCryptoSnapshot) {
       const price = Number.isFinite(position.price) && position.price > 0 ? position.price : null;
       const avgCost = Number.isFinite(position.avgCost) && position.avgCost > 0 ? position.avgCost : null;
-      const totalPLNative = units && price && avgCost ? units * (price - avgCost)
-        : Number.isFinite(position.totalPL) ? position.totalPL : null;
+      const noDailyChange = NO_DAILY_CHANGE_CODES.has(position.code);
+      const totalPLNative = noDailyChange ? 0
+        : units && price && avgCost ? units * (price - avgCost)
+          : Number.isFinite(position.totalPL) ? position.totalPL : null;
       const latestIndex = Math.max(0, lastIndex());
       const fx = currencyFxToTRY(position.code, position.currency, latestIndex);
-      const noDailyChange = NO_DAILY_CHANGE_CODES.has(position.code);
       return {
         ...position,
         units,
@@ -274,8 +275,9 @@ export function addSiteMarketMetrics(positions) {
         dailyUnitPriceNowTRY: position.dailyUnitPriceNowTRY,
         dailyUnitPricePrevTRY: noDailyChange ? position.dailyUnitPriceNowTRY : position.dailyUnitPricePrevTRY,
         totalPLNative,
-        totalPLTRY: Number.isFinite(totalPLNative) && Number.isFinite(fx) ? totalPLNative * fx : null,
-        totalPct: avgCost && price ? ((price / avgCost) - 1) * 100 : null,
+        totalPLTRY: noDailyChange ? 0
+          : Number.isFinite(totalPLNative) && Number.isFinite(fx) ? totalPLNative * fx : null,
+        totalPct: noDailyChange ? 0 : avgCost && price ? ((price / avgCost) - 1) * 100 : null,
         marketValueTRY: Number.isFinite(position.marketValueTRY) ? position.marketValueTRY
           : units && price && Number.isFinite(fx) ? units * price * fx : null,
         marketValuePrevTRY: noDailyChange ? position.marketValueTRY : position.marketValuePrevTRY,
@@ -400,13 +402,16 @@ export function addSiteMarketMetrics(positions) {
     const dailyPLNative = calculatedDailyPLNative;
     const dailyPLTRY = calculatedDailyPLTRY;
     const dailyPct = calculatedDailyPct;
-    const totalPLNative = Number.isFinite(position.totalPL) ? position.totalPL
-      : hasSitePrice && Number.isFinite(avgCost) ? units * (price - avgCost)
-        : null;
-    const totalPLTRY = Number.isFinite(totalPLNative) ? totalPLNative * fx : null;
-    const totalPct = Number.isFinite(position.totalPct) ? position.totalPct
+    const totalPLNative = noDailyChange ? 0
+      : Number.isFinite(position.totalPL) ? position.totalPL
+        : hasSitePrice && Number.isFinite(avgCost) ? units * (price - avgCost)
+          : null;
+    const totalPLTRY = noDailyChange ? 0
+      : Number.isFinite(totalPLNative) ? totalPLNative * fx : null;
+    const totalPct = noDailyChange ? 0
+      : Number.isFinite(position.totalPct) ? position.totalPct
         : hasSitePrice && Number.isFinite(avgCost) && avgCost > 0 ? ((price / avgCost) - 1) * 100
-        : null;
+          : null;
     const dailyUnitPriceNowTRY = hasSitePrice ? price * fx : null;
     const dailyUnitPricePrevTRY = noDailyChange ? dailyUnitPriceNowTRY
       : hasPreviousPrice ? dailyReferencePrice * previousFx
