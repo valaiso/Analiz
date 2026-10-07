@@ -74,7 +74,7 @@ function positionDiagnosticText(diagnostic) {
   const empty = diagnostic.emptyStateFound ? '; açık pozisyon olmadığı doğrulandı' : '';
   const parse = diagnostic.parseDiagnostics || {};
   const parser = Number.isFinite(parse.containersChecked)
-    ? ` Hücre taraması: ${parse.containersChecked} kapsayıcı, ${parse.directOrderMatches || 0} DOM-sırası, ${parse.geometryMatches || 0} koordinat, ${parse.rowsWithSymbol || 0} sembol, ${parse.rowsWithQuantity || 0} adet; elenen: hücre ${parse.rejected?.noCells || 0}, sembol ${parse.rejected?.noSymbol || 0}, adet ${parse.rejected?.noQuantity || 0}, fiyat ${parse.rejected?.noPrice || 0}.`
+    ? ` Hücre taraması: ${parse.containersChecked} kapsayıcı, ${parse.directOrderMatches || 0} DOM-sırası, ${parse.geometryMatches || 0} koordinat, ${parse.rowsWithSymbol || 0} sembol, ${parse.rowsWithQuantity || 0} adet; kripto geometrisi ${parse.cryptoGeometrySymbols || 0} sembol/${parse.cryptoGeometryRows || 0} satır (${parse.cryptoGeometryRejected || 0} elendi); elenen: hücre ${parse.rejected?.noCells || 0}, sembol ${parse.rejected?.noSymbol || 0}, adet ${parse.rejected?.noQuantity || 0}, fiyat ${parse.rejected?.noPrice || 0}.`
     : '';
   return `Tanı: ${view}${table}${empty}; Pozisyonlar başlığı ${diagnostic.headingFound ? 'var' : 'yok'}, uygun sütun başlığı ${diagnostic.headerFound ? 'var' : 'yok'}, ${diagnostic.rowCandidates || 0} satır adayı, ${diagnostic.validRows || 0} geçerli açık varlık.${columns}${parser}`;
 }

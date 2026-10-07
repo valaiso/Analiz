@@ -159,6 +159,9 @@ function positionSnapshotRows(cryptoOnly = false, diagnostics = {}) {
   diagnostics.rowsWithSymbol = 0;
   diagnostics.rowsWithQuantity = 0;
   diagnostics.rowsWithPrice = 0;
+  diagnostics.cryptoGeometrySymbols = 0;
+  diagnostics.cryptoGeometryRows = 0;
+  diagnostics.cryptoGeometryRejected = 0;
   diagnostics.rejected = { noCells: 0, noSymbol: 0, noQuantity: 0, noPrice: 0 };
   const found = new Map();
   const moneyFrom = (value) => {
@@ -327,6 +330,123 @@ function positionSnapshotRows(cryptoOnly = false, diagnostics = {}) {
     }
     if (fields.price > 0 && fields.avgCost > 0) found.set(code, fields);
     else if (fields.price > 0 && fields.domCells) found.set(code, fields);
+  }
+  // The Crypto workspace can render its positions grid as unrelated nested
+  // columns, so no single DOM container owns a complete row. Recover rows by
+  // pairing visible symbol tokens with values on the same horizontal band.
+  // This fallback is scoped to the already-identified Crypto Positions root.
+  if (cryptoOnly) {
+    const codeHeader = headers[ix.code];
+    const codeX = (codeHeader.box.left + codeHeader.box.right) / 2;
+    const leaves = [...root.querySelectorAll('*')]
+      .filter(isVisible)
+      .map((node) => ({ node, text: textOf(node), box: node.getBoundingClientRect() }))
+      .filter(({ node, text, box }) => text && text.length <= 100 && box.height > 0
+        && box.top > headerRow.getBoundingClientRect().bottom - 4
+        && ![...node.children].some((child) => isVisible(child) && textOf(child) === text));
+    const excludedCodes = new Set(['AL', 'SAT', 'BUY', 'SELL', 'USD', 'TRY', 'TL', 'FON', 'BIST', 'NASDAQ', 'ADET']);
+    const symbolTokens = leaves
+      .filter(({ text, box }) => /^[A-Z][A-Z0-9.-]{1,14}$/.test(text)
+        && !excludedCodes.has(text) && Math.abs((box.left + box.right) / 2 - codeX) <= Math.max(120, codeHeader.box.width))
+      .sort((a, b) => a.box.top - b.box.top);
+    const symbolRows = [];
+    for (const token of symbolTokens) {
+      const code = token.text.toUpperCase();
+      const y = (token.box.top + token.box.bottom) / 2;
+      const existing = symbolRows.find((row) => row.code === code && Math.abs(row.y - y) < 6);
+      if (!existing) symbolRows.push({ code, y, box: token.box });
+    }
+    diagnostics.cryptoGeometrySymbols = symbolRows.length;
+    const gaps = symbolRows.map((row, index) => index
+      ? Math.abs(row.y - symbolRows[index - 1].y) : Infinity).filter((gap) => gap > 8);
+    const nearestRowGap = gaps.length ? Math.min(...gaps) : Infinity;
+    const rowTolerance = Number.isFinite(nearestRowGap)
+      ? Math.max(10, Math.min(24, nearestRowGap / 2 - 2)) : 24;
+    const rowCell = (columnIndex, row) => {
+      if (columnIndex < 0) return '';
+      const header = headers[columnIndex];
+      const x = (header.box.left + header.box.right) / 2;
+      const candidates = leaves
+        .filter((token) => Math.abs((token.box.top + token.box.bottom) / 2 - row.y) <= rowTolerance
+          && Math.abs((token.box.left + token.box.right) / 2 - x) <= Math.max(88, header.box.width))
+        .map((token) => ({ ...token,
+          dx: Math.abs((token.box.left + token.box.right) / 2 - x),
+          dy: Math.abs((token.box.top + token.box.bottom) / 2 - row.y),
+        }))
+        .sort((a, b) => a.dx + a.dy * 0.8 - (b.dx + b.dy * 0.8));
+      return candidates[0]?.text || '';
+    };
+    const numericCell = (columnIndex, row) => {
+      const header = headers[columnIndex];
+      const x = (header.box.left + header.box.right) / 2;
+      const candidates = leaves
+        .filter((token) => Math.abs((token.box.top + token.box.bottom) / 2 - row.y) <= rowTolerance
+          && Math.abs((token.box.left + token.box.right) / 2 - x) <= Math.max(88, header.box.width))
+        .map((token) => ({ ...token,
+          dx: Math.abs((token.box.left + token.box.right) / 2 - x),
+          dy: Math.abs((token.box.top + token.box.bottom) / 2 - row.y),
+        }))
+        .sort((a, b) => a.dx + a.dy * 0.8 - (b.dx + b.dy * 0.8));
+      return candidates.find(({ text }) => parseQuantity(text) > 0)?.text || '';
+    };
+    const moneyCell = (columnIndex, row) => {
+      if (columnIndex < 0) return '';
+      const header = headers[columnIndex];
+      const x = (header.box.left + header.box.right) / 2;
+      const candidates = leaves
+        .filter((token) => Math.abs((token.box.top + token.box.bottom) / 2 - row.y) <= rowTolerance
+          && Math.abs((token.box.left + token.box.right) / 2 - x) <= Math.max(88, header.box.width)
+          && parseMoney(token.text) !== null)
+        .map((token) => ({ ...token,
+          dx: Math.abs((token.box.left + token.box.right) / 2 - x),
+          dy: Math.abs((token.box.top + token.box.bottom) / 2 - row.y),
+        }))
+        .sort((a, b) => a.dx + a.dy * 0.8 - (b.dx + b.dy * 0.8));
+      return candidates[0]?.text || '';
+    };
+    for (const row of symbolRows) {
+      if (found.has(row.code)) continue;
+      const cells = Array(headers.length).fill('');
+      cells[ix.code] = row.code;
+      cells[ix.units] = numericCell(ix.units, row);
+      cells[ix.price] = moneyCell(ix.price, row);
+      cells[ix.avg] = moneyCell(ix.avg, row);
+      cells[ix.value] = moneyCell(ix.value, row);
+      const unitsText = cells[ix.units];
+      const units = /[₺$€]|\b(?:USD|TRY)\b/i.test(unitsText) ? null : parseQuantity(unitsText);
+      const price = parseMoney(cells[ix.price]);
+      if (!(units > 0) || !(price > 0)) {
+        diagnostics.cryptoGeometryRejected += 1;
+        continue;
+      }
+      const avgCost = parseMoney(cells[ix.avg]);
+      const marketValue = parseMoney(cells[ix.value]);
+      const priceColumnTokens = leaves.filter((token) =>
+        Math.abs((token.box.top + token.box.bottom) / 2 - row.y) <= rowTolerance
+          && Math.abs((token.box.left + token.box.right) / 2
+            - (headers[ix.price].box.left + headers[ix.price].box.right) / 2) <= Math.max(88, headers[ix.price].box.width));
+      const fields = {
+        code: row.code, units, unitsText, price, avgCost: avgCost ?? null,
+        marketValue: marketValue ?? null,
+        allocationPct: ix.allocation >= 0 ? percentFrom(rowCell(ix.allocation, row)) : null,
+        dailyPL: ix.daily >= 0 ? parseMoney(moneyCell(ix.daily, row)) : null,
+        dailyPct: ix.daily >= 0 ? percentFrom(rowCell(ix.daily, row)) : null,
+        totalPL: ix.total >= 0 ? parseMoney(moneyCell(ix.total, row)) : null,
+        totalPct: null,
+        currency: /\$|\bUSD\b/i.test(`${cells[ix.price]} ${priceColumnTokens.map((token) => token.text).join(' ')}`)
+          ? 'USD' : 'TRY',
+        positionAlignment: 'kripto satır geometrisi',
+        domCells: headers.map(({ label }, index) => ({ header: label, raw: cells[index], selected: cells[index] })),
+      };
+      if (avgCost > 0 && Number.isFinite(marketValue) && units > 0
+        && Math.abs(units * price - marketValue) / marketValue > 0.25) {
+        // A separated currency icon or neighboring value was paired to the
+        // wrong column; keep the visible position but don't trust its total.
+        fields.marketValue = null;
+      }
+      found.set(row.code, fields);
+      diagnostics.cryptoGeometryRows += 1;
+    }
   }
   diagnostics.acceptedRows = found.size;
   return [...found.values()];

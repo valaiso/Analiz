@@ -22,8 +22,15 @@ export function renderDagilim(ctx) {
   const { analysis, navigate } = ctx;
   const { open, totals } = analysis;
   const snapshot = getMidasAccountSnapshot();
-  const usingMidas = snapshot?.positionsSource === 'midas-visible-v1' && snapshot.positionsCaptured === true
-    || snapshot?.cryptoPositionsSource === 'midas-visible-v1' && snapshot.cryptoPositionsCaptured === true;
+  const stockPositionsCaptured = snapshot?.positionsSource === 'midas-visible-v1'
+    && snapshot.positionsCaptured === true;
+  const cryptoPositionsCaptured = snapshot?.cryptoPositionsSource === 'midas-visible-v1'
+    && snapshot.cryptoPositionsCaptured === true;
+  const usingMidas = stockPositionsCaptured || cryptoPositionsCaptured;
+  const cryptoScanFailed = Boolean(snapshot?.cryptoScanFailedAt
+    && (!snapshot.cryptoCapturedAt || snapshot.cryptoScanFailedAt > snapshot.cryptoCapturedAt));
+  const cryptoSnapshotStale = cryptoPositionsCaptured && cryptoScanFailed;
+  const cryptoNotIncluded = usingMidas && !cryptoPositionsCaptured;
   const liveRaw = [
     ...(currentMidasPositions() || []),
     ...(currentMidasCryptoPositions() || []),
@@ -54,6 +61,11 @@ export function renderDagilim(ctx) {
 
   const root = h('div', { class: 'stack' });
   if (usingMidas) {
+    if (cryptoNotIncluded || cryptoSnapshotStale) {
+      root.append(h('div', { class: 'notice warn' }, cryptoSnapshotStale
+        ? 'Son kripto aktarımı başarısız oldu. Dağılımda son doğrulanmış kripto görüntüsü kullanılıyor; güncel ETH ve diğer kripto adetleri için Midas Kripto ekranında Pozisyonlar tablosunu açıp aktarımı yeniden çalıştır.'
+        : 'Bu dağılım doğrulanmış yatırım hesabını gösteriyor; Midas Kripto Pozisyonlar tablosu henüz aktarılmadığı için ETH ve diğer kripto varlıkları ile kripto değeri toplamda yok. Midas Kripto ekranında Pozisyonlar tablosunu açıp kripto aktarımını çalıştır.'));
+    }
     const priced = [
       ...live.filter((row) => row.marketValueTRY > 0)
         .map((row) => ({ ...row, pieValue: row.marketValueTRY })),
@@ -86,7 +98,8 @@ export function renderDagilim(ctx) {
         centerTop: tl(Number.isFinite(midasTotal)
           ? midasTotal
           : priced.reduce((sum, row) => sum + (row.pieValue || 0), 0), { compact: true }),
-        centerBottom: 'Midas toplamı',
+        centerBottom: cryptoSnapshotStale ? 'Kripto verisi eski'
+          : cryptoNotIncluded ? 'Kripto hariç' : 'Midas toplamı',
       })),
       sectionCard('BIST Hisseleri', 'BIST hisselerinin kendi içindeki dağılımı', donutWithLegend(bistSlices, {
         centerTop: tl(bistRows.reduce((sum, row) => sum + (row.pieValue || 0), 0), { compact: true }),
