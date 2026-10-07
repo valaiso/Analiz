@@ -1,9 +1,44 @@
 const CHANNEL = 'ANALIZ_MIDAS_EXTENSION';
+const REQUIRED_READER_VERSION = '0.27.0';
+
+function compareVersions(left, right) {
+  const a = String(left || '').split('.').map((part) => Number(part) || 0);
+  const b = String(right || '').split('.').map((part) => Number(part) || 0);
+  for (let index = 0; index < Math.max(a.length, b.length); index += 1) {
+    if ((a[index] || 0) !== (b[index] || 0)) return (a[index] || 0) - (b[index] || 0);
+  }
+  return 0;
+}
+
+function requestReaderVersion(timeoutMs = 5000) {
+  const requestId = crypto.randomUUID();
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      window.removeEventListener('message', receive);
+      reject(new Error(`Midas eklentisinin sürümü doğrulanamadı. ${REQUIRED_READER_VERSION} paketini yükleyip Midas ve Analiz sekmelerini yenileyin.`));
+    }, timeoutMs);
+    function receive(event) {
+      if (event.source !== window || event.origin !== location.origin) return;
+      const data = event.data;
+      if (data?.channel !== CHANNEL || data.type !== 'VERSION_RESULT' || data.requestId !== requestId) return;
+      clearTimeout(timer);
+      window.removeEventListener('message', receive);
+      const version = data.response?.extensionVersion;
+      if (!data.response?.ok || !version) {
+        reject(new Error('Midas eklentisinin sürümü okunamadı. Güncel paketi yükleyip Midas ve Analiz sekmelerini yenileyin.'));
+      } else if (compareVersions(version, REQUIRED_READER_VERSION) < 0) {
+        reject(new Error(`Yüklü Midas eklentisi ${version}; gereken sürüm ${REQUIRED_READER_VERSION}. Actions artifact'ındaki yeni paketi yükleyip Midas ve Analiz sekmelerini yenileyin.`));
+      } else resolve(version);
+    }
+    window.addEventListener('message', receive);
+    window.postMessage({ channel: CHANNEL, type: 'VERSION', requestId }, location.origin);
+  });
+}
 
 /** Installed extension reads the already-open Atlas tab and returns visible rows. */
 export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes = [], timeoutMs = 600_000, options = {}) {
   const requestId = crypto.randomUUID();
-  return new Promise((resolve, reject) => {
+  return requestReaderVersion().then((extensionVersion) => new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       window.removeEventListener('message', receive);
       reject(new Error('Eklentiden yanıt gelmedi. Eklentiyi kurup yenilediğinden emin ol.'));
@@ -26,6 +61,7 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
         error.cryptoPositionsDiagnostic = data.response?.cryptoPositionsDiagnostic || null;
         error.duplicateOrdersRemoved = Number(data.response?.duplicateOrdersRemoved) || 0;
         error.ignoredStablecoinCount = Number(data.response?.ignoredStablecoinCount) || 0;
+        error.extensionVersion = extensionVersion;
         reject(error);
       } else resolve({
         rows: data.response.rows || [],
@@ -40,6 +76,7 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
         cryptoPositionsDiagnostic: data.response.cryptoPositionsDiagnostic || null,
         duplicateOrdersRemoved: Number(data.response.duplicateOrdersRemoved) || 0,
         ignoredStablecoinCount: Number(data.response.ignoredStablecoinCount) || 0,
+        extensionVersion,
         marketData: data.response.marketData || {},
         marketErrors: data.response.marketErrors || {},
       });
@@ -50,7 +87,7 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
       channel: CHANNEL, type: 'READ', requestId, knownCodes, localAssets, fundCodes,
       cryptoOnly: options.cryptoOnly === true,
     }, location.origin);
-  });
+  }));
 }
 
 /** Fetch fresh intraday quotes through the installed extension, without a Midas tab. */

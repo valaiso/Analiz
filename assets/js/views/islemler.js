@@ -70,7 +70,9 @@ function positionDiagnosticText(diagnostic) {
   if (!diagnostic) return '';
   const columns = diagnostic.columns?.length ? ` Sütunlar: ${diagnostic.columns.join(' · ')}.` : '';
   const view = diagnostic.activeViewMatches === false ? 'Yanlış Midas çalışma alanı açık. ' : '';
-  return `Tanı: ${view}Pozisyonlar başlığı ${diagnostic.headingFound ? 'var' : 'yok'}, uygun sütun başlığı ${diagnostic.headerFound ? 'var' : 'yok'}, ${diagnostic.rowCandidates || 0} satır adayı, ${diagnostic.validRows || 0} geçerli açık varlık.${columns}`;
+  const table = diagnostic.tableFound ? 'tablo doğrulandı' : 'tablo doğrulanmadı';
+  const empty = diagnostic.emptyStateFound ? '; açık pozisyon olmadığı doğrulandı' : '';
+  return `Tanı: ${view}${table}${empty}; Pozisyonlar başlığı ${diagnostic.headingFound ? 'var' : 'yok'}, uygun sütun başlığı ${diagnostic.headerFound ? 'var' : 'yok'}, ${diagnostic.rowCandidates || 0} satır adayı, ${diagnostic.validRows || 0} geçerli açık varlık.${columns}`;
 }
 
 async function copyMidasLog(field) {
@@ -179,6 +181,7 @@ async function readMidas(ctx, button) {
       DB.funds.filter((fund) => ['YAT', 'EMK', 'GYF', 'GSYF'].includes(fund.kind))
         .map((fund) => fund.code),
     );
+    logMidas(`Midas okuyucu sürümü: ${result.extensionVersion}.`);
     saveMidasAccountSnapshot({
       capturedAt: new Date().toISOString(),
       summary: result.accountSummary,
@@ -215,6 +218,8 @@ async function readMidas(ctx, button) {
         if (position.costDiagnostic) logMidas(`${position.code}: ${position.costDiagnostic}. Maliyet K/Z hesabında kullanılmadı.`);
         if (position.domCells?.length) logMidas(`${position.code} sütun tanısı: ${position.domCells.map((cell) => `${cell.header}=[${cell.raw}]`).join(' | ')}.`);
       }
+    } else if (result.positionsCaptured) {
+      logMidas('Midas Pozisyonlar tablosu doğrulandı; yatırım hesabında açık hisse/fon pozisyonu yok.');
     } else {
       logMidas(`Midas Pozisyonlar tablosundaki açık varlıklar okunamadı. Emir geçmişinden pozisyon türetilmeyecek. ${positionDiagnosticText(result.positionsDiagnostic)}`);
     }
@@ -319,6 +324,7 @@ async function readMidasCrypto(ctx, button) {
       && fund.kind === 'CRYPTO' && !['USDT', 'USDC'].includes(String(fund.code).toUpperCase()))
       .map((fund) => ({ code: fund.code, source: fund.catSrc, kind: fund.kind, startDate: fund.startDate })),
     [], 600_000, { cryptoOnly: true });
+    logMidas(`Midas okuyucu sürümü: ${result.extensionVersion}.`);
     const cryptoPositionValue = (result.cryptoPositions || []).reduce((sum, position) => {
       const nativeValue = Number.isFinite(position.marketValue) ? position.marketValue
         : Number(position.units) * Number(position.price);
@@ -335,7 +341,9 @@ async function readMidasCrypto(ctx, button) {
       cryptoPositionsDiagnostic: result.cryptoPositionsDiagnostic,
     });
     if (result.cryptoPositionsCaptured) {
-      logMidas(`Midas Kripto Pozisyonlar tablosundan ${(result.cryptoPositions || []).length} açık varlık okundu; güncel değer ${tl(cryptoPositionValue)}.`);
+      logMidas((result.cryptoPositions || []).length
+        ? `Midas Kripto Pozisyonlar tablosundan ${result.cryptoPositions.length} açık varlık okundu; güncel değer ${tl(cryptoPositionValue)}.`
+        : 'Midas Kripto Pozisyonlar tablosu doğrulandı; açık kripto pozisyonu yok.');
       ctx.refresh();
     } else {
       logMidas(`Midas Crypto Pozisyonlar tablosu bu taramada okunamadı; emir geçmişinden açık kripto pozisyonu türetilmeyecek. ${positionDiagnosticText(result.cryptoPositionsDiagnostic)}`);

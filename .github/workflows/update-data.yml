@@ -56,6 +56,26 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  package-midas-extension:
+    name: Midas eklentisini paketle
+    if: ${{ github.event_name == 'push' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Sürümü oku ve ZIP oluştur
+        id: package
+        run: |
+          version="$(python -c 'import json; print(json.load(open("extension/midas-reader/manifest.json", encoding="utf-8"))["version"])')"
+          mkdir -p "$RUNNER_TEMP/midas-reader"
+          cp -R extension/midas-reader/. "$RUNNER_TEMP/midas-reader/"
+          (cd "$RUNNER_TEMP/midas-reader" && zip -qr "$RUNNER_TEMP/midas-reader-v${version}.zip" .)
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: midas-reader-v${{ steps.package.outputs.version }}
+          path: ${{ runner.temp }}/midas-reader-v${{ steps.package.outputs.version }}.zip
+          retention-days: 30
+
   # Ucuz ön kontrol: sabah yoklamaları 10 dakikada bir çalıştığı için tam
   # derlemeyi (~5 dk) her seferinde tetiklemek israf olur. Bu iş saniyeler
   # içinde "yayındaki site zaten bugünün fiyatında mı" ve "TEFAS bugünün

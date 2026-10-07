@@ -1,6 +1,10 @@
 // Köprü yalnızca açık Midas sekmesindeki kullanıcı isteğini yönlendirir.
 // Kimlik bilgisi, parola veya oturum çerezi okunmaz ya da saklanmaz.
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+  if (message?.type === 'ANALIZ_GET_MIDAS_READER_VERSION') {
+    sendResponse({ ok: true, extensionVersion: chrome.runtime.getManifest().version });
+    return false;
+  }
   if (message?.type === 'ANALIZ_FETCH_LIVE_QUOTES') {
     const codes = [...new Set((message.codes || []).map((code) => String(code).trim().toUpperCase()).filter(Boolean))];
     Promise.all(codes.map(async (code) => [code, await yahooIntradayQuote(code)]))
@@ -24,7 +28,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         type: 'ANALIZ_SCAN_VISIBLE_HISTORY', cryptoOnly,
       });
       if (!result?.ok) {
-        sendResponse(result);
+        sendResponse({ ...result, extensionVersion: chrome.runtime.getManifest().version });
         return;
       }
       const known = new Set((message.knownCodes || []).map((code) => String(code).toUpperCase()));
@@ -81,10 +85,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           marketErrors[code] = `Güncel fiyat yenilenemedi; önceki geçmiş korunuyor. ${error.message || ''}`.trim();
         }
       }
-      sendResponse({ ...result, marketData, marketErrors });
+      sendResponse({ ...result, marketData, marketErrors,
+        extensionVersion: chrome.runtime.getManifest().version });
     } catch {
       sendResponse({
         ok: false,
+        extensionVersion: chrome.runtime.getManifest().version,
         error: 'Midas sekmesindeki okuyucuya ulaşılamadı. Midas sekmesini yenileyip tekrar deneyin.',
       });
     }

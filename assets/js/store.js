@@ -74,13 +74,13 @@ export function saveMidasAccountSnapshot(snapshot) {
     .some((key) => Object.prototype.hasOwnProperty.call(snapshot, key));
   const capturedAt = snapshot.capturedAt || new Date().toISOString();
   const stockCaptured = snapshot.positionsCaptured === true
-    && Array.isArray(snapshot.positions) && snapshot.positions.length > 0;
+    && Array.isArray(snapshot.positions);
   const cryptoCaptured = snapshot.cryptoPositionsCaptured === true
-    && Array.isArray(snapshot.cryptoPositions) && snapshot.cryptoPositions.length > 0;
+    && Array.isArray(snapshot.cryptoPositions);
   const prior = midasSnapshot || {};
   midasSnapshot = { ...prior, capturedAt };
   if (hasStockUpdate) {
-    const summaryValid = Number.isFinite(snapshot.summary?.totalValue) && snapshot.summary.totalValue > 0;
+    const summaryValid = Number.isFinite(snapshot.summary?.totalValue) && snapshot.summary.totalValue >= 0;
     if (stockCaptured) {
       midasSnapshot = {
         ...midasSnapshot,

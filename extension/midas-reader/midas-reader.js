@@ -64,7 +64,11 @@ function canonicalHeader(value) {
 function headerCellItems(element) {
   const nodes = [element, ...element.querySelectorAll('*')]
     .filter(isVisible)
-    .map((node) => ({ node, label: canonicalHeader(textOf(node)), box: node.getBoundingClientRect() }))
+    .map((node) => ({
+      node,
+      label: canonicalHeader(textOf(node) || node.getAttribute('aria-label') || node.getAttribute('title') || ''),
+      box: node.getBoundingClientRect(),
+    }))
     .filter((item) => item.label);
   const bestByLabel = new Map();
   for (const item of nodes) {
@@ -91,22 +95,35 @@ function isPositionsHeader(element, cryptoOnly = false) {
   const cells = headerCells(element);
   // Günlük/getiri/dağılım sütunları dar ekranda gizlenebilir. Tabloyu tanımak
   // için yalnızca sembol ve miktar/fiyat eksenlerini şart koş.
-  return ['Varlık', 'Adet', 'Fiyat'].every((label) => cells.includes(label))
-    && (!cryptoOnly || cells.includes('Pozisyon') || cells.includes('Ort. Maliyet'));
+  const hasBaseColumns = ['Varlık', 'Adet', 'Fiyat'].every((label) => cells.includes(label));
+  // Midas'ın Kripto Pozisyonlar tablosu ayrıca bir Pozisyon (piyasa değeri)
+  // sütunu gösterir; yatırım hesabı tablosunda bu sütun yoktur.
+  return hasBaseColumns && (cryptoOnly ? cells.includes('Pozisyon') : !cells.includes('Pozisyon'));
 }
 
 function positionsRoot(cryptoOnly = false) {
-  // The two Midas workspaces can keep their grids mounted at the same time.
-  // Never reinterpret the investment table as crypto (or vice versa).
-  if (cryptoOnly !== activeCryptoTab()) return null;
+  const matchingHeaders = [...document.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
+    .filter((element) => isVisible(element) && isPositionsHeader(element, cryptoOnly))
+    .sort((a, b) => textOf(a).length - textOf(b).length);
   const headings = [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div')]
     .filter((element) => isVisible(element) && /^pozisyonlar$/iu.test(textOf(element)))
     .sort((a, b) => textOf(a).length - textOf(b).length);
   for (const heading of headings) {
-    for (let scope = heading.parentElement, depth = 0; scope && depth < 12; scope = scope.parentElement, depth += 1) {
-      const hasPositionsHeader = [...scope.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
-        .some((element) => isVisible(element) && isPositionsHeader(element, cryptoOnly));
-      if (hasPositionsHeader) return scope;
+    for (let scope = heading.parentElement, depth = 0; scope && depth < 24; scope = scope.parentElement, depth += 1) {
+      if (matchingHeaders.some((header) => scope.contains(header))) return scope;
+    }
+  }
+  // Some Atlas layouts render the title and the grid in separate wrappers.
+  // The extra "Pozisyon" value column uniquely identifies the Crypto grid.
+  if (cryptoOnly && matchingHeaders.length) {
+    for (const header of matchingHeaders) {
+      for (let scope = header.parentElement, depth = 0; scope && depth < 16; scope = scope.parentElement, depth += 1) {
+        if (headings.some((heading) => scope.contains(heading))) return scope;
+        const containsPositionData = [...scope.querySelectorAll('tr, [role="row"], [class*="row" i], li, div')]
+          .some((element) => element !== header && isVisible(element)
+            && textOf(element).length < 600 && /[₺$€]/.test(textOf(element)));
+        if (containsPositionData && (activeCryptoTab() || /kripto|crypto/i.test(textOf(scope).slice(0, 400)))) return scope;
+      }
     }
   }
   return null;
@@ -292,16 +309,19 @@ function positionSnapshotRows(cryptoOnly = false) {
 }
 
 function positionTableDiagnosis(cryptoOnly, rows) {
-  const activeViewMatches = cryptoOnly === activeCryptoTab();
-  const headers = (activeViewMatches ? [...document.querySelectorAll('tr, [role="row"], [class*="row" i], div')] : [])
-    .filter((element) => isVisible(element) && isPositionsHeader(element, cryptoOnly));
-  const root = activeViewMatches ? positionsRoot(cryptoOnly) : null;
+  const root = positionsRoot(cryptoOnly);
+  const headers = root ? [...root.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
+    .filter((element) => isVisible(element) && isPositionsHeader(element, cryptoOnly))
+    .sort((a, b) => textOf(a).length - textOf(b).length) : [];
   const rowCandidates = root ? [...root.querySelectorAll('tr, [role="row"], [class*="row" i], li, div')]
-    .filter((element) => element !== headers[0] && isVisible(element))
+    .filter((element) => !headers.includes(element) && isVisible(element))
     .map(textOf)
     .filter((text) => text.length > 0 && text.length < 600 && /[₺$€]|\b(?:USD|TRY)\b/i.test(text)).length : 0;
+  const rootText = root ? textOf(root) : '';
+  const emptyStateFound = /(?:açık\s+)?(?:pozisyon|varlık|kripto hesabı)[^.!?]{0,60}(?:yok|bulunmuyor|bulunamadı|henüz)|(?:yok|bulunmuyor|bulunamadı|henüz)[^.!?]{0,60}(?:pozisyon|varlık|kripto hesabı)/iu.test(rootText);
   return {
-    activeViewMatches,
+    tableFound: Boolean(root && headers.length),
+    emptyStateFound,
     headingFound: [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div')]
       .some((element) => isVisible(element) && /^pozisyonlar$/iu.test(textOf(element))),
     headerFound: headers.length > 0,
@@ -355,17 +375,17 @@ function assetCodeAtRow(root, rowElement, headerItem, allowStablecoins = false) 
 }
 
 function orderHistoryRoot(cryptoOnly = false) {
-  if (cryptoOnly !== activeCryptoTab()) return null;
   const headings = [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div')]
     .filter((element) => isVisible(element) && /^emir\s+geçmişi$/iu.test(textOf(element)))
     .sort((a, b) => textOf(a).length - textOf(b).length);
   for (const heading of headings) {
+    const cryptoHeading = isCryptoHistoryHeading(heading);
+    if (cryptoOnly ? !cryptoHeading : cryptoHeading) continue;
     let headerScope = null;
     for (let scope = heading.parentElement, depth = 0; scope && depth < 12; scope = scope.parentElement, depth += 1) {
       const hasOrderHeader = [...scope.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
         .some((element) => isVisible(element) && isOrderHeader(element, cryptoOnly));
       if (!hasOrderHeader) continue;
-      if (cryptoOnly && !isCryptoHistoryHeading(heading)) continue;
       headerScope = scope;
       const hasPager = [...scope.querySelectorAll('span, div, p')]
         .some((element) => isVisible(element) && /^\d+\s*[-–]\s*\d+\s*\/\s*\d+$/.test(textOf(element)));
@@ -1018,10 +1038,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const ready = normalized.filter((row) => !row.missing.length);
     const positions = cryptoOnly ? [] : positionSnapshotRows(false);
     const cryptoPositions = cryptoOnly ? positionSnapshotRows(true) : [];
-    const positionsCaptured = cryptoOnly ? false : positions.length > 0;
-    const cryptoPositionsCaptured = cryptoOnly ? cryptoPositions.length > 0 : false;
     const positionsDiagnostic = cryptoOnly ? null : positionTableDiagnosis(false, positions);
     const cryptoPositionsDiagnostic = cryptoOnly ? positionTableDiagnosis(true, cryptoPositions) : null;
+    const positionsCaptured = cryptoOnly ? false
+      : positions.length > 0 || positionsDiagnostic?.emptyStateFound === true;
+    const cryptoPositionsCaptured = cryptoOnly ? cryptoPositions.length > 0
+      || cryptoPositionsDiagnostic?.emptyStateFound === true : false;
     if (!rows.length && !(cryptoOnly ? cryptoPositionsCaptured : positionsCaptured)) {
       const evidence = labels.length ? `Ekranda algılanan başlık/durum metinleri: ${labels.join(' · ')}.` : 'Ekranda tanınan emir tablosu başlığı görünmüyor.';
       const headers = scanStats?.headers?.length ? `Algılanan sütunlar: ${scanStats.headers.join(' · ')}.` : 'Satır sütunları eşleştirilemedi.';
