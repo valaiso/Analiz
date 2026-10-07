@@ -60,12 +60,14 @@ export function renderDagilim(ctx) {
     let rangeKey = 'year';
     const chartBox = h('div', { class: 'chart' });
     const drawPortfolioChart = () => {
-      const days = ({ week: 7, month: 30, year: 365 })[rangeKey];
       const endDate = DB.calendar.at(-1);
-      const cutoffDate = new Date(`${endDate}T00:00:00`);
-      cutoffDate.setDate(cutoffDate.getDate() - days + 1);
-      const cutoff = `${cutoffDate.getFullYear()}-${String(cutoffDate.getMonth() + 1).padStart(2, '0')}-${String(cutoffDate.getDate()).padStart(2, '0')}`;
-      const dates = DB.calendar.filter((date) => date >= cutoff);
+      const days = ({ week: 7, month: 30, year: 365 })[rangeKey];
+      let cutoff = series.dates[0];
+      if (days) {
+        const [year, month, day] = endDate.split('-').map(Number);
+        cutoff = new Date(Date.UTC(year, month - 1, day - days + 1)).toISOString().slice(0, 10);
+      }
+      const dates = DB.calendar.filter((date) => date >= cutoff && date <= endDate);
       const seriesIndexes = new Map(series.dates.map((date, index) => [date, index]));
       const firstInvestedDate = series.dates[0];
       const align = (values) => dates.map((date) => {
@@ -89,9 +91,11 @@ export function renderDagilim(ctx) {
       { key: 'week', label: 'Haftalık' },
       { key: 'month', label: 'Aylık' },
       { key: 'year', label: 'Yıllık' },
+      { key: 'all', label: 'Başlangıç', title: 'Yatırım başlangıcından itibaren' },
     ];
     for (const range of ranges) rangeControls.append(h('button', {
-      type: 'button', dataset: { range: range.key }, 'aria-pressed': String(range.key === rangeKey),
+      type: 'button', dataset: { range: range.key }, title: range.title || '',
+      'aria-label': range.title || range.label, 'aria-pressed': String(range.key === rangeKey),
       onclick: () => {
         rangeKey = range.key;
         rangeControls.querySelectorAll('button').forEach((button) =>

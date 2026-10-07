@@ -8,12 +8,20 @@ import { lineChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
 import { sectionCard, emptyState, rangeSelector, RANGES } from './common.js';
 
-const BENCH_COLORS = {
-  BIST100: 'var(--c3)',
-  GRAMALTIN: 'var(--c9)',
-  USDTRY: 'var(--c2)',
-  TUFE: 'var(--c5)',
-  PARAPIYASASI: 'var(--c6)',
+const BENCH_STYLES = {
+  BIST100: { color: 'var(--c2)' },
+  GRAMALTIN: { color: 'var(--c3)', dashArray: '7 3' },
+  USDTRY: { color: 'var(--c5)', dashArray: '2 3' },
+  TUFE: { color: 'var(--c4)', dashArray: '8 3 2 3' },
+  PARAPIYASASI: { color: 'var(--c6)', dashArray: '3 3' },
+};
+
+const benchStyle = (key) => BENCH_STYLES[key] || { color: colorAt(Object.keys(BENCH_STYLES).length) };
+const benchLineStyle = (key) => {
+  const style = benchStyle(key);
+  const background = style.dashArray
+    ? `repeating-linear-gradient(to right,${style.color} 0 5px,transparent 5px 8px)` : style.color;
+  return `width:18px;height:3px;border-radius:2px;background:${background};display:inline-block`;
 };
 
 /** Seriyi ilk geçerli değerine göre 100'e normalize eder. */
@@ -69,7 +77,7 @@ export function renderKiyaslama(ctx) {
       lines.push({
         name: DB.benchmarks[key].label,
         values: normalize(sliced.values),
-        color: BENCH_COLORS[key] || colorAt(lines.length),
+        ...benchStyle(key),
         width: 1.6,
       });
     }
@@ -86,7 +94,7 @@ export function renderKiyaslama(ctx) {
   const toggles = h('div', { class: 'btn-row' },
     available.map((key) => h('button', {
       class: 'btn btn-sm', type: 'button', 'aria-pressed': 'true',
-      style: `border-color:${BENCH_COLORS[key] || 'var(--border)'}`,
+      style: `border-color:${benchStyle(key).color}`,
       onclick: (e) => {
         const on = selected.has(key);
         if (on) selected.delete(key); else selected.add(key);
@@ -97,7 +105,7 @@ export function renderKiyaslama(ctx) {
     },
     h('span', {
       class: 'swatch',
-      style: `width:9px;height:9px;border-radius:3px;background:${BENCH_COLORS[key] || 'var(--text-dim)'};display:inline-block`,
+      style: benchLineStyle(key),
     }),
     DB.benchmarks[key].label)));
 
@@ -121,7 +129,7 @@ export function renderKiyaslama(ctx) {
     rows.push({ label, cells, color });
   };
   addRow('Portföyüm', series.twr, 'var(--accent)');
-  for (const key of available) addRow(DB.benchmarks[key].label, benchSlice(key), BENCH_COLORS[key]);
+  for (const key of available) addRow(DB.benchmarks[key].label, benchSlice(key), benchStyle(key).color);
 
   const table = h('div', { class: 'table-wrap' }, h('table', {},
     h('thead', {}, h('tr', {},
@@ -181,7 +189,7 @@ export function renderKiyaslama(ctx) {
           h('span', {
             class: 'swatch',
             style: 'width:9px;height:9px;border-radius:3px;display:inline-block;margin-right:7px;'
-              + `background:${i === 0 ? 'var(--accent)' : (BENCH_COLORS[x.key] || 'var(--text-dim)')}`,
+              + `background:${i === 0 ? 'var(--accent)' : benchStyle(x.key).color}`,
           }),
           x.label),
         h('td', {}, tl(x.value)),
@@ -210,5 +218,4 @@ export function renderKiyaslama(ctx) {
 
   return root;
 }
-
 

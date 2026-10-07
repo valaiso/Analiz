@@ -144,7 +144,7 @@ function renderLine(container, cfg) {
     svg.append(svgEl('path', {
       d, fill: 'none', stroke: s.color, 'stroke-width': s.width || 2,
       'stroke-linejoin': 'round', 'stroke-linecap': 'round',
-      'stroke-dasharray': s.dashed ? '5 4' : null,
+      'stroke-dasharray': s.dashArray || (s.dashed ? '5 4' : null),
     }));
   });
 
@@ -208,7 +208,11 @@ function renderLine(container, cfg) {
   if (legend && active.length > 1) {
     container.append(h('div', { class: 'chart-legend' },
       active.map((s) => h('span', { class: 'item' },
-        h('span', { class: 'swatch', style: `background:${s.color}` }),
+        h('span', {
+          class: 'swatch',
+          style: `width:18px;height:3px;border-radius:2px;background:${s.dashArray
+            ? `repeating-linear-gradient(to right,${s.color} 0 5px,transparent 5px 8px)` : s.color}`,
+        }),
         s.name))));
   }
 }
@@ -254,9 +258,13 @@ function renderDonut(container, cfg) {
     const arc = svgEl('path', {
       d: path, fill: 'none', stroke: it.color, 'stroke-width': thickness,
     });
+    const separator = svgEl('path', {
+      d: path, fill: 'none', stroke: 'var(--surface)', 'stroke-width': thickness + 3,
+    });
     const title = svgEl('title');
     title.textContent = `${it.label}: ${((it.value / total) * 100).toFixed(1)}%`;
     arc.append(title);
+    svg.append(separator);
     svg.append(arc);
     angle = end;
   });
@@ -606,4 +614,3 @@ function renderScatter(container, cfg) {
 }
 
 export { colorAt };
-
