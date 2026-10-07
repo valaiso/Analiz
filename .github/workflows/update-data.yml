@@ -42,6 +42,7 @@ on:
       - 'index.html'
       - 'assets/**'
       - 'scripts/**'
+      - 'extension/**'
       - '.github/workflows/update-data.yml'
 
 permissions:
