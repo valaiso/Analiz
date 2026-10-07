@@ -129,7 +129,7 @@ function positionsRoot(cryptoOnly = false) {
   return null;
 }
 
-function positionSnapshotRows(cryptoOnly = false) {
+function positionSnapshotRows(cryptoOnly = false, diagnostics = {}) {
   const root = positionsRoot(cryptoOnly);
   if (!root) return [];
   const headerRow = [...root.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
@@ -152,6 +152,14 @@ function positionSnapshotRows(cryptoOnly = false) {
     .map((element) => ({ element, text: textOf(element) }))
     .filter(({ text }) => text.length > 0 && text.length < 600 && /[₺$€]|\b(?:USD|TRY)\b/i.test(text))
     .sort((a, b) => a.text.length - b.text.length);
+  diagnostics.rowNodes = rowNodes.length;
+  diagnostics.containersChecked = 0;
+  diagnostics.directOrderMatches = 0;
+  diagnostics.geometryMatches = 0;
+  diagnostics.rowsWithSymbol = 0;
+  diagnostics.rowsWithQuantity = 0;
+  diagnostics.rowsWithPrice = 0;
+  diagnostics.rejected = { noCells: 0, noSymbol: 0, noQuantity: 0, noPrice: 0 };
   const found = new Map();
   const moneyFrom = (value) => {
     return parseMoney(value);
@@ -167,44 +175,51 @@ function positionSnapshotRows(cryptoOnly = false) {
   };
   for (const { element } of rowNodes) {
     const containers = [element, ...element.querySelectorAll('tr, [role="row"], [class*="row" i], li, div')]
-      .filter((container) => isVisible(container) && container.children.length >= 4 && container.children.length <= 12)
+      .filter((container) => isVisible(container) && container.children.length <= 18
+        && textOf(container).length > 0 && textOf(container).length < 600)
       .sort((a, b) => textOf(a).length - textOf(b).length);
     let cells = null;
     let rowElement = element;
     let sourceCells = [];
+    let alignment = '';
     for (const container of containers) {
+      diagnostics.containersChecked += 1;
       const cellElements = directCellElements(container).filter(isVisible);
-      if (cellElements.length < 4 || cellElements.length > 12) continue;
-      // Bazı Midas satırlarında DOM hücre sayısı başlık sayısına eşit olsa da
-      // gizli/ek hücreler yüzünden sıra kayabiliyor. Her alanı başlığın x konumuyla
-      // eşleştir; uzak hücreyi boş bırakıp yanlış alanı adet/maliyet olarak okuma.
-      const unused = new Set(cellElements);
-      const sourceAligned = [];
-      const aligned = headers.map(({ box }) => {
-        const x = (box.left + box.right) / 2;
-        const nearest = [...unused].reduce((best, candidate) => {
-          const rect = candidate.getBoundingClientRect();
-          const distance = Math.abs((rect.left + rect.right) / 2 - x);
-          return !best || distance < best.distance ? { candidate, distance } : best;
-        }, null);
-        if (!nearest || nearest.distance > Math.max(32, box.width / 2)) {
-          sourceAligned.push('');
-          return '';
+      if (cellElements.length >= 4 && cellElements.length <= 12) {
+        const rawCells = cellElements.map(textOf);
+        // Atlas'ın Kripto gridinde görünen hücreler DOM sırasını sütun sırasıyla
+        // koruyor; önce birebir sütun eşleşmesini dene. Farklı sayıda/gizli hücre
+        // olan yatırım tablosunda koordinat eşlemesini yedek olarak kullan.
+        const candidates = rawCells.length === headers.length
+          ? [{ cells: rawCells, mode: 'DOM sırası' }] : [];
+        const unused = new Set(cellElements);
+        const aligned = headers.map(({ box }) => {
+          const x = (box.left + box.right) / 2;
+          const nearest = [...unused].reduce((best, candidate) => {
+            const rect = candidate.getBoundingClientRect();
+            const distance = Math.abs((rect.left + rect.right) / 2 - x);
+            return !best || distance < best.distance ? { candidate, distance } : best;
+          }, null);
+          if (!nearest || nearest.distance > Math.max(32, box.width / 2)) return '';
+          unused.delete(nearest.candidate);
+          return textOf(nearest.candidate);
+        });
+        candidates.push({ cells: aligned, mode: 'x-koordinatı' });
+        for (const candidate of candidates) {
+          const candidateCode = assetCodeAtRow(root, container, headers[ix.code], cryptoOnly)
+            || String(candidate.cells[ix.code] || '').match(/\b[A-Z][A-Z0-9.-]{1,9}\b/)?.[0] || '';
+          if (!candidateCode || moneyFrom(candidate.cells[ix.price]) === null
+            || (ix.avg >= 0 && moneyFrom(candidate.cells[ix.avg]) === null)) continue;
+          cells = candidate.cells;
+          sourceCells = candidate.cells;
+          rowElement = container;
+          alignment = candidate.mode;
+          if (candidate.mode === 'DOM sırası') diagnostics.directOrderMatches += 1;
+          else diagnostics.geometryMatches += 1;
+          break;
         }
-        unused.delete(nearest.candidate);
-        const value = textOf(nearest.candidate);
-        sourceAligned.push(value);
-        return value;
-      });
-      const code = assetCodeAtRow(root, container, headers[ix.code], cryptoOnly)
-        || String(aligned[ix.code] || '').match(/\b[A-Z][A-Z0-9.-]{1,9}\b/)?.[0] || '';
-      if (code && moneyFrom(aligned[ix.price]) !== null
-        && (ix.avg < 0 || moneyFrom(aligned[ix.avg]) !== null)) {
-        cells = aligned;
-        sourceCells = sourceAligned;
-        rowElement = container;
-        break;
       }
+      if (cells) break;
       // Midas bazen hücreleri ayrı sütunlarda değil, iç içe span/div metinleri
       // olarak üretir. Satır içindeki görünen metin düğümlerini sütunların x
       // koordinatlarına göre tekrar eşleştir; hücre sayısının eşit olmasına
@@ -238,6 +253,7 @@ function positionSnapshotRows(cryptoOnly = false) {
           cells = tokenAligned;
           sourceCells = tokenAligned;
           rowElement = container;
+          alignment = 'metin geometrisi';
           break;
         }
       }
@@ -258,16 +274,19 @@ function positionSnapshotRows(cryptoOnly = false) {
           cells[ix.daily] = `${moneyValues[2] < 0 ? '-' : ''}${symbol}${Math.abs(moneyValues[2] || 0)} ${percents[1] || ''}`;
           cells[ix.total] = `${moneyValues[3] < 0 ? '-' : ''}${symbol}${Math.abs(moneyValues[3] || 0)} ${percents[2] || ''}`;
           cells[ix.allocation] = percents[0] || '';
-          sourceCells = sourceAligned;
+          sourceCells = repeatedCell;
           rowElement = container;
+          alignment = 'tekrarlanan hücre';
           break;
         }
       }
     }
-    if (!cells) continue;
+    if (!cells) { diagnostics.rejected.noCells += 1; continue; }
     const code = assetCodeAtRow(root, rowElement, headers[ix.code], cryptoOnly)
       || String(cells[ix.code] || '').match(/\b[A-Z][A-Z0-9.-]{1,9}\b/)?.[0] || '';
-    if (!code || found.has(code)) continue;
+    if (!code) { diagnostics.rejected.noSymbol += 1; continue; }
+    diagnostics.rowsWithSymbol += 1;
+    if (found.has(code)) continue;
     const text = cells.join(' ');
     const fields = {
       code,
@@ -282,6 +301,7 @@ function positionSnapshotRows(cryptoOnly = false) {
       totalPL: ix.total >= 0 ? moneyFrom(cells[ix.total]) ?? null : null,
       totalPct: ix.total >= 0 ? percentFrom(cells[ix.total]) ?? null : null,
       currency: /\$|\bUSD\b/i.test(String(cells[ix.price] || '')) ? 'USD' : 'TRY',
+      positionAlignment: alignment,
     };
     if (code) {
       fields.domCells = headers.map(({ label }, index) => ({
@@ -294,7 +314,10 @@ function positionSnapshotRows(cryptoOnly = false) {
       fields.units = null;
       fields.unitsText = `${fields.unitsText} (fiyatla aynı, adet reddedildi)`.trim();
     }
-    if (!(fields.units > 0)) continue;
+    if (!(fields.units > 0)) { diagnostics.rejected.noQuantity += 1; continue; }
+    diagnostics.rowsWithQuantity += 1;
+    if (!(fields.price > 0)) { diagnostics.rejected.noPrice += 1; continue; }
+    diagnostics.rowsWithPrice += 1;
     if (fields.price > 0 && fields.avgCost > 0 && Number.isFinite(fields.totalPct)) {
       const calculatedPct = (fields.price / fields.avgCost - 1) * 100;
       if (Math.abs(calculatedPct - fields.totalPct) > 15) {
@@ -305,10 +328,11 @@ function positionSnapshotRows(cryptoOnly = false) {
     if (fields.price > 0 && fields.avgCost > 0) found.set(code, fields);
     else if (fields.price > 0 && fields.domCells) found.set(code, fields);
   }
+  diagnostics.acceptedRows = found.size;
   return [...found.values()];
 }
 
-function positionTableDiagnosis(cryptoOnly, rows) {
+function positionTableDiagnosis(cryptoOnly, rows, parseDiagnostics = {}) {
   const root = positionsRoot(cryptoOnly);
   const headers = root ? [...root.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
     .filter((element) => isVisible(element) && isPositionsHeader(element, cryptoOnly))
@@ -328,6 +352,7 @@ function positionTableDiagnosis(cryptoOnly, rows) {
     columns: headers[0] ? headerCells(headers[0]) : [],
     rowCandidates,
     validRows: rows.length,
+    parseDiagnostics,
   };
 }
 
@@ -1036,10 +1061,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     const ignoredStablecoinCount = cryptoOnly ? uniqueRows.filter((row) => row.ignoredStablecoin).length : 0;
     const normalized = uniqueRows.filter((row) => !row.ignoredStablecoin);
     const ready = normalized.filter((row) => !row.missing.length);
-    const positions = cryptoOnly ? [] : positionSnapshotRows(false);
-    const cryptoPositions = cryptoOnly ? positionSnapshotRows(true) : [];
-    const positionsDiagnostic = cryptoOnly ? null : positionTableDiagnosis(false, positions);
-    const cryptoPositionsDiagnostic = cryptoOnly ? positionTableDiagnosis(true, cryptoPositions) : null;
+    const positionsParseDiagnostics = {};
+    const cryptoPositionsParseDiagnostics = {};
+    const positions = cryptoOnly ? [] : positionSnapshotRows(false, positionsParseDiagnostics);
+    const cryptoPositions = cryptoOnly ? positionSnapshotRows(true, cryptoPositionsParseDiagnostics) : [];
+    const positionsDiagnostic = cryptoOnly ? null
+      : positionTableDiagnosis(false, positions, positionsParseDiagnostics);
+    const cryptoPositionsDiagnostic = cryptoOnly
+      ? positionTableDiagnosis(true, cryptoPositions, cryptoPositionsParseDiagnostics) : null;
     const positionsCaptured = cryptoOnly ? false
       : positions.length > 0 || positionsDiagnostic?.emptyStateFound === true;
     const cryptoPositionsCaptured = cryptoOnly ? cryptoPositions.length > 0

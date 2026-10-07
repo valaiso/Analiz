@@ -72,7 +72,11 @@ function positionDiagnosticText(diagnostic) {
   const view = diagnostic.activeViewMatches === false ? 'Yanlış Midas çalışma alanı açık. ' : '';
   const table = diagnostic.tableFound ? 'tablo doğrulandı' : 'tablo doğrulanmadı';
   const empty = diagnostic.emptyStateFound ? '; açık pozisyon olmadığı doğrulandı' : '';
-  return `Tanı: ${view}${table}${empty}; Pozisyonlar başlığı ${diagnostic.headingFound ? 'var' : 'yok'}, uygun sütun başlığı ${diagnostic.headerFound ? 'var' : 'yok'}, ${diagnostic.rowCandidates || 0} satır adayı, ${diagnostic.validRows || 0} geçerli açık varlık.${columns}`;
+  const parse = diagnostic.parseDiagnostics || {};
+  const parser = Number.isFinite(parse.containersChecked)
+    ? ` Hücre taraması: ${parse.containersChecked} kapsayıcı, ${parse.directOrderMatches || 0} DOM-sırası, ${parse.geometryMatches || 0} koordinat, ${parse.rowsWithSymbol || 0} sembol, ${parse.rowsWithQuantity || 0} adet; elenen: hücre ${parse.rejected?.noCells || 0}, sembol ${parse.rejected?.noSymbol || 0}, adet ${parse.rejected?.noQuantity || 0}, fiyat ${parse.rejected?.noPrice || 0}.`
+    : '';
+  return `Tanı: ${view}${table}${empty}; Pozisyonlar başlığı ${diagnostic.headingFound ? 'var' : 'yok'}, uygun sütun başlığı ${diagnostic.headerFound ? 'var' : 'yok'}, ${diagnostic.rowCandidates || 0} satır adayı, ${diagnostic.validRows || 0} geçerli açık varlık.${columns}${parser}`;
 }
 
 async function copyMidasLog(field) {
@@ -214,7 +218,7 @@ async function readMidas(ctx, button) {
         logMidas(`TP2 adet kontrolü: Midas hücresi “${position.unitsText || 'okunamadı'}” → ayrıştırılan adet ${Number.isFinite(position.units) ? fmtUnits(position.units) : 'okunamadı'}.`);
       }
       for (const position of result.positions) {
-        logMidas(`${position.code} Midas alanları: adet “${position.unitsText || 'yok'}” → ${Number.isFinite(position.units) ? fmtUnits(position.units) : 'okunamadı'}; fiyat ${Number.isFinite(position.price) ? position.price : 'yok'} ${position.currency}; ort. maliyet ${Number.isFinite(position.avgCost) ? position.avgCost : 'yok'}; dağılım ${Number.isFinite(position.allocationPct) ? `${position.allocationPct}%` : 'yok'}.`);
+        logMidas(`${position.code} Midas alanları: adet “${position.unitsText || 'yok'}” → ${Number.isFinite(position.units) ? fmtUnits(position.units) : 'okunamadı'}; fiyat ${Number.isFinite(position.price) ? position.price : 'yok'} ${position.currency}; ort. maliyet ${Number.isFinite(position.avgCost) ? position.avgCost : 'yok'}; dağılım ${Number.isFinite(position.allocationPct) ? `${position.allocationPct}%` : 'yok'}; hücre eşleme ${position.positionAlignment || 'belirlenemedi'}.`);
         if (position.costDiagnostic) logMidas(`${position.code}: ${position.costDiagnostic}. Maliyet K/Z hesabında kullanılmadı.`);
         if (position.domCells?.length) logMidas(`${position.code} sütun tanısı: ${position.domCells.map((cell) => `${cell.header}=[${cell.raw}]`).join(' | ')}.`);
       }
