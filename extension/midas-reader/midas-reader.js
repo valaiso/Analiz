@@ -81,8 +81,9 @@ function headerCells(element) {
 
 function isOrderHeader(element) {
   const cells = headerCells(element);
-  const required = ['Varlık', 'Durum', 'Emir tipi', 'Alış/satış', 'Adet', 'Fiyat', 'Emir tarihi'];
-  return required.every((label) => cells.includes(label));
+  const required = ['Durum', 'Alış/satış', 'Adet', 'Fiyat', 'Emir tarihi'];
+  return required.every((label) => cells.includes(label))
+    && (cells.includes('Varlık') || cells.includes('Emir tipi'));
 }
 
 function isPositionsHeader(element) {
@@ -308,10 +309,7 @@ function orderHistoryRoot(cryptoOnly = false) {
       const hasOrderHeader = [...scope.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
         .some((element) => isVisible(element) && isOrderHeader(element));
       if (!hasOrderHeader) continue;
-      if (cryptoOnly) {
-        const context = textOf(scope);
-        if (!/kripto|crypto/i.test(context)) continue;
-      }
+      if (cryptoOnly && !isCryptoHistoryHeading(heading)) continue;
       headerScope = scope;
       const hasPager = [...scope.querySelectorAll('span, div, p')]
         .some((element) => isVisible(element) && /^\d+\s*[-–]\s*\d+\s*\/\s*\d+$/.test(textOf(element)));
@@ -320,6 +318,15 @@ function orderHistoryRoot(cryptoOnly = false) {
     if (headerScope) return headerScope;
   }
   return null;
+}
+
+function isCryptoHistoryHeading(heading) {
+  for (let node = heading; node && node !== document.body; node = node.parentElement) {
+    const aria = [node.getAttribute('aria-label'), node.getAttribute('title'), node.getAttribute('data-testid')]
+      .filter(Boolean).join(' ');
+    if (/kripto|crypto/i.test(`${aria} ${textOf(node)}`) && textOf(node).length < 2600) return true;
+  }
+  return /kripto|crypto/i.test(location.href);
 }
 
 function candidateElements(root, scanStats) {
@@ -336,6 +343,8 @@ function candidateElements(root, scanStats) {
     code: index(/varlık/), status: index(/durum/), side: index(/alış\s*\/\s*satış/),
     units: index(/adet/), price: index(/^fiyat$/), date: index(/emir tarihi/),
   };
+  if (columns.code < 0 && !cryptoOnly) return [];
+  if (columns.status < 0 || columns.side < 0 || columns.units < 0 || columns.price < 0 || columns.date < 0) return [];
   if (scanStats) scanStats.headers = headers;
   if ([columns.code, columns.status, columns.side, columns.units, columns.price, columns.date].some((column) => column < 0)) return [];
 
@@ -352,14 +361,14 @@ function candidateElements(root, scanStats) {
   const uniqueRows = new Map();
   for (const { element } of nodes) {
     const cellContainers = [element, ...element.querySelectorAll('tr, [role="row"], [class*="row" i], li, div')]
-      .filter((container) => isVisible(container) && container.children.length >= 5 && container.children.length <= 12)
+      .filter((container) => isVisible(container) && container.children.length >= 4 && container.children.length <= 14)
       .sort((a, b) => textOf(a).length - textOf(b).length);
     let cells = null;
     let matchedContainer = null;
     let directCount = 0;
     for (const container of cellContainers) {
       const cellElements = directCellElements(container).filter(isVisible);
-      if (cellElements.length < 5 || cellElements.length > 12) continue;
+      if (cellElements.length < 4 || cellElements.length > 14) continue;
       const rawCells = cellElements.map(textOf);
       const aligned = rawCells.length === headers.length ? rawCells : headerItems.map(({ box }) => {
         const targetX = (box.left + box.right) / 2;
@@ -370,11 +379,38 @@ function candidateElements(root, scanStats) {
         }, null);
         return nearest ? textOf(nearest.candidate) : '';
       });
-      if (TRADE_WORDS.test(aligned[columns.side] || '') && DATE_WORDS.test(aligned[columns.date] || '')) {
+      const sideText = aligned[columns.side] || '';
+      const dateText = aligned[columns.date] || '';
+      if (TRADE_WORDS.test(sideText) && DATE_WORDS.test(dateText)) {
         cells = aligned;
         matchedContainer = container;
         directCount = rawCells.length;
         break;
+      }
+    }
+    // Bazı Atlas tabloları sanal liste satırlarını hücre yerine <div> metinleri
+    // olarak sunuyor. Başlık x koordinatlarıyla aynı satırdaki kısa metinleri eşle.
+    if (!cells) {
+      const rowBox = element.getBoundingClientRect();
+      const rowY = (rowBox.top + rowBox.bottom) / 2;
+      const tokens = [...element.querySelectorAll('*')].filter(isVisible)
+        .map((node) => ({ node, text: textOf(node), box: node.getBoundingClientRect() }))
+        .filter((item) => item.text && item.text.length <= 100 && item.box.height > 0
+          && Math.abs((item.box.top + item.box.bottom) / 2 - rowY) <= Math.max(18, rowBox.height / 2 + 8))
+        .sort((a, b) => a.box.left - b.box.left);
+      const aligned = headerItems.map(({ box }) => {
+        const targetX = (box.left + box.right) / 2;
+        return tokens.reduce((best, item) => {
+          const distance = Math.abs((item.box.left + item.box.right) / 2 - targetX);
+          return !best || distance < best.distance ? { text: item.text, distance } : best;
+        }, null)?.text || '';
+      });
+      const sideText = aligned[columns.side] || '';
+      const dateText = aligned[columns.date] || '';
+      if (TRADE_WORDS.test(sideText) && DATE_WORDS.test(dateText)) {
+        cells = aligned;
+        matchedContainer = element;
+        directCount = tokens.length;
       }
     }
     if (!cells) continue;

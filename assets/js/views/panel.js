@@ -202,7 +202,7 @@ export function renderPanel(ctx) {
     ? Math.max(0, midasSummary.totalValue - (series.value.at(-1) || 0)) : 0;
   // Unknown Midas principal is held flat across available history, so longer
   // windows can still show a distinct range even when transaction history is short.
-  const chartStartDate = untrackedPrincipal > 0 ? DB.calendar[0] : series.dates[0] || snapshotDate;
+  const chartStartDate = untrackedPrincipal > 0 ? '2026-08-19' : series.dates[0] || snapshotDate;
   const chartCalendar = chartEndDate && chartStartDate
     ? DB.calendar.filter((date) => date >= chartStartDate && date <= chartEndDate) : [];
   const chartDates = chartCalendar.length

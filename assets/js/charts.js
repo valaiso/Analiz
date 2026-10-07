@@ -291,17 +291,18 @@ function renderDonut(container, cfg) {
 
 /** Halka grafik + yanında yüzdeli açıklama listesi üretir. */
 export function donutWithLegend(items, { centerTop, centerBottom, format } = {}) {
-  const total = items.reduce((s, it) => s + (it.value > 0 ? it.value : 0), 0);
+  const coloredItems = items.map((item, index) => ({ ...item, color: item.color || colorAt(index) }));
+  const total = coloredItems.reduce((s, it) => s + (it.value > 0 ? it.value : 0), 0);
   const chart = h('div', { class: 'chart' });
   const wrap = h('div', { class: 'donut-wrap' },
     chart,
     h('div', { class: 'donut-legend' },
-      items.slice(0, 12).map((it) => h('div', { class: 'row' },
+      coloredItems.slice(0, 12).map((it) => h('div', { class: 'row' },
         h('span', { class: 'swatch', style: `background:${it.color};width:10px;height:10px;border-radius:3px` }),
         h('span', { style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, it.label),
         h('span', { class: 'val' },
           format ? format(it.value) : `%${((it.value / total) * 100).toFixed(1)}`)))));
-  donutChart(chart, { items, centerTop, centerBottom });
+  donutChart(chart, { items: coloredItems, centerTop, centerBottom });
   return wrap;
 }
 
