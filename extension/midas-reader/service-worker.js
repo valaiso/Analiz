@@ -62,6 +62,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         const code = String(localAsset.code || '').toUpperCase();
         if (!code || marketData[code]) continue;
         if (cryptoOnly && localAsset.kind !== 'CRYPTO') continue;
+        // USDT/USDC işlem karşıt para birimidir; Yahoo'da portföy kriptosu gibi
+        // sorgulanmamalı. Önceden kaydedilmiş yerel veriye dokunmuyoruz.
+        if (cryptoOnly && ['USDT', 'USDC'].includes(code)) continue;
         try {
           const asset = cryptoOnly
             ? await cryptoHistory(code, localAsset.startDate || '')

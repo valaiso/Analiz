@@ -94,7 +94,8 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
     h('td', {}, row.type === 'SAT' ? 'Satış' : row.type === 'AL' ? 'Alış' : '—'),
     h('td', {}, row.units > 0 ? fmtUnits(row.units) : '—'),
     h('td', {}, row.price > 0 ? money(row.price) : '—'),
-    h('td', { style: 'text-align:left;max-width:360px;white-space:normal' }, row.rawText));
+    h('td', { style: 'text-align:left;max-width:360px;white-space:normal' },
+      row.missing?.length ? `${row.rawText} · Okunamayan: ${row.missing.join(', ')}` : row.rawText));
 
   const table = (items, priceHeading, textHeading) => h('div', { class: 'table-wrap' },
     h('table', {},
@@ -284,7 +285,8 @@ async function readMidasCrypto(ctx, button) {
   button.textContent = 'Kripto emir geçmişi okunuyor…';
   logMidas('Midas kripto emir geçmişi taraması başlatıldı.');
   try {
-    const result = await requestMidasHistory([], DB.funds.filter((fund) => fund.localMarketData)
+    const result = await requestMidasHistory([], DB.funds.filter((fund) => fund.localMarketData
+      && fund.kind === 'CRYPTO' && !['USDT', 'USDC'].includes(String(fund.code).toUpperCase()))
       .map((fund) => ({ code: fund.code, source: fund.catSrc, kind: fund.kind, startDate: fund.startDate })),
     [], 600_000, { cryptoOnly: true });
     if (!result.rows.length) throw new Error('Midas Kripto ekranında Emir geçmişi tablosunu açıp tekrar dene.');
@@ -311,6 +313,10 @@ async function readMidasCrypto(ctx, button) {
     const stored = addLocalMarketAssets([...assetByCode.values()]);
     logMidas(`${result.scannedPages} sayfa tarandı; ${result.rows.length} kripto emri okundu, ${stored} kripto fiyat geçmişi eşitlendi.`);
     for (const [code, error] of Object.entries(result.marketErrors || {})) logMidas(`${code}: ${error}`);
+    const unresolvedSymbols = result.rows.filter((row) => row.missing?.includes('sembol'));
+    if (unresolvedSymbols.length) {
+      logMidas(`${unresolvedSymbols.length} kripto emrinde varlık sembolü okunamadı; USDT/USDC para birimi sembol olarak kullanılmadı. Ayrıntılar önizlemede.`);
+    }
     showMidasPreview(result.rows, result, ctx, result.marketErrors || {});
     if (stored) ctx.refresh();
   } catch (error) {
