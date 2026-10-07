@@ -39,6 +39,10 @@ export function renderPanel(ctx) {
   const hasMidasTotal = isNum(midasSummary?.totalValue) && midasSummary.totalValue > 0;
   const rawSnapshotPositions = currentMidasPositions() || [];
   const snapshotPositions = addSiteMarketMetrics(rawSnapshotPositions);
+  // If the extension could not read Midas's virtualized positions table, keep
+  // the portfolio visible from imported transactions instead of hiding all
+  // funds/ETFs just because the account total is present.
+  const displayPositions = snapshotPositions.length ? snapshotPositions : open.filter((row) => !row.closed);
   const snapshotCodes = new Set(snapshotPositions.map((row) => row.code));
   const localCrypto = hasMidasTotal
     ? open.filter((row) => DB.byCode.get(row.code)?.kind === 'CRYPTO' && !snapshotCodes.has(row.code)).map((row) => ({
@@ -268,7 +272,7 @@ export function renderPanel(ctx) {
 
   /* ---------------------------------------------------------------- pozisyonlar */
 
-  if (hasMidasTotal && snapshotPositions.length) {
+  if (hasMidasTotal && displayPositions.length) {
     const moneyByCurrency = (value, currency) => {
       if (!isNum(value)) return '—';
       return new Intl.NumberFormat('tr-TR', {
@@ -289,7 +293,7 @@ export function renderPanel(ctx) {
       rows,
     });
     const groupTitles = { ETF: 'ETF’ler', Fon: 'Fonlar', Hisse: 'Hisseler', Kripto: 'Kripto', Diğer: 'Diğer Varlıklar' };
-    const positionGroups = groupAssetRows(snapshotPositions).map((group) => ({
+    const positionGroups = groupAssetRows(displayPositions).map((group) => ({
       ...group,
       rows: [...group.rows].sort((a, b) => (b.allocationPct ?? -1) - (a.allocationPct ?? -1)),
       groupValue: group.rows.reduce((sum, row) => sum + (row.marketValueTRY || 0), 0),

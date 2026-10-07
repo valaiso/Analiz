@@ -247,7 +247,9 @@ function positionSnapshotRows() {
 }
 
 function positionsTableCaptured() {
-  return Boolean(positionsRoot());
+  // A heading/header alone is not proof that we read the holdings. Midas can
+  // render an empty/loading table while its virtual rows are still unavailable.
+  return positionSnapshotRows().length > 0;
 }
 
 function assetHintsFor(element, root) {

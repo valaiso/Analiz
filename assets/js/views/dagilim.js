@@ -130,8 +130,9 @@ export function renderDagilim(ctx) {
       }))));
   }
 
-  /* Toplam K/Z katkısı yalnız fon ve BIST hisseleri için gösterilir. */
-  if (usingMidas) {
+  /* Use current Midas P/L only when the holdings were actually read. If not,
+     derive contribution from open transaction positions, excluding closed assets. */
+  if (usingMidas && live.length) {
     for (const group of groupAssetRows(live)) {
       if (!['Fon', 'Hisse'].includes(group.label)) continue;
       const currencies = [...new Set(group.rows.map((row) => row.currency === 'USD' ? 'USD' : 'TRY'))];
@@ -164,7 +165,7 @@ export function renderDagilim(ctx) {
       }
     }
   } else {
-    const katkilar = attribution(analysis.holdings, totals.netInvested);
+    const katkilar = attribution(analysis.holdings.filter((holding) => !holding.closed), totals.netInvested);
     if (katkilar.length) {
       const box = h('div');
       const toplamPuan = katkilar.reduce((sum, item) => sum + item.points, 0);
