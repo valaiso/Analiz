@@ -539,7 +539,7 @@ export function scatterChart(container, cfg) {
 function renderScatter(container, cfg) {
   const {
     points = [], height = 340, xLabel = '', yLabel = '', onPick, robust = false,
-    xQuantiles = [.01, .99], yQuantiles = [.01, .99],
+    xQuantiles = [.01, .99], yQuantiles = [.01, .99], yMinLimit = null,
   } = cfg;
   container.replaceChildren();
   const veri = points.filter((p) => isNum(p.x) && isNum(p.y));
@@ -560,9 +560,12 @@ function renderScatter(container, cfg) {
   };
   let xMin = robust ? quantile(xs, xQuantiles[0]) : Math.min(...xs);
   let xMax = robust ? quantile(xs, xQuantiles[1]) : Math.max(...xs);
-  let yMin = robust ? quantile(ys, yQuantiles[0]) : Math.min(...ys);
+  let yMin = yMinLimit !== null ? yMinLimit : robust ? quantile(ys, yQuantiles[0]) : Math.min(...ys);
   let yMax = robust ? quantile(ys, yQuantiles[1]) : Math.max(...ys);
-  const clippedCount = veri.filter((point) => point.x < xMin || point.x > xMax
+  const hiddenBelowCount = yMinLimit !== null
+    ? veri.filter((point) => point.y < yMinLimit).length : 0;
+  const plottedPoints = yMinLimit !== null ? veri.filter((point) => point.y >= yMinLimit) : veri;
+  const clippedCount = plottedPoints.filter((point) => point.x < xMin || point.x > xMax
     || point.y < yMin || point.y > yMax).length;
   const xPad = (xMax - xMin) * 0.05 || 1, yPad = (yMax - yMin) * 0.05 || 1;
   xMin -= xPad; xMax += xPad; yMin -= yPad; yMax += yPad;
@@ -602,7 +605,7 @@ function renderScatter(container, cfg) {
   svg.append(eksenY);
 
   // Önce sıradan noktalar, sonra vurgulananlar (üstte kalsın).
-  for (const p of [...veri].sort((a, b) => Number(!!a.highlight) - Number(!!b.highlight))) {
+  for (const p of [...plottedPoints].sort((a, b) => Number(!!a.highlight) - Number(!!b.highlight))) {
     const c = svgEl('circle', {
       cx: X(p.x), cy: Y(p.y), r: p.highlight ? 6 : 3,
       fill: p.highlight ? 'var(--accent)' : 'var(--text-dim)',
@@ -625,8 +628,10 @@ function renderScatter(container, cfg) {
     }
   }
   container.append(svg);
-  if (clippedCount) container.append(h('p', { class: 'dim', style: 'margin:4px 0 0;font-size:.76rem' },
-    `${clippedCount} uç değer grafiğin kenarında gösteriliyor; üzerine gelerek gerçek değerini görebilirsin.`));
+  if (hiddenBelowCount || clippedCount) container.append(h('p', { class: 'dim', style: 'margin:4px 0 0;font-size:.76rem' },
+    [hiddenBelowCount ? `-%40 altındaki ${hiddenBelowCount} fon gösterilmiyor` : '',
+      clippedCount ? `${clippedCount} uç değer grafiğin kenarında gösteriliyor; üzerine gelerek gerçek değerini görebilirsin` : '']
+      .filter(Boolean).join(' · ') + '.'));
 }
 
 export { colorAt };

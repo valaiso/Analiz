@@ -317,7 +317,36 @@ function orderHistoryRoot(cryptoOnly = false) {
     }
     if (headerScope) return headerScope;
   }
+  // The Crypto workspace can render its order table without the “Emir geçmişi”
+  // heading. Fall back to the visible grid only when the Crypto tab is active.
+  if (cryptoOnly && activeCryptoTab()) {
+    const headers = [...document.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
+      .filter((element) => isVisible(element) && isOrderHeader(element))
+      .sort((a, b) => textOf(a).length - textOf(b).length);
+    for (const header of headers) {
+      for (let scope = header.parentElement, depth = 0; scope && depth < 12; scope = scope.parentElement, depth += 1) {
+        const hasPager = [...scope.querySelectorAll('span, div, p')]
+          .some((element) => isVisible(element) && /^\d+\s*[-–]\s*\d+\s*\/\s*\d+$/.test(textOf(element)));
+        if (hasPager) return scope;
+      }
+      return header.parentElement;
+    }
+  }
   return null;
+}
+
+function activeCryptoTab() {
+  if (/kripto|crypto/i.test(`${location.pathname} ${location.search} ${location.hash}`)) return true;
+  return [...document.querySelectorAll('[role="tab"], [aria-selected="true"], [aria-pressed="true"], [aria-current], button, a, [class*="active" i], [class*="selected" i]')]
+    .filter(isVisible)
+    .some((element) => {
+      const label = textOf(element);
+      const state = [element.getAttribute('aria-selected'), element.getAttribute('aria-pressed'),
+        element.getAttribute('aria-current'), String(element.className?.baseVal || element.className || '')]
+        .join(' ');
+      return /^\s*(?:\d+\s*)?kripto\s*$/iu.test(label)
+        && /true|page|active|selected|current/i.test(state);
+    });
 }
 
 function isCryptoHistoryHeading(heading) {

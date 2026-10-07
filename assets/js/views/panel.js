@@ -203,19 +203,23 @@ export function renderPanel(ctx) {
   // Unknown Midas principal is held flat across available history, so longer
   // windows can still show a distinct range even when transaction history is short.
   const chartStartDate = untrackedPrincipal > 0 ? '2026-08-19' : series.dates[0] || snapshotDate;
-  const chartCalendar = chartEndDate && chartStartDate
-    ? DB.calendar.filter((date) => date >= chartStartDate && date <= chartEndDate) : [];
+  // Keep older calendar dates in the selected range so 6A/1Y/3Y zoom the
+  // requested period. Portfolio values remain blank before the chosen start.
+  const chartCalendar = chartEndDate
+    ? DB.calendar.filter((date) => date <= chartEndDate) : [];
   const chartDates = chartCalendar.length
     ? [...chartCalendar, ...(chartEndDate > chartCalendar.at(-1) ? [chartEndDate] : [])]
     : (chartEndDate ? [chartEndDate] : []);
   const seriesIndexes = new Map(series.dates.map((date, index) => [date, index]));
   const chartValues = chartDates.map((date) => {
+    if (date < chartStartDate) return null;
     const index = seriesIndexes.get(date);
     return index === undefined
       ? (hasMidasTotal ? untrackedPrincipal : null)
       : series.value[index] + untrackedPrincipal;
   });
   const investedValues = chartDates.map((date) => {
+    if (date < chartStartDate) return null;
     const index = seriesIndexes.get(date);
     return index === undefined
       ? (hasMidasTotal ? untrackedPrincipal : null)

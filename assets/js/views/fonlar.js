@@ -15,6 +15,15 @@ import { sectionCard, sortableTable, RANGES } from './common.js';
 const PAGE_SIZE = 60;
 const MAX_KARSILASTIRMA = 5;
 
+// SPK sınıflandırmasında serbest şemsiye fonları, GYF ve GSYF nitelikli
+// yatırımcıya yöneliktir. Bunları genel fon keşif ekranında göstermiyoruz.
+function requiresQualifiedInvestor(fund) {
+  const kind = String(fund.kind || '').toUpperCase();
+  const descriptor = `${fund.cat || ''} ${fund.name || ''}`.toLocaleLowerCase('tr');
+  return ['GYF', 'GSYF'].includes(kind)
+    || /serbest|gayrimenkul yatırım fonu|girişim sermayesi yatırım fonu|nitelikli yatırımcı/.test(descriptor);
+}
+
 /** Fonun kendi kategorisi içindeki yerini anlatan kısa cümle. */
 function yuzdelikMetni(fund) {
   const p = fund.pct?.['1y'];
@@ -267,9 +276,10 @@ async function showComparison(codes, ctx) {
 
 export function renderFonlar(ctx) {
   const root = h('div', { class: 'stack' });
-  const categories = [...new Set(DB.funds.map((f) => f.cat))]
+  const visibleFunds = DB.funds.filter((fund) => !requiresQualifiedInvestor(fund));
+  const categories = [...new Set(visibleFunds.map((f) => f.cat))]
     .sort((a, b) => a.localeCompare(b, 'tr'));
-  const kinds = [...new Set(DB.funds.map((f) => f.kind))];
+  const kinds = [...new Set(visibleFunds.map((f) => f.kind))];
 
   const state = { query: '', cat: '', kind: '', limit: PAGE_SIZE, onlyMine: false };
   const mine = new Set((ctx.analysis?.open || []).map((x) => x.code));
@@ -299,7 +309,7 @@ export function renderFonlar(ctx) {
   const scatterBilgi = h('span', { class: 'sub' });
 
   const cizHarita = () => {
-    const noktalar = DB.funds
+    const noktalar = visibleFunds
       .filter((f) => isNum(f.vol) && isNum(f.ret?.['1y']))
       .filter((f) => (!state.cat || f.cat === state.cat))
       .filter((f) => (!state.kind || f.kind === state.kind))
@@ -311,8 +321,9 @@ export function renderFonlar(ctx) {
       + (mine.size ? ' · vurgulu noktalar senin fonların' : '');
     scatterChart(scatterBox, {
       points: noktalar,
-      height: 500,
-      yQuantiles: [0.03, 0.97],
+      height: 340,
+      yMinLimit: -40,
+      yQuantiles: [0, 0.97],
       xQuantiles: [0.01, 0.99],
       xLabel: 'Yıllık oynaklık',
       yLabel: '1 yıllık getiri',
@@ -353,7 +364,7 @@ export function renderFonlar(ctx) {
 
   const apply = () => {
     const q = state.query.toLocaleUpperCase('tr');
-    let rows = DB.funds.filter((f) => {
+    let rows = visibleFunds.filter((f) => {
       if (state.onlyMine && !mine.has(f.code)) return false;
       if (state.cat && f.cat !== state.cat) return false;
       if (state.kind && f.kind !== state.kind) return false;
