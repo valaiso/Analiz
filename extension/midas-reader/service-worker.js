@@ -31,9 +31,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const positionCodes = new Set((result.positions || [])
         .map((position) => String(position.code || '').toUpperCase()).filter(Boolean));
       const positionsRead = positionCodes.size > 0;
+      const cycleStarts = activePurchaseStarts(result.rows || []);
       const missingRows = (result.rows || [])
         .filter((row) => !row.missing?.length && row.code && !known.has(String(row.code).toUpperCase())
-          && (cryptoOnly || !positionsRead || positionCodes.has(String(row.code).toUpperCase())));
+          && (cryptoOnly || cycleStarts[String(row.code).toUpperCase()]
+            || (positionsRead && positionCodes.has(String(row.code).toUpperCase()))));
       const missingPositionCodes = (cryptoOnly ? [] : (result.positions || []))
         .filter((position) => position.code && !known.has(String(position.code).toUpperCase()))
         .map((position) => String(position.code).toUpperCase());
@@ -41,7 +43,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         ...missingRows.map((row) => String(row.code).toUpperCase()),
         ...missingPositionCodes,
       ])];
-      const cycleStarts = activePurchaseStarts(result.rows || []);
+      const historyCodes = new Set((result.rows || []).map((row) => String(row.code || '').toUpperCase()).filter(Boolean));
       const fundCodes = new Set([...(message.fundCodes || []).map((code) => String(code).toUpperCase()), ...missingRows
         .filter((row) => /\bfon\s+(?:alış|alım|satış|satım)\b/i.test(row.rawText || ''))
         .map((row) => String(row.code).toUpperCase())]);
@@ -64,7 +66,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         if (cryptoOnly && localAsset.kind !== 'CRYPTO') continue;
         // USDT/USDC işlem karşıt para birimidir; Yahoo'da portföy kriptosu gibi
         // sorgulanmamalı. Önceden kaydedilmiş yerel veriye dokunmuyoruz.
-        if (cryptoOnly && ['USDT', 'USDC'].includes(code)) continue;
+        if (['USDT', 'USDC'].includes(code)) continue;
+        if (!cryptoOnly && historyCodes.has(code) && !cycleStarts[code] && !positionCodes.has(code)) continue;
         try {
           const asset = cryptoOnly
             ? await cryptoHistory(code, localAsset.startDate || '')
@@ -150,7 +153,7 @@ function activePurchaseStarts(rows) {
   }
   const starts = {};
   for (const [code, events] of groups) {
-    events.sort((a, b) => a.date.localeCompare(b.date));
+    events.sort((a, b) => a.date.localeCompare(b.date) || String(a.time || '').localeCompare(String(b.time || '')));
     let units = 0, startDate = '';
     for (const row of events) {
       if (row.type === 'AL') {

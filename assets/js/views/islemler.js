@@ -25,7 +25,7 @@ function transactionCycles(rows) {
   }
   const out = new Map();
   for (const [code, list] of groups) {
-    list.sort((a, b) => a.date.localeCompare(b.date));
+    list.sort((a, b) => a.date.localeCompare(b.date) || String(a.time || '').localeCompare(String(b.time || '')));
     let units = 0, startDate = null, hasBuy = false, hasSell = false;
     for (const row of list) {
       const quantity = Number(row.units);
@@ -95,7 +95,7 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
     h('td', {}, row.units > 0 ? fmtUnits(row.units) : '—'),
     h('td', {}, row.price > 0 ? money(row.price) : '—'),
     h('td', { style: 'text-align:left;max-width:360px;white-space:normal' },
-      row.missing?.length ? `${row.rawText} · Okunamayan: ${row.missing.join(', ')}` : row.rawText));
+      row.missing?.length ? `${row.rawText} · ${row.diagnostic || `Okunamayan: ${row.missing.join(', ')}`}` : row.rawText));
 
   const table = (items, priceHeading, textHeading) => h('div', { class: 'table-wrap' },
     h('table', {},
@@ -204,6 +204,7 @@ async function readMidas(ctx, button) {
       logMidas('Midas toplam hesabı okundu; ancak Pozisyonlar tablosundaki açık varlıklar okunamadı. Panelde eski işlem kayıtlarından türetilmiş pozisyonlar kullanılmayacak.');
     }
     logMidas(`${result.scannedPages} sayfa tarandı; ${rows.length} satır okundu, ${valid.length} satır aktarılabilir, ${rows.length - valid.length} satır eksik bilgi içeriyor.`);
+    if (result.duplicateOrdersRemoved) logMidas(`Aynı emirlerin ${result.duplicateOrdersRemoved} yinelenen satırı elendi.`);
     if (rows.length && !valid.length) {
       const missingCounts = new Map();
       for (const row of rows) for (const field of row.missing || []) {
@@ -218,10 +219,9 @@ async function readMidas(ctx, button) {
     // Midas açık pozisyonu varsa işlem satırları eksik olsa dahi kapanış sayma.
     const positions = currentMidasPositions() || [];
     const positionCodes = new Set(positions.map((position) => position.code));
-    const midasRows = allTransactions().filter((tx) => tx.source === 'midas');
     const cycleEvents = new Map();
-    for (const tx of [...midasRows, ...rows]) {
-      const key = [tx.sourceId || '', tx.date, tx.code, tx.type, tx.units, tx.price].join('|');
+    for (const tx of rows) {
+      const key = [tx.date, tx.code, tx.type, tx.time || '', tx.units, tx.price].join('|');
       if (!cycleEvents.has(key)) cycleEvents.set(key, tx);
     }
     const cycles = transactionCycles([...cycleEvents.values()]);
@@ -238,7 +238,7 @@ async function readMidas(ctx, button) {
         const existingStart = DB.byCode.get(code)?.startDate;
         activeCycleStarts[code] = cycle?.startDate || manualCycle?.startDate
           || existingStart || new Date().toISOString().slice(0, 10);
-      } else if ((cycle?.hasBuy && cycle?.hasSell)
+      } else if (cycle?.hasSell
         || (manualCycle?.hasBuy && manualCycle?.hasSell)) {
         closedCodes.push(code);
       }
@@ -268,7 +268,7 @@ async function readMidas(ctx, button) {
     const stillUnknown = [...new Set(valid.filter((row) => !DB.byCode.has(row.code)).map((row) => row.code))];
     if (stillUnknown.length) logMidas(`Fiyat verisi alınamayan semboller: ${stillUnknown.join(', ')}. Bu semboller tamamlanmadan aktarım onayı açılmayacak.`);
     showMidasPreview(cycleRows, result, ctx, result.marketErrors || {}, () => ({
-      removedTransactions: pruneMidasHistory(activeCycleStarts, closedCodes),
+      removedTransactions: pruneMidasHistory(activeCycleStarts, closedCodes, [...cycles.keys()]),
       pruned: pruneLocalMarketAssets(activeCycleStarts, closedCodes),
     }));
   } catch (error) {

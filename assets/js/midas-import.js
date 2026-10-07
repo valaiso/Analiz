@@ -20,6 +20,7 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
         error.accountSummary = data.response?.accountSummary || null;
         error.positions = data.response?.positions || [];
         error.positionsCaptured = data.response?.positionsCaptured === true;
+        error.duplicateOrdersRemoved = Number(data.response?.duplicateOrdersRemoved) || 0;
         reject(error);
       } else resolve({
         rows: data.response.rows || [],
@@ -28,6 +29,7 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
         accountSummary: data.response.accountSummary || null,
         positions: data.response.positions || [],
         positionsCaptured: data.response.positionsCaptured === true,
+        duplicateOrdersRemoved: Number(data.response.duplicateOrdersRemoved) || 0,
         marketData: data.response.marketData || {},
         marketErrors: data.response.marketErrors || {},
       });

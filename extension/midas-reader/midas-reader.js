@@ -802,6 +802,7 @@ function normalizeRow(row) {
   const type = /satış|satım|sell/i.test(side) ? 'SAT' : /alış|alım|buy/i.test(side) ? 'AL' : '';
   const dateValue = valueByHeader(/emir tarihi|işlem tarihi|tarih/);
   const date = parseDate(dateValue || text);
+  const time = String(dateValue || text).match(/\b\d{1,2}:\d{2}:\d{2}\b/)?.[0] || '';
   const fieldByHeader = (pattern) => {
     const i = headers.findIndex((header) => pattern.test(header));
     return i >= 0 ? cells[i] : '';
@@ -890,16 +891,30 @@ function normalizeRow(row) {
   if (!(price > 0)) missing.push('fiyat');
   const fieldDump = headers.map((header, index) => `${header}=${cells[index] || '—'}`).join(' | ');
   return {
-    date, type, code, units, price, fee, withholdingTax, currency, sourceId: row.sourceId, rawText: text, missing,
+    date, time, type, code, units, price, fee, withholdingTax, currency, sourceId: row.sourceId, rawText: text, missing,
     diagnostic: `Alanlar: ${fieldDump}. Ayrıştırılan: kod=${code || '—'}, yön=${type || '—'}, tarih=${date || '—'}, miktar=${units > 0 ? units : '—'}, fiyat=${price > 0 ? price : '—'}. ${!code ? `Sembol ipuçları: ${(row.codeHints || []).slice(0, 6).join(' / ') || 'bulunamadı'}. ` : ''}Eksik=${missing.join(',') || 'yok'}`,
   };
+}
+
+function deduplicateOrders(rows) {
+  const unique = new Map();
+  for (const row of rows) {
+    const time = row.time || String(row.rawText || '').match(/\b\d{1,2}:\d{2}:\d{2}\b/)?.[0] || '';
+    const key = row.code && row.date && row.type && time
+      ? [row.date, row.code, row.type, time].join('|')
+      : [row.date, row.code, row.type, row.units, row.price].join('|');
+    if (!unique.has(key)) unique.set(key, row);
+  }
+  return [...unique.values()];
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'ANALIZ_SCAN_VISIBLE_HISTORY') return undefined;
   const cryptoOnly = message.cryptoOnly === true;
   collectCompletedHistory(cryptoOnly).then(({ rows, pageCount, paginationStop, labels, start, scanStats }) => {
-    const normalized = rows.map(normalizeRow);
+    const normalizedCandidates = rows.map(normalizeRow);
+    const normalized = deduplicateOrders(normalizedCandidates);
+    const duplicateOrdersRemoved = normalizedCandidates.length - normalized.length;
     const ready = normalized.filter((row) => !row.missing.length);
     if (!rows.length) {
       const evidence = labels.length ? `Ekranda algılanan başlık/durum metinleri: ${labels.join(' · ')}.` : 'Ekranda tanınan emir tablosu başlığı görünmüyor.';
@@ -909,11 +924,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       sendResponse({ ok: false, accountSummary: cryptoOnly ? null : readAccountSummary(),
         positions: cryptoOnly ? [] : positionSnapshotRows(),
         positionsCaptured: cryptoOnly ? false : positionsTableCaptured(),
+        duplicateOrdersRemoved,
         error: `${cryptoOnly ? 'Midas Kripto' : 'Midas yatırım hesabı'} sayfasında tamamlanmış işlem satırı okunamadı. ${pageCount + 1} sayfa tarandı. ${start ? `Başlangıç sayfası: ${start}. ` : ''}${paginationStop ? `Sayfalama: ${paginationStop} ` : ''}${headers} ${rowStats} ${evidence}` });
       return;
     }
     sendResponse({ ok: true, rows: normalized, scannedPages: pageCount + 1,
       unmatchedCount: normalized.length - ready.length, accountSummary: cryptoOnly ? null : readAccountSummary(),
+      duplicateOrdersRemoved,
       positions: cryptoOnly ? [] : positionSnapshotRows(),
       positionsCaptured: cryptoOnly ? false : positionsTableCaptured() });
   }).catch((error) => {

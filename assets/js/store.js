@@ -135,12 +135,14 @@ export function saveMarketAssets(assets) {
 }
 
 /** Remove completed Midas cycles and keep only the currently open cycle. */
-export function pruneMidasHistory(activeCycleStarts = {}, closedCodes = []) {
+export function pruneMidasHistory(activeCycleStarts = {}, closedCodes = [], synchronizedCodes = []) {
   const closed = new Set((closedCodes || []).map((code) => String(code).toLocaleUpperCase('tr')));
+  const synchronized = new Set((synchronizedCodes || []).map((code) => String(code).toLocaleUpperCase('tr')));
   const before = midasTx.length;
   midasTx = midasTx.filter((tx) => {
     const code = String(tx.code || '').toLocaleUpperCase('tr');
     if (closed.has(code)) return false;
+    if (synchronized.has(code)) return false;
     const startDate = activeCycleStarts[code];
     return !startDate || tx.date >= startDate;
   });
