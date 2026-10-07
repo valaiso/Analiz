@@ -56,8 +56,14 @@ export function rangeSelector(currentKey, onChange) {
   for (const r of RANGES) {
     seg.append(h('button', {
       type: 'button',
+      dataset: { range: r.key },
       'aria-pressed': r.key === currentKey ? 'true' : 'false',
-      onclick: () => onChange(r),
+      onclick: (event) => {
+        seg.querySelectorAll('button').forEach((button) => {
+          button.setAttribute('aria-pressed', button.dataset.range === r.key ? 'true' : 'false');
+        });
+        onChange(r, event);
+      },
     }, r.label));
   }
   return seg;

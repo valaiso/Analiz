@@ -80,7 +80,7 @@ export function renderDagilim(ctx) {
         valueFormat: tl,
         series: [
           { name: 'Portföy değeri', values: align(series.value), color: 'var(--accent)', width: 2.4, fill: true },
-          { name: 'Yatırılan para', values: align(series.invested), color: 'var(--kpi-teal)', dashed: true, width: 1.8 },
+          { name: 'Yatırılan para', values: align(series.invested), color: 'var(--teal)', dashed: true, width: 1.8 },
         ],
       });
     };
@@ -91,11 +91,11 @@ export function renderDagilim(ctx) {
       { key: 'year', label: 'Yıllık' },
     ];
     for (const range of ranges) rangeControls.append(h('button', {
-      type: 'button', 'aria-pressed': String(range.key === rangeKey),
+      type: 'button', dataset: { range: range.key }, 'aria-pressed': String(range.key === rangeKey),
       onclick: () => {
         rangeKey = range.key;
         rangeControls.querySelectorAll('button').forEach((button) =>
-          button.setAttribute('aria-pressed', String(button.textContent === range.label)));
+          button.setAttribute('aria-pressed', String(button.dataset.range === range.key)));
         drawPortfolioChart();
       },
     }, range.label));

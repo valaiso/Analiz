@@ -445,10 +445,15 @@ export function correlation(a, b) {
 export function sliceLastDays(dates, values, days) {
   if (!dates.length) return { dates, values };
   if (!days) return { dates, values };
-  const cutoff = new Date(dates[dates.length - 1]);
-  cutoff.setDate(cutoff.getDate() - days);
-  const iso = cutoff.toISOString().slice(0, 10);
-  let from = dates.findIndex((d) => d >= iso);
-  if (from < 0) from = 0;
+  const [year, month, day] = dates[dates.length - 1].split('-').map(Number);
+  const iso = new Date(Date.UTC(year, month - 1, day - days)).toISOString().slice(0, 10);
+  let low = 0;
+  let high = dates.length;
+  while (low < high) {
+    const mid = (low + high) >>> 1;
+    if (dates[mid] < iso) low = mid + 1;
+    else high = mid;
+  }
+  const from = low;
   return { dates: dates.slice(from), values: values.slice(from) };
 }

@@ -107,9 +107,6 @@ export function renderKiyaslama(ctx) {
       h('span', { class: 'sub' }, 'Portföy ve endeksler dönem başında 100’e eşitlenir · TÜFE aylık yayın günlerinde basamaklı değişir')),
     rangeSelector(rangeKey, (r) => {
       rangeKey = r.key;
-      head.querySelectorAll('.seg button').forEach((b) => {
-        b.setAttribute('aria-pressed', b.textContent === r.label ? 'true' : 'false');
-      });
       draw();
     }));
 
@@ -213,6 +210,5 @@ export function renderKiyaslama(ctx) {
 
   return root;
 }
-
 
 

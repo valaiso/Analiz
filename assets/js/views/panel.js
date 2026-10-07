@@ -191,17 +191,28 @@ export function renderPanel(ctx) {
 
   let rangeKey = '6a';
   const chartBox = h('div', { class: 'chart' });
-  const chartDates = series.dates.length ? series.dates
-    : hasMidasTotal && midasSnapshot?.capturedAt
-      ? [new Date(midasSnapshot.capturedAt).toISOString().slice(0, 10)] : [];
+  const snapshotDate = hasMidasTotal && midasSnapshot?.capturedAt
+    ? new Date(midasSnapshot.capturedAt).toISOString().slice(0, 10) : null;
+  const chartEndDate = [series.dates.at(-1), snapshotDate].filter(Boolean).sort().at(-1) || null;
+  const chartCalendar = chartEndDate ? DB.calendar.filter((date) => date <= chartEndDate) : [];
+  const chartDates = chartCalendar.length
+    ? [...chartCalendar, ...(chartEndDate > chartCalendar.at(-1) ? [chartEndDate] : [])]
+    : (chartEndDate ? [chartEndDate] : []);
   const untrackedPrincipal = hasMidasTotal
     ? Math.max(0, midasSummary.totalValue - (series.value.at(-1) || 0)) : 0;
-  const chartValues = series.value.map((value) => value + untrackedPrincipal);
-  const investedValues = series.invested.map((value) => value + untrackedPrincipal);
-  if (!series.dates.length && hasMidasTotal) {
-    chartValues.push(midasSummary.totalValue);
-    investedValues.push(midasSummary.totalValue);
-  }
+  const seriesIndexes = new Map(series.dates.map((date, index) => [date, index]));
+  const chartValues = chartDates.map((date) => {
+    const index = seriesIndexes.get(date);
+    return index === undefined
+      ? (hasMidasTotal ? untrackedPrincipal : null)
+      : series.value[index] + untrackedPrincipal;
+  });
+  const investedValues = chartDates.map((date) => {
+    const index = seriesIndexes.get(date);
+    return index === undefined
+      ? (hasMidasTotal ? untrackedPrincipal : null)
+      : series.invested[index] + untrackedPrincipal;
+  });
 
   const drawChart = () => {
     const range = { '1a': 30, '3a': 90, '6a': 180, '1y': 365, '3y': 1095, all: 0 }[rangeKey];
@@ -214,7 +225,7 @@ export function renderPanel(ctx) {
       valueFormat: (x) => tl(x),
       series: [
         { name: 'Portföy değeri', values: v.values, color: 'var(--accent)', fill: true },
-        { name: 'Yatırılan anapara', values: inv.values, color: 'var(--kpi-teal)', dashed: true, width: 1.8 },
+        { name: 'Yatırılan anapara', values: inv.values, color: 'var(--teal)', dashed: true, width: 1.8 },
       ],
     });
   };
@@ -227,9 +238,6 @@ export function renderPanel(ctx) {
         : 'Geçmiş alım/satım kayıtlarına göre modellenir.')),
     rangeSelector(rangeKey, (r) => {
       rangeKey = r.key;
-      head.querySelectorAll('.seg button').forEach((b) => {
-        b.setAttribute('aria-pressed', b.textContent === r.label ? 'true' : 'false');
-      });
       drawChart();
     }));
 

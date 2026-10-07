@@ -76,8 +76,10 @@ function showLogin(message = '') {
   cloudReady = false;
   sessionUser = null;
   const topbar = document.querySelector('.topbar');
+  const sidebar = document.querySelector('.sidebar');
   const footer = document.querySelector('.footer');
   if (topbar) topbar.hidden = true;
+  if (sidebar) sidebar.hidden = true;
   if (footer) footer.hidden = true;
   showAuthStyles();
   app.className = 'app auth-shell';
@@ -138,8 +140,10 @@ function friendlyAuthError(error) {
 function showMainUI(user) {
   app.className = 'app';
   const topbar = document.querySelector('.topbar');
+  const sidebar = document.querySelector('.sidebar');
   const footer = document.querySelector('.footer');
   if (topbar) topbar.hidden = false;
+  if (sidebar) sidebar.hidden = false;
   if (footer) footer.hidden = false;
 
   let status = $('#cloudStatus');
@@ -443,6 +447,11 @@ function setActiveTab(view) {
   for (const tab of document.querySelectorAll('.tab')) {
     tab.setAttribute('aria-selected', String(tab.dataset.view === view));
   }
+  const title = document.querySelector('#pageTitle');
+  if (title) title.textContent = ({
+    panel: 'Panel', dagilim: 'Dağılım', kiyaslama: 'Kıyaslama', risk: 'Risk',
+    islemler: 'İşlemler', fonlar: 'Fonlar', ayarlar: 'Ayarlar',
+  })[view] || 'Panel';
 }
 
 function navigate(view, opts = {}) {
@@ -504,8 +513,10 @@ async function render({ preserveScroll = false } = {}) {
 async function boot() {
   applyTheme();
   const topbar = document.querySelector('.topbar');
+  const sidebar = document.querySelector('.sidebar');
   const footer = document.querySelector('.footer');
   if (topbar) topbar.hidden = true;
+  if (sidebar) sidebar.hidden = true;
   if (footer) footer.hidden = true;
 
   $('#themeBtn').addEventListener('click', cycleTheme);

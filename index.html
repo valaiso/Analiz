@@ -16,50 +16,76 @@
 </head>
 <body>
 
-<header class="topbar">
-  <div class="topbar-inner">
-    <div class="brand">
+<div class="app-shell">
+  <aside class="sidebar" aria-label="Ana gezinme">
+    <div class="sidebar-brand">
       <img class="brand-mark" src="/Analiz/iconV1.png" alt="">
-      <span class="brand-text">Analiz</span>
+      <div class="brand-copy">
+        <span class="brand-text">Analiz</span>
+        <span class="brand-caption">YATIRIM PANELİ</span>
+      </div>
     </div>
 
-    <div class="topbar-actions">
-      <label class="profile-picker">
-        <span class="sr-only">Profil</span>
-        <select id="profileSelect" aria-label="Profil seç"></select>
-      </label>
-      <button id="refreshBtn" class="icon-btn" type="button" title="Verileri yenile" aria-label="Verileri yenile">↻</button>
-      <button id="themeBtn" class="icon-btn" type="button" title="Tema değiştir" aria-label="Tema değiştir">◐</button>
-    </div>
+    <nav class="tabs sidebar-nav" id="tabs" role="tablist" aria-label="Sayfalar">
+      <div class="nav-section">
+        <span class="nav-heading">GENEL BAKIŞ</span>
+        <button class="tab" role="tab" data-view="panel"><span class="nav-icon">▦</span><span>Panel</span></button>
+        <button class="tab" role="tab" data-view="dagilim"><span class="nav-icon">◔</span><span>Dağılım</span></button>
+      </div>
+      <div class="nav-section">
+        <span class="nav-heading">ANALİZ</span>
+        <button class="tab" role="tab" data-view="kiyaslama"><span class="nav-icon">⇄</span><span>Kıyaslama</span></button>
+        <button class="tab" role="tab" data-view="risk"><span class="nav-icon">◉</span><span>Risk</span></button>
+      </div>
+      <div class="nav-section">
+        <span class="nav-heading">YATIRIMLAR</span>
+        <button class="tab" role="tab" data-view="islemler"><span class="nav-icon">↔</span><span>İşlemler</span></button>
+        <button class="tab" role="tab" data-view="fonlar"><span class="nav-icon">◈</span><span>Fonlar</span></button>
+      </div>
+      <div class="nav-section nav-section-settings">
+        <button class="tab" role="tab" data-view="ayarlar"><span class="nav-icon">⚙</span><span>Ayarlar</span></button>
+      </div>
+    </nav>
+
+    <div class="sidebar-status"><span class="status-dot"></span><span>TEFAS · Midas</span></div>
+  </aside>
+
+  <div class="main-column">
+    <header class="topbar">
+      <div class="topbar-inner">
+        <div class="page-heading">
+          <span class="page-eyebrow">PORTFÖY ANALİZİ</span>
+          <h1 id="pageTitle">Panel</h1>
+        </div>
+        <div class="topbar-actions">
+          <label class="profile-picker">
+            <span class="sr-only">Profil</span>
+            <select id="profileSelect" aria-label="Profil seç"></select>
+          </label>
+          <button id="refreshBtn" class="icon-btn" type="button" title="Verileri yenile" aria-label="Verileri yenile">↻</button>
+          <button id="themeBtn" class="icon-btn" type="button" title="Tema değiştir" aria-label="Tema değiştir">◐</button>
+        </div>
+      </div>
+    </header>
+
+    <main id="app" class="app">
+      <div class="loading" id="boot">
+        <div class="spinner" aria-hidden="true"></div>
+        <p>TEFAS verileri yükleniyor…</p>
+      </div>
+    </main>
+
+    <footer class="footer">
+      <p id="dataStatus">—</p>
+      <p class="disclaimer">
+        Bu araç yalnızca kişisel takip amaçlıdır, yatırım tavsiyesi değildir.
+        Veriler TEFAS'ın herkese açık uçlarından alınır; hesaplamalar bilgilendirme amaçlıdır,
+        resmî kayıt yerine geçmez. Portföyünüz Supabase hesabınızla eşitlenebilir; Midas'tan aktarılan
+        işlemler bu tarayıcıda yerel saklanır ve Supabase eşitlemesine eklenmez.
+      </p>
+    </footer>
   </div>
-
-  <nav class="tabs" id="tabs" role="tablist">
-    <button class="tab" role="tab" data-view="panel">Panel</button>
-    <button class="tab" role="tab" data-view="dagilim">Dağılım</button>
-    <button class="tab" role="tab" data-view="kiyaslama">Kıyaslama</button>
-    <button class="tab" role="tab" data-view="risk">Risk</button>
-    <button class="tab" role="tab" data-view="islemler">İşlemler</button>
-    <button class="tab" role="tab" data-view="fonlar">Fonlar</button>
-    <button class="tab" role="tab" data-view="ayarlar">Ayarlar</button>
-  </nav>
-</header>
-
-<main id="app" class="app">
-  <div class="loading" id="boot">
-    <div class="spinner" aria-hidden="true"></div>
-    <p>TEFAS verileri yükleniyor…</p>
-  </div>
-</main>
-
-<footer class="footer">
-  <p id="dataStatus">—</p>
-  <p class="disclaimer">
-    Bu araç yalnızca kişisel takip amaçlıdır, yatırım tavsiyesi değildir.
-    Veriler TEFAS'ın herkese açık uçlarından alınır; hesaplamalar bilgilendirme amaçlıdır,
-    resmî kayıt yerine geçmez. Portföyünüz Supabase hesabınızla eşitlenebilir; Midas'tan aktarılan
-    işlemler bu tarayıcıda yerel saklanır ve Supabase eşitlemesine eklenmez.
-  </p>
-</footer>
+</div>
 
 <div id="modalRoot" class="modal-root" hidden></div>
 <div id="toastRoot" class="toast-root" aria-live="polite"></div>
