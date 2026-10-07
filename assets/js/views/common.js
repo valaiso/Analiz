@@ -4,8 +4,8 @@ import { h, cls, isNum } from '../util.js';
 import { searchFunds } from '../data.js';
 
 /** Üstteki büyük sayı kartı. */
-export function kpiCard({ label, value, sub, subClass, valueClass, hint }) {
-  return h('div', { class: 'card kpi' },
+export function kpiCard({ label, value, sub, subClass, valueClass, hint, tone }) {
+  return h('div', { class: `card kpi${tone ? ` kpi-${tone}` : ''}` },
     h('div', { class: 'kpi-label', text: label }),
     h('div', { class: `kpi-value ${valueClass || ''}`, text: value }),
     sub != null ? h('div', { class: `kpi-sub ${subClass || ''}`, text: sub }) : null,
@@ -13,7 +13,7 @@ export function kpiCard({ label, value, sub, subClass, valueClass, hint }) {
 }
 
 /** Kâr/zarar için otomatik renklendiren kart. */
-export function plCard({ label, amount, pct, hint, formatMoney, formatPct }) {
+export function plCard({ label, amount, pct, hint, formatMoney, formatPct, tone }) {
   return kpiCard({
     label,
     value: formatMoney(amount),
@@ -21,6 +21,7 @@ export function plCard({ label, amount, pct, hint, formatMoney, formatPct }) {
     sub: isNum(pct) ? formatPct(pct) : null,
     subClass: cls(pct),
     hint,
+    tone,
   });
 }
 

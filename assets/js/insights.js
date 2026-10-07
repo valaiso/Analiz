@@ -140,11 +140,12 @@ export function cashflowCalendar(txs) {
     const tutarTRY = t.units * t.price * fx;
     const p = pozisyon.get(t.code) || { adet: 0, maliyet: 0 };
 
+    const excludeProfit = t.code === 'THF' || t.code === 'TP2';
     if (t.type === 'SAT') {
       const miktar = Math.min(t.units, p.adet);
       const ortalama = p.adet > EPS ? p.maliyet / p.adet : 0;
       const kar = miktar * t.price * fx - masraf - miktar * ortalama;
-      gerceklesenYil.set(yil, (gerceklesenYil.get(yil) || 0) + kar);
+      if (!excludeProfit) gerceklesenYil.set(yil, (gerceklesenYil.get(yil) || 0) + kar);
       p.maliyet = Math.max(0, p.maliyet - miktar * ortalama);
       p.adet = Math.max(0, p.adet - miktar);
       aylik.set(ay, (aylik.get(ay) || 0) - (miktar * t.price * fx - masraf));

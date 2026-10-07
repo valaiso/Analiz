@@ -26,6 +26,19 @@ export function renderDagilim(ctx) {
   const liveCodes = new Set((liveRaw || []).map((row) => row.code));
   const live = addSiteMarketMetrics(liveRaw || []);
   const midasTotal = getMidasAccountSnapshot()?.summary?.totalValue;
+  const modeledEndValue = analysis.series.value.at(-1) || 0;
+  const recordedSpecialPrincipal = analysis.holdings
+    .filter((row) => ['THF', 'TP2'].includes(row.code) && !row.closed)
+    .reduce((sum, row) => sum + (Number(row.cost) || 0), 0);
+  // Eksik Midas işlem geçmişinin açıklayamadığı güncel bakiye sabit anapara
+  // varsayılır. Böylece THF/TP2 ve diğer taşınan bakiyeler değere girer, getiri yaratmaz.
+  const untrackedPrincipal = usingMidas && Number.isFinite(midasTotal)
+    ? Math.max(0, midasTotal - modeledEndValue) : recordedSpecialPrincipal;
+  const chartSeries = untrackedPrincipal > 0 ? {
+    ...analysis.series,
+    value: analysis.series.value.map((value) => value + untrackedPrincipal),
+    invested: analysis.series.invested.map((value) => value + untrackedPrincipal),
+  } : analysis.series;
   const liveValueTotal = live.reduce((sum, row) => sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0);
   const liveValuesReconcile = !usingMidas || live.every((row) => isNum(row.marketValueTRY))
     && (!Number.isFinite(midasTotal) || liveValueTotal <= midasTotal * 1.1);
@@ -43,7 +56,7 @@ export function renderDagilim(ctx) {
 
   const root = h('div', { class: 'stack' });
   if (analysis.series.dates.length) {
-    const series = analysis.series;
+    const series = chartSeries;
     let rangeKey = 'year';
     const chartBox = h('div', { class: 'chart' });
     const drawPortfolioChart = () => {
@@ -67,7 +80,7 @@ export function renderDagilim(ctx) {
         valueFormat: tl,
         series: [
           { name: 'Portföy değeri', values: align(series.value), color: 'var(--accent)', width: 2.4, fill: true },
-          { name: 'Yatırılan para', values: align(series.invested), color: 'var(--text-dim)', dashed: true, width: 1.5 },
+          { name: 'Yatırılan para', values: align(series.invested), color: 'var(--kpi-teal)', dashed: true, width: 1.8 },
         ],
       });
     };
@@ -87,7 +100,7 @@ export function renderDagilim(ctx) {
       },
     }, range.label));
     root.append(sectionCard('Portföy Değeri ve Yatırılan Para',
-      'Mavi çizgi portföy değerini, kesikli çizgi işlem kayıtlarına göre yatırılan tutarı gösterir',
+      `Mavi çizgi portföy değerini, kesikli çizgi yatırılan tutarı gösterir${untrackedPrincipal > 0 ? ` · Midas’ta işlem geçmişi olmayan ${tl(untrackedPrincipal)} bakiye sabit anapara sayılır` : ''}`,
       rangeControls, chartBox));
     drawPortfolioChart();
   } else {

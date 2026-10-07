@@ -121,7 +121,7 @@ function renderLine(container, cfg) {
       'text-anchor': k === 0 ? 'start' : k === labelCount - 1 ? 'end' : 'middle',
       fill: 'var(--text-dim)', 'font-size': 11,
     });
-    t.textContent = fmtDateShort(dates[i]);
+    t.textContent = `${dates[i].slice(5, 7)}/${dates[i].slice(0, 4)}`;
     svg.append(t);
   }
 
@@ -606,5 +606,4 @@ function renderScatter(container, cfg) {
 }
 
 export { colorAt };
-
 

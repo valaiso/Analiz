@@ -7,7 +7,7 @@ import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
 import { cashflowCalendar } from '../insights.js';
 import { transactions, daysSinceBackup, getMidasAccountSnapshot } from '../store.js';
-import { currentMidasPositions, addSiteMarketMetrics, groupAssetRows } from '../asset-groups.js';
+import { currentMidasPositions, addSiteMarketMetrics, groupAssetRows, assetType } from '../asset-groups.js';
 import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable } from './common.js';
 
 /**
@@ -83,12 +83,20 @@ export function renderPanel(ctx) {
   }
 
   const root = h('div', { class: 'stack' });
+  const txs = transactions();
+  const recordedStopaj = txs.reduce((sum, tx) => sum + (Number(tx.withholdingTax) || 0), 0);
+  const taxableFundProfit = analysis.holdings
+    .filter((holding) => assetType(holding.code, holding.kind, holding.cat) === 'Fon'
+      && !['THF', 'TP2'].includes(holding.code))
+    .reduce((sum, holding) => sum + (Number(holding.totalPL) || 0), 0);
+  const stopajEstimate = Math.max(0, taxableFundProfit) * 0.175;
 
   /* ------------------------------------------------------------------ KPI'lar */
 
   root.append(h('div', { class: 'grid grid-kpi' },
     kpiCard({
       label: 'Toplam Değer',
+      tone: 'blue',
       value: tl(hasMidasTotal ? midasSummary.totalValue : totals.value),
       sub: hasMidasTotal
         ? `Midas yatırım hesabı · ${snapshotTime || 'son aktarım'}`
@@ -96,6 +104,7 @@ export function renderPanel(ctx) {
     }),
     plCard({
       label: 'Günlük Kazanç',
+      tone: 'teal',
       amount: hasMidasTotal
         ? siteDailyChange : totals.dayPL,
       pct: hasMidasTotal
@@ -110,6 +119,7 @@ export function renderPanel(ctx) {
     }),
     plCard({
       label: 'İşlem Kayıtlarına Göre K/Z',
+      tone: 'blue-light',
       amount: totals.totalPL,
       pct: totals.totalPct,
       formatMoney: tlSigned,
@@ -120,6 +130,7 @@ export function renderPanel(ctx) {
     }),
     kpiCard({
       label: 'İşlem Kayıtlarına Göre XIRR',
+      tone: 'blue',
       value: isNum(analysis.xirr) ? pctSigned(analysis.xirr, 1) : '—',
       valueClass: cls(analysis.xirr),
       sub: 'Para ağırlıklı yıllık bileşik getiri',
@@ -128,9 +139,14 @@ export function renderPanel(ctx) {
         : (series.dates.length < 90
           ? 'Kısa geçmişten yıllıklandırıldı - oynak olabilir'
           : null),
+    }),
+    kpiCard({
+      label: 'Stopaj Kesintileri',
+      tone: 'teal',
+      value: tl(stopajEstimate),
+      sub: 'Tahmin · kârın %17,5’i',
+      hint: `Fon kârına göre tahmin · kayıtlardaki gerçek stopaj: ${tl(recordedStopaj)}`,
     })));
-
-  const txs = transactions();
 
   const stopajByCode = new Map();
   for (const tx of txs) {
@@ -175,11 +191,22 @@ export function renderPanel(ctx) {
 
   let rangeKey = '6a';
   const chartBox = h('div', { class: 'chart' });
+  const chartDates = series.dates.length ? series.dates
+    : hasMidasTotal && midasSnapshot?.capturedAt
+      ? [new Date(midasSnapshot.capturedAt).toISOString().slice(0, 10)] : [];
+  const untrackedPrincipal = hasMidasTotal
+    ? Math.max(0, midasSummary.totalValue - (series.value.at(-1) || 0)) : 0;
+  const chartValues = series.value.map((value) => value + untrackedPrincipal);
+  const investedValues = series.invested.map((value) => value + untrackedPrincipal);
+  if (!series.dates.length && hasMidasTotal) {
+    chartValues.push(midasSummary.totalValue);
+    investedValues.push(midasSummary.totalValue);
+  }
 
   const drawChart = () => {
     const range = { '1a': 30, '3a': 90, '6a': 180, '1y': 365, '3y': 1095, all: 0 }[rangeKey];
-    const v = sliceLastDays(series.dates, series.value, range);
-    const inv = sliceLastDays(series.dates, series.invested, range);
+    const v = sliceLastDays(chartDates, chartValues, range);
+    const inv = sliceLastDays(chartDates, investedValues, range);
     lineChart(chartBox, {
       dates: v.dates,
       height: 280,
@@ -187,15 +214,17 @@ export function renderPanel(ctx) {
       valueFormat: (x) => tl(x),
       series: [
         { name: 'Portföy değeri', values: v.values, color: 'var(--accent)', fill: true },
-        { name: 'Yatırılan anapara', values: inv.values, color: 'var(--text-dim)', dashed: true, width: 1.5 },
+        { name: 'Yatırılan anapara', values: inv.values, color: 'var(--kpi-teal)', dashed: true, width: 1.8 },
       ],
     });
   };
 
   const head = h('div', { class: 'card-head' },
     h('div', {},
-      h('h2', {}, 'İşlem Kayıtlarına Göre Portföy Değeri'),
-      h('span', { class: 'sub' }, 'Geçmiş alım/satımlardan modellenir; Midas canlı hesabı değildir.')),
+      h('h2', {}, 'Portföy Değeri ve Yatırılan Para'),
+      h('span', { class: 'sub' }, hasMidasTotal
+        ? `Midas toplamı temel alınır${untrackedPrincipal > 0 ? ` · geçmiş işlem kaydı olmayan ${tl(untrackedPrincipal)} bakiye sabit anapara varsayılır` : ''}`
+        : 'Geçmiş alım/satım kayıtlarına göre modellenir.')),
     rangeSelector(rangeKey, (r) => {
       rangeKey = r.key;
       head.querySelectorAll('.seg button').forEach((b) => {
@@ -204,7 +233,7 @@ export function renderPanel(ctx) {
       drawChart();
     }));
 
-  if (!hasMidasTotal) {
+  if (chartDates.length) {
     root.append(h('section', { class: 'card' }, head, chartBox));
     drawChart();
   }

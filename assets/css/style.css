@@ -188,7 +188,19 @@ select:focus, .input:focus, input:focus { border-color: var(--accent); box-shado
 
 /* --------------------------------------------------------------------- KPI'lar */
 
-.kpi { position: relative; overflow: hidden; }
+.kpi {
+  position: relative; overflow: hidden; border-top: 3px solid var(--kpi-tone, var(--accent));
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--kpi-tone, var(--accent)) 9%, var(--surface)), var(--surface) 78%);
+}
+.kpi-blue { --kpi-tone: var(--accent); }
+.kpi-blue-light { --kpi-tone: color-mix(in srgb, var(--accent) 58%, white); }
+.kpi-teal { --kpi-tone: var(--kpi-teal); }
+:root { --kpi-teal: #009f95; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --kpi-teal: #32c7bc; }
+}
+html[data-theme="dark"] { --kpi-teal: #32c7bc; }
 .kpi-label { color: var(--text-dim); font-size: .8rem; font-weight: 550; letter-spacing: .01em; }
 .kpi-value { font-size: 1.55rem; font-weight: 700; margin-top: 4px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .kpi-sub { margin-top: 3px; font-size: .84rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }

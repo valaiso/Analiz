@@ -17,6 +17,8 @@ import {
 import { isNum } from './util.js';
 
 const EPS = 1e-9;
+// THF and TP2 balances remain in portfolio value, but their profit/loss is excluded.
+const NO_PROFIT_CODES = new Set(['THF', 'TP2']);
 
 /** İşlemlerden pozisyonları çıkarır (ağırlıklı ortalama maliyet). */
 export function buildPositions(txs) {
@@ -100,12 +102,13 @@ export async function analyze(txs) {
   /* ---------------------------------------------------- güncel pozisyon tablosu */
 
   const holdings = [];
-  let value = 0, cost = 0, unpricedCost = 0, dayPL = 0, prevValue = 0, realizedTotal = 0;
+  let value = 0, cost = 0, profitValue = 0, profitCost = 0;
+  let unpricedCost = 0, dayPL = 0, prevValue = 0, realizedTotal = 0;
   // prevValue, dünkü kapanışta gerçekten elde olan adetlerden hesaplanır;
   // bugün alınan paylar paydayı şişirmesin diye aşağıdaki döngüde toplanır.
 
   for (const p of positions.values()) {
-    realizedTotal += p.realized;
+    if (!NO_PROFIT_CODES.has(p.code)) realizedTotal += p.realized;
     const meta = DB.byCode.get(p.code);
     const hist = cachedHistory(p.code);
     const price = priceAtIndex(hist, last);
@@ -121,7 +124,7 @@ export async function analyze(txs) {
         ...p, closed: true, name: meta?.name || p.code, cat: meta?.cat || '—',
         price, currency, currencySymbol, value: 0, avgCost: 0, unrealized: 0, unrealizedPct: null,
         missingPrice: !isNum(price), missingFx: !isNum(fxRate),
-        dayPL: 0, dayPct: null, totalPL: p.realized, weight: 0,
+        dayPL: 0, dayPct: null, totalPL: NO_PROFIT_CODES.has(p.code) ? 0 : p.realized, weight: 0,
       });
       continue;
     }
@@ -130,11 +133,16 @@ export async function analyze(txs) {
     const hasFx = isNum(fxRate);
     const holdingValue = hasPrice && hasFx ? p.units * price * fxRate : 0;
     const avgCost = p.nativeCost / p.units;
-    const unrealized = hasPrice && hasFx ? holdingValue - p.cost : 0;
+    const excludedFromProfit = NO_PROFIT_CODES.has(p.code);
+    const unrealized = hasPrice && hasFx && !excludedFromProfit ? holdingValue - p.cost : 0;
 
     if (hasPrice && hasFx) {
       value += holdingValue;
       cost += p.cost;
+      if (!excludedFromProfit) {
+        profitValue += holdingValue;
+        profitCost += p.cost;
+      }
     } else {
       unpricedCost += p.cost;
     }
@@ -155,11 +163,11 @@ export async function analyze(txs) {
       value: holdingValue,
       avgCost,
       unrealized,
-      unrealizedPct: p.cost > EPS && hasPrice && hasFx ? (unrealized / p.cost) * 100 : null,
+      unrealizedPct: p.cost > EPS && hasPrice && hasFx && !excludedFromProfit ? (unrealized / p.cost) * 100 : null,
       dayPL: 0,          // aşağıda dolduruluyor
       dayPct: isNum(price) && isNum(pricePrev) && pricePrev > 0
         ? (price / pricePrev - 1) * 100 : null,
-      totalPL: unrealized + p.realized,
+      totalPL: excludedFromProfit ? 0 : unrealized + p.realized,
       weight: 0,
       prevValue: 0,
     });
@@ -178,11 +186,16 @@ export async function analyze(txs) {
       holding.dayPL = units * (holding.price * holding.fxRate
         - holding.pricePrev * holding.fxRatePrev);
       holding.prevValue = units * holding.pricePrev * holding.fxRatePrev;
-      dayPL += holding.dayPL;
-      prevValue += holding.prevValue;
-      holding.dayPct = holding.pricePrev * holding.fxRatePrev > 0
-        ? ((holding.price * holding.fxRate) / (holding.pricePrev * holding.fxRatePrev) - 1) * 100
-        : null;
+      if (NO_PROFIT_CODES.has(holding.code)) {
+        holding.dayPL = 0;
+        holding.dayPct = 0;
+      } else {
+        dayPL += holding.dayPL;
+        prevValue += holding.prevValue;
+        holding.dayPct = holding.pricePrev * holding.fxRatePrev > 0
+          ? ((holding.price * holding.fxRate) / (holding.pricePrev * holding.fxRatePrev) - 1) * 100
+          : null;
+      }
     }
   }
 
@@ -194,17 +207,19 @@ export async function analyze(txs) {
   /* ------------------------------------------------------------------ seriler */
 
   const unpricedOpen = holdings.filter((holding) => !holding.closed && (holding.missingPrice || holding.missingFx));
-  const hasUnpricedTransactions = txs.some((tx) => !isNum(priceAtIndex(cachedHistory(tx.code), last)));
-  const pricedTxs = txs.filter((tx) => isNum(priceAtIndex(cachedHistory(tx.code), last)));
+  const hasUnpricedTransactions = txs.some((tx) => !NO_PROFIT_CODES.has(tx.code)
+    && !isNum(priceAtIndex(cachedHistory(tx.code), last)));
+  const pricedTxs = txs.filter((tx) => !NO_PROFIT_CODES.has(tx.code)
+    && isNum(priceAtIndex(cachedHistory(tx.code), last)));
   const series = buildSeries(pricedTxs);
   // Net yatırılan tutar işlem akışlarından hesaplanır; fiyat geçmişi eksik
   // sembollerin alım/satımları da ana para toplamına dahil kalmalıdır.
-  const netInvested = txs.reduce((sum, tx) => {
+  const netInvested = txs.filter((tx) => !NO_PROFIT_CODES.has(tx.code)).reduce((sum, tx) => {
     const cash = tx.units * tx.price + (Number(tx.fee) || 0);
     const flow = tx.type === 'SAT' ? -(tx.units * tx.price - (Number(tx.fee) || 0)) : cash;
     return sum + flow * fxToTRY(tx.code, Math.max(0, indexForDate(tx.date)));
   }, 0);
-  const unrealizedTotal = value - cost;
+  const unrealizedTotal = profitValue - profitCost;
   const totalPL = unrealizedTotal + realizedTotal;
 
   return {
@@ -219,7 +234,7 @@ export async function analyze(txs) {
       dayPL,
       dayPct: prevValue > EPS ? (dayPL / prevValue) * 100 : null,
       unrealized: unrealizedTotal,
-      unrealizedPct: cost > EPS ? (unrealizedTotal / cost) * 100 : null,
+      unrealizedPct: profitCost > EPS ? (unrealizedTotal / profitCost) * 100 : null,
       realized: realizedTotal,
       totalPL,
       netInvested,
@@ -229,7 +244,7 @@ export async function analyze(txs) {
       fundCount: holdings.filter((h) => !h.closed).length,
     },
     series,
-    xirr: hasUnpricedTransactions ? null : xirrFromTx(txs, value, DB.calendar[last]),
+    xirr: hasUnpricedTransactions ? null : xirrFromTx(pricedTxs, profitValue, DB.calendar[last]),
     // Veri takviminden eski işlem varsa arayüz bunu açıklar.
     preRange: hasPreRangeTx(txs),
   };
