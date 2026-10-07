@@ -2,7 +2,7 @@
 
 import { h, tl, tlSigned, pct, pctSigned, colorAt, isNum, units as fmtUnits } from '../util.js';
 import { DB } from '../data.js';
-import { donutWithLegend, barChart, stackedAreaChart, lineChart } from '../charts.js';
+import { donutWithLegend, barChart, stackedAreaChart } from '../charts.js';
 import { weightHistory, attribution } from '../insights.js';
 import { transactions, getMidasAccountSnapshot } from '../store.js';
 import { currentMidasPositions, addSiteMarketMetrics, groupAssetRows, assetType } from '../asset-groups.js';
@@ -26,19 +26,6 @@ export function renderDagilim(ctx) {
   const liveCodes = new Set((liveRaw || []).map((row) => row.code));
   const live = addSiteMarketMetrics(liveRaw || []);
   const midasTotal = getMidasAccountSnapshot()?.summary?.totalValue;
-  const modeledEndValue = analysis.series.value.at(-1) || 0;
-  const recordedSpecialPrincipal = analysis.holdings
-    .filter((row) => ['THF', 'TP2'].includes(row.code) && !row.closed)
-    .reduce((sum, row) => sum + (Number(row.cost) || 0), 0);
-  // Eksik Midas işlem geçmişinin açıklayamadığı güncel bakiye sabit anapara
-  // varsayılır. Böylece THF/TP2 ve diğer taşınan bakiyeler değere girer, getiri yaratmaz.
-  const untrackedPrincipal = usingMidas && Number.isFinite(midasTotal)
-    ? Math.max(0, midasTotal - modeledEndValue) : recordedSpecialPrincipal;
-  const chartSeries = untrackedPrincipal > 0 ? {
-    ...analysis.series,
-    value: analysis.series.value.map((value) => value + untrackedPrincipal),
-    invested: analysis.series.invested.map((value) => value + untrackedPrincipal),
-  } : analysis.series;
   const liveValueTotal = live.reduce((sum, row) => sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0);
   const liveValuesReconcile = !usingMidas || live.every((row) => isNum(row.marketValueTRY))
     && (!Number.isFinite(midasTotal) || liveValueTotal <= midasTotal * 1.1);
@@ -55,63 +42,6 @@ export function renderDagilim(ctx) {
   }
 
   const root = h('div', { class: 'stack' });
-  if (analysis.series.dates.length) {
-    const series = chartSeries;
-    let rangeKey = 'year';
-    const chartBox = h('div', { class: 'chart' });
-    const drawPortfolioChart = () => {
-      const endDate = DB.calendar.at(-1);
-      const days = ({ week: 7, month: 30, year: 365 })[rangeKey];
-      let cutoff = series.dates[0];
-      if (days) {
-        const [year, month, day] = endDate.split('-').map(Number);
-        cutoff = new Date(Date.UTC(year, month - 1, day - days + 1)).toISOString().slice(0, 10);
-      }
-      const dates = DB.calendar.filter((date) => date >= cutoff && date <= endDate);
-      const seriesIndexes = new Map(series.dates.map((date, index) => [date, index]));
-      const firstInvestedDate = series.dates[0];
-      const align = (values) => dates.map((date) => {
-        const index = seriesIndexes.get(date);
-        if (index !== undefined) return values[index];
-        return firstInvestedDate && date < firstInvestedDate ? 0 : null;
-      });
-      lineChart(chartBox, {
-        dates,
-        height: 300,
-        yFormat: (amount) => tl(amount, { compact: true }),
-        valueFormat: tl,
-        series: [
-          { name: 'Portföy değeri', values: align(series.value), color: 'var(--accent)', width: 2.4, fill: true },
-          { name: 'Yatırılan para', values: align(series.invested), color: 'var(--teal)', dashed: true, width: 1.8 },
-        ],
-      });
-    };
-    const rangeControls = h('div', { class: 'seg' });
-    const ranges = [
-      { key: 'week', label: 'Haftalık' },
-      { key: 'month', label: 'Aylık' },
-      { key: 'year', label: 'Yıllık' },
-      { key: 'all', label: 'Başlangıç', title: 'Yatırım başlangıcından itibaren' },
-    ];
-    for (const range of ranges) rangeControls.append(h('button', {
-      type: 'button', dataset: { range: range.key }, title: range.title || '',
-      'aria-label': range.title || range.label, 'aria-pressed': String(range.key === rangeKey),
-      onclick: () => {
-        rangeKey = range.key;
-        rangeControls.querySelectorAll('button').forEach((button) =>
-          button.setAttribute('aria-pressed', String(button.dataset.range === range.key)));
-        drawPortfolioChart();
-      },
-    }, range.label));
-    root.append(sectionCard('Portföy Değeri ve Yatırılan Para',
-      `Mavi çizgi portföy değerini, kesikli çizgi yatırılan tutarı gösterir${untrackedPrincipal > 0 ? ` · Midas’ta işlem geçmişi olmayan ${tl(untrackedPrincipal)} bakiye sabit anapara sayılır` : ''}`,
-      rangeControls, chartBox));
-    drawPortfolioChart();
-  } else {
-    root.append(sectionCard('Portföy Değeri ve Yatırılan Para',
-      'Grafik için işlem geçmişi gerekir',
-      h('p', { class: 'dim' }, 'Midas’tan aktarılan veya elle girilen alış/satış kayıtları bu grafiği oluşturur.')));
-  }
   if (usingMidas) {
     const priced = [
       ...live.filter((row) => row.marketValueTRY > 0)

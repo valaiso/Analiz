@@ -211,7 +211,8 @@ function renderLine(container, cfg) {
         h('span', {
           class: 'swatch',
           style: `width:18px;height:3px;border-radius:2px;background:${s.dashArray
-            ? `repeating-linear-gradient(to right,${s.color} 0 5px,transparent 5px 8px)` : s.color}`,
+            ? `repeating-linear-gradient(to right,${s.color} 0 5px,transparent 5px 8px)`
+            : s.dashed ? `repeating-linear-gradient(to right,${s.color} 0 5px,transparent 5px 8px)` : s.color}`,
         }),
         s.name))));
   }

@@ -51,12 +51,14 @@ export const RANGES = [
 ];
 
 /** Zaman aralığı seçici (segment butonları). */
-export function rangeSelector(currentKey, onChange) {
+export function rangeSelector(currentKey, onChange, ranges = RANGES) {
   const seg = h('div', { class: 'seg' });
-  for (const r of RANGES) {
+  for (const r of ranges) {
     seg.append(h('button', {
       type: 'button',
       dataset: { range: r.key },
+      title: r.title || '',
+      'aria-label': r.title || r.label,
       'aria-pressed': r.key === currentKey ? 'true' : 'false',
       onclick: (event) => {
         seg.querySelectorAll('button').forEach((button) => {

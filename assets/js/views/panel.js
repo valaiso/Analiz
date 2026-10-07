@@ -8,7 +8,7 @@ import { sliceLastDays } from '../portfolio.js';
 import { cashflowCalendar } from '../insights.js';
 import { transactions, daysSinceBackup, getMidasAccountSnapshot } from '../store.js';
 import { currentMidasPositions, addSiteMarketMetrics, groupAssetRows, assetType } from '../asset-groups.js';
-import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable } from './common.js';
+import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
 /**
  * Fon TEFAS'ta fiyat yayımlamayı bırakmış mı?
@@ -84,7 +84,6 @@ export function renderPanel(ctx) {
 
   const root = h('div', { class: 'stack' });
   const txs = transactions();
-  const recordedStopaj = txs.reduce((sum, tx) => sum + (Number(tx.withholdingTax) || 0), 0);
   const taxableFundPL = new Map(analysis.holdings
     .filter((holding) => assetType(holding.code, holding.kind, holding.cat) === 'Fon'
       && !['THF', 'TP2'].includes(holding.code))
@@ -94,13 +93,17 @@ export function renderPanel(ctx) {
   for (const position of snapshotPositions) {
     if (assetType(position.code, position.kind, position.category) !== 'Fon'
       || ['THF', 'TP2'].includes(position.code)) continue;
-    const profit = Number.isFinite(position.totalPLTRY) ? position.totalPLTRY
+    const transactionRealized = Number(analysis.holdings.find((holding) => holding.code === position.code)?.realized) || 0;
+    const profit = Number.isFinite(position.totalPLTRY) ? position.totalPLTRY + transactionRealized
       : Number.isFinite(position.totalPLNative) ? position.totalPLNative
-        : Number.isFinite(position.totalPL) ? position.totalPL : taxableFundPL.get(position.code);
+        : Number.isFinite(position.totalPL) ? position.totalPL + transactionRealized : taxableFundPL.get(position.code);
     if (Number.isFinite(profit)) taxableFundPL.set(position.code, profit);
   }
-  const taxableFundProfit = [...taxableFundPL.values()].reduce((sum, profit) => sum + profit, 0);
-  const stopajEstimate = Math.max(0, taxableFundProfit) * 0.175;
+  const stopajRows = [...taxableFundPL.entries()]
+    .filter(([, profit]) => profit > 0)
+    .map(([code, profit]) => ({ code, profit, amount: profit * 0.175 }))
+    .sort((a, b) => b.amount - a.amount);
+  const stopajEstimate = stopajRows.reduce((sum, row) => sum + row.amount, 0);
 
   /* ------------------------------------------------------------------ KPI'lar */
 
@@ -156,37 +159,27 @@ export function renderPanel(ctx) {
       tone: 'teal',
       value: tl(stopajEstimate),
       sub: 'Vergili fon kârının %17,5’i',
-      hint: `Fon kârına göre tahmin · kayıtlardaki gerçek stopaj: ${tl(recordedStopaj)}`,
+      hint: 'Otomatik hesaplanır; ana portföy değerini etkilemez.',
     })));
 
-  const stopajByCode = new Map();
-  for (const tx of txs) {
-    const tax = Number(tx.withholdingTax) || 0;
-    if (!(tax > 0)) continue;
-    const current = stopajByCode.get(tx.code) || { code: tx.code, amount: 0, count: 0 };
-    current.amount += tax;
-    current.count += 1;
-    stopajByCode.set(tx.code, current);
-  }
-  const stopajRows = [...stopajByCode.values()].sort((a, b) => b.amount - a.amount);
   const stopajTable = h('table', {},
     h('thead', {}, h('tr', {},
       h('th', { style: 'text-align:left' }, 'Varlık'),
-      h('th', {}, 'Kayıt sayısı'),
-      h('th', {}, 'Toplam stopaj'))),
+      h('th', {}, 'Fon kârı'),
+      h('th', {}, 'Tahmini stopaj'))),
     h('tbody', {}, stopajRows.map((row) => h('tr', {},
       h('td', { style: 'text-align:left' }, h('span', { class: 'code-chip' }, row.code)),
-      h('td', {}, String(row.count)),
+      h('td', {}, tl(row.profit)),
       h('td', {}, tl(row.amount))))));
   const stopajContent = stopajRows.length
     ? h('div', { class: 'stack' },
       h('div', { class: 'table-wrap' }, stopajTable),
       h('p', { class: 'dim', style: 'margin:0' },
-        `Genel toplam: ${tl(stopajRows.reduce((sum, row) => sum + row.amount, 0))}`))
+        `Tahmini toplam: ${tl(stopajEstimate)} · kârın %17,5’i`))
     : h('p', { class: 'dim', style: 'margin:0' },
-      'Henüz stopaj tutarı kaydedilmedi. Yeni işlemde stopajı girebilir veya Midas aktarımında Stopaj alanı bulunuyorsa eşitleyebilirsin.');
+      'Vergili fonlarda kâr oluştuğunda tahmini stopaj burada gösterilir.');
   root.append(sectionCard('Stopaj Kesintileri',
-    'Midas aktarımında okunan veya işlem kaydına girilen gerçek stopaj tutarları', stopajContent));
+    'Vergili fon kârının %17,5’i olarak hesaplanır · portföy değerini etkilemez', stopajContent));
 
   if (txs.length >= 5 && daysSinceBackup() === null) {
     root.append(h('div', { class: 'notice' },
@@ -205,7 +198,9 @@ export function renderPanel(ctx) {
   const snapshotDate = hasMidasTotal && midasSnapshot?.capturedAt
     ? new Date(midasSnapshot.capturedAt).toISOString().slice(0, 10) : null;
   const chartEndDate = [series.dates.at(-1), snapshotDate].filter(Boolean).sort().at(-1) || null;
-  const chartCalendar = chartEndDate ? DB.calendar.filter((date) => date <= chartEndDate) : [];
+  const chartStartDate = series.dates[0] || snapshotDate;
+  const chartCalendar = chartEndDate && chartStartDate
+    ? DB.calendar.filter((date) => date >= chartStartDate && date <= chartEndDate) : [];
   const chartDates = chartCalendar.length
     ? [...chartCalendar, ...(chartEndDate > chartCalendar.at(-1) ? [chartEndDate] : [])]
     : (chartEndDate ? [chartEndDate] : []);
@@ -250,7 +245,8 @@ export function renderPanel(ctx) {
     rangeSelector(rangeKey, (r) => {
       rangeKey = r.key;
       drawChart();
-    }));
+    }, RANGES.map((range) => range.key === 'all'
+      ? { ...range, label: 'Başlangıç', title: 'Yatırım başlangıcından itibaren' } : range)));
 
   if (chartDates.length) {
     root.append(h('section', { class: 'card' }, head, chartBox));

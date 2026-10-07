@@ -10,18 +10,16 @@ import { sectionCard, emptyState, rangeSelector, RANGES } from './common.js';
 
 const BENCH_STYLES = {
   BIST100: { color: 'var(--c2)' },
-  GRAMALTIN: { color: 'var(--c3)', dashArray: '7 3' },
-  USDTRY: { color: 'var(--c5)', dashArray: '2 3' },
-  TUFE: { color: 'var(--c4)', dashArray: '8 3 2 3' },
-  PARAPIYASASI: { color: 'var(--c6)', dashArray: '3 3' },
+  GRAMALTIN: { color: 'var(--c3)' },
+  USDTRY: { color: 'var(--c4)' },
+  TUFE: { color: 'var(--c6)' },
+  PARAPIYASASI: { color: 'var(--c5)' },
 };
 
 const benchStyle = (key) => BENCH_STYLES[key] || { color: colorAt(Object.keys(BENCH_STYLES).length) };
 const benchLineStyle = (key) => {
   const style = benchStyle(key);
-  const background = style.dashArray
-    ? `repeating-linear-gradient(to right,${style.color} 0 5px,transparent 5px 8px)` : style.color;
-  return `width:18px;height:3px;border-radius:2px;background:${background};display:inline-block`;
+  return `width:18px;height:3px;border-radius:2px;background:${style.color};display:inline-block`;
 };
 
 /** Seriyi ilk geçerli değerine göre 100'e normalize eder. */
@@ -69,6 +67,7 @@ export function renderKiyaslama(ctx) {
       name: 'Portföyüm',
       values: normalize(port.values),
       color: 'var(--accent)',
+      dashed: true,
       width: 2.4,
     }];
     for (const key of available) {
@@ -218,4 +217,3 @@ export function renderKiyaslama(ctx) {
 
   return root;
 }
-

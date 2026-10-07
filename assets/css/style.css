@@ -25,8 +25,8 @@
   --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
 
   /* Grafik serisi renkleri - varlık sınıfı/fon dağılımlarında sırayla kullanılır */
-  --c1: #3b82f6; --c2: #14b8a6; --c3: #0ea5e9; --c4: #0f766e; --c5: #1d4ed8;
-  --c6: #5eead4; --c7: #60a5fa; --c8: #0e7490; --c9: #93c5fd; --c10: #2dd4bf;
+  --c1: #2563eb; --c2: #ea580c; --c3: #be123c; --c4: #15803d; --c5: #7c3aed;
+  --c6: #0891b2; --c7: #ca8a04; --c8: #0f766e; --c9: #db2777; --c10: #4f46e5;
 }
 
 html[data-theme="dark"] { color-scheme: dark; }
