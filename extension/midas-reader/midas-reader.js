@@ -471,6 +471,58 @@ function candidateElements(root, scanStats, cryptoOnly = false) {
     const key = row.sourceId || text.replace(/\s+/g, ' ').trim();
     if (key && !uniqueRows.has(key)) uniqueRows.set(key, row);
   }
+
+  // Midas yatırım hesabı bazı görünüm boyutlarında satır kapsayıcılarını
+  // sütunlara bölüyor; hiçbir DOM satırının metninde hem yön hem tarih
+  // bulunmadığından üstteki satır tabanlı arama boş dönebiliyor. Görünen kısa
+  // metinleri aynı yatay bantta başlık koordinatlarına göre eşle.
+  const textTokens = [...root.querySelectorAll('span, div, p, time, button, [role="cell"], [role="gridcell"]')]
+    .filter(isVisible)
+    .map((node) => ({ node, text: textOf(node), box: node.getBoundingClientRect() }))
+    .filter((item) => item.text && item.text.length <= 100 && item.box.height > 0
+      && item.box.top > headerRow.getBoundingClientRect().bottom - 4)
+    .filter((item) => ![...item.node.children].some((child) => isVisible(child) && textOf(child) === item.text));
+  const sideTokens = textTokens.filter((item) => /^(alış|alım|satış|satım|buy|sell)$/iu.test(item.text));
+  if (scanStats) {
+    scanStats.geometryTextTokens = textTokens.length;
+    scanStats.geometrySideTokens = sideTokens.length;
+    scanStats.geometryDateTokens = textTokens.filter((item) => DATE_WORDS.test(item.text)).length;
+  }
+  for (const sideToken of sideTokens) {
+    const rowY = (sideToken.box.top + sideToken.box.bottom) / 2;
+    const rowTokens = textTokens.filter((item) =>
+      Math.abs((item.box.top + item.box.bottom) / 2 - rowY) <= Math.max(14, sideToken.box.height / 2 + 5));
+    const aligned = headerItems.map(({ box }) => {
+      const targetX = (box.left + box.right) / 2;
+      return rowTokens.reduce((best, item) => {
+        const distance = Math.abs((item.box.left + item.box.right) / 2 - targetX);
+        return !best || distance < best.distance ? { text: item.text, distance } : best;
+      }, null)?.text || '';
+    });
+    const sideText = aligned[columns.side] || '';
+    const dateText = aligned[columns.date] || '';
+    if (!TRADE_WORDS.test(sideText) || !DATE_WORDS.test(dateText)) continue;
+    const status = aligned[columns.status] || '';
+    if (!executedStatus(status)) continue;
+    const text = aligned.join('\n');
+    const row = {
+      text, headers, cells: aligned, sourceId: '',
+      assetCode: assetCodeAtRow(root, sideToken.node, columns.code >= 0 ? headerItems[columns.code] : undefined),
+      codeHints: assetHintsFor(sideToken.node, root),
+    };
+    const key = text.replace(/\s+/g, ' ').trim();
+    if (key && !uniqueRows.has(key)) {
+      uniqueRows.set(key, row);
+      if (scanStats) {
+        scanStats.rowNodes += 1;
+        if (aligned.filter(Boolean).length === headers.length) scanStats.cellCountMatches += 1;
+        scanStats.tradeDateMatches += 1;
+        const category = statusCategory(status);
+        scanStats.statuses[category] = (scanStats.statuses[category] || 0) + 1;
+        scanStats.completedStatuses += 1;
+      }
+    }
+  }
   return [...uniqueRows.values()].slice(0, 500);
 }
 
@@ -574,7 +626,8 @@ const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function collectCompletedHistory(cryptoOnly = false) {
   const collected = new Map();
-  const scanStats = { headers: [], rowNodes: 0, cellCountMatches: 0, tradeDateMatches: 0, completedStatuses: 0, statuses: {} };
+  const scanStats = { headers: [], rowNodes: 0, cellCountMatches: 0, tradeDateMatches: 0,
+    completedStatuses: 0, geometryTextTokens: 0, geometrySideTokens: 0, geometryDateTokens: 0, statuses: {} };
   const root = orderHistoryRoot(cryptoOnly);
   if (!root) return {
     rows: [], pageCount: 0, paginationStop: cryptoOnly
@@ -852,7 +905,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const evidence = labels.length ? `Ekranda algılanan başlık/durum metinleri: ${labels.join(' · ')}.` : 'Ekranda tanınan emir tablosu başlığı görünmüyor.';
       const headers = scanStats?.headers?.length ? `Algılanan sütunlar: ${scanStats.headers.join(' · ')}.` : 'Satır sütunları eşleştirilemedi.';
       const statuses = Object.entries(scanStats?.statuses || {}).map(([name, count]) => `${name}: ${count}`).join(', ') || 'durum okunamadı';
-      const rowStats = `Tablo teşhisi: ${scanStats?.pages || pageCount + 1} sayfa; ${scanStats?.rowNodes || 0} satır öğesi; ${scanStats?.cellCountMatches || 0} sütun sayısı uyan satır; ${scanStats?.tradeDateMatches || 0} alış/satış ve tarih uyan satır; ${scanStats?.completedStatuses || 0} tamamlandı durumlu satır. Durum dağılımı: ${statuses}.`;
+      const rowStats = `Tablo teşhisi: ${scanStats?.pages || pageCount + 1} sayfa; ${scanStats?.rowNodes || 0} satır öğesi; ${scanStats?.cellCountMatches || 0} sütun sayısı uyan satır; ${scanStats?.tradeDateMatches || 0} alış/satış ve tarih uyan satır; ${scanStats?.completedStatuses || 0} tamamlandı durumlu satır; geometrik tarama ${scanStats?.geometryTextTokens || 0} metin, ${scanStats?.geometrySideTokens || 0} yön, ${scanStats?.geometryDateTokens || 0} tarih adayı buldu. Durum dağılımı: ${statuses}.`;
       sendResponse({ ok: false, accountSummary: cryptoOnly ? null : readAccountSummary(),
         positions: cryptoOnly ? [] : positionSnapshotRows(),
         positionsCaptured: cryptoOnly ? false : positionsTableCaptured(),
