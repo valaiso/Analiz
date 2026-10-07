@@ -22,7 +22,7 @@ export function renderDagilim(ctx) {
   const { analysis, navigate } = ctx;
   const { open, totals } = analysis;
   const liveRaw = currentMidasPositions();
-  const usingMidas = Boolean(liveRaw?.length);
+  const usingMidas = liveRaw !== null;
   const liveCodes = new Set((liveRaw || []).map((row) => row.code));
   const live = addSiteMarketMetrics(liveRaw || []);
   const midasTotal = getMidasAccountSnapshot()?.summary?.totalValue;

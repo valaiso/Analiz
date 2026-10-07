@@ -18,6 +18,8 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
       if (!data.response?.ok) {
         const error = new Error(data.response?.error || 'Midas geçmişi okunamadı.');
         error.accountSummary = data.response?.accountSummary || null;
+        error.positions = data.response?.positions || [];
+        error.positionsCaptured = data.response?.positionsCaptured === true;
         reject(error);
       } else resolve({
         rows: data.response.rows || [],
@@ -25,6 +27,7 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
         unmatchedCount: data.response.unmatchedCount || 0,
         accountSummary: data.response.accountSummary || null,
         positions: data.response.positions || [],
+        positionsCaptured: data.response.positionsCaptured === true,
         marketData: data.response.marketData || {},
         marketErrors: data.response.marketErrors || {},
       });

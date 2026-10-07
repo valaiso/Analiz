@@ -72,6 +72,7 @@ export function saveMidasAccountSnapshot(snapshot) {
     capturedAt: snapshot.capturedAt || new Date().toISOString(),
     summary: snapshot.summary || null,
     positions: Array.isArray(snapshot.positions) ? snapshot.positions : [],
+    positionsCaptured: snapshot.positionsCaptured === true || (Array.isArray(snapshot.positions) && snapshot.positions.length > 0),
   };
   try {
     localStorage.setItem(MIDAS_SNAPSHOT_KEY, JSON.stringify(midasSnapshot));

@@ -176,6 +176,7 @@ async function readMidas(ctx, button) {
       capturedAt: new Date().toISOString(),
       summary: result.accountSummary,
       positions: result.positions,
+      positionsCaptured: result.positionsCaptured,
     });
     if (result.accountSummary) {
       logMidasAccount(result.accountSummary);
@@ -271,7 +272,17 @@ async function readMidas(ctx, button) {
       pruned: pruneLocalMarketAssets(activeCycleStarts, closedCodes),
     }));
   } catch (error) {
-    if (!accountLogged && error.accountSummary) logMidasAccount(error.accountSummary);
+    if (error.accountSummary) {
+      if (!accountLogged) logMidasAccount(error.accountSummary);
+      if (error.positionsCaptured || error.positions?.length) {
+        saveMidasAccountSnapshot({
+          capturedAt: new Date().toISOString(), summary: error.accountSummary,
+          positions: error.positions, positionsCaptured: error.positionsCaptured,
+        });
+        logMidas(`Emir satırları okunamasa da güncel Midas pozisyonları eşitlendi (${error.positions.length} varlık).`);
+        ctx.refresh();
+      }
+    }
     logMidas(`HATA: ${error.message}`);
     toast(error.message);
   } finally {

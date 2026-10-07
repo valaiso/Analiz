@@ -30,7 +30,8 @@ export function groupAssetRows(rows) {
 
 export function currentMidasPositions() {
   const snapshot = getMidasAccountSnapshot();
-  if (!snapshot?.summary?.totalValue || !Array.isArray(snapshot.positions) || !snapshot.positions.length) return null;
+  if (!snapshot?.summary?.totalValue || !Array.isArray(snapshot.positions)
+    || (!snapshot.positions.length && !snapshot.positionsCaptured)) return null;
   return snapshot.positions.map((row) => {
     const meta = DB.byCode.get(row.code) || {};
     const currency = row.currency || meta.currency || (meta.kind === 'US_ETF' || meta.kind === 'CRYPTO' ? 'USD' : 'TRY');
@@ -189,4 +190,3 @@ export function addSiteMarketMetrics(positions) {
     };
   });
 }
-

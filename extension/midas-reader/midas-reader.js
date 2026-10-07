@@ -55,8 +55,8 @@ function canonicalHeader(value) {
   if (/^(emir tarihi|işlem tarihi)$/.test(text)) return 'Emir tarihi';
   if (/^(ort\.?\s*maliyet|ortalama maliyet)$/.test(text)) return 'Ort. Maliyet';
   if (/^dağılım$/.test(text)) return 'Dağılım';
-  if (/^günlük getiri$/.test(text)) return 'Günlük getiri';
-  if (/^toplam getiri$/.test(text)) return 'Toplam getiri';
+  if (/^günlük getirisi?$/.test(text)) return 'Günlük getiri';
+  if (/^toplam getirisi?$/.test(text)) return 'Toplam getiri';
   return '';
 }
 
@@ -246,6 +246,10 @@ function positionSnapshotRows() {
   return [...found.values()];
 }
 
+function positionsTableCaptured() {
+  return Boolean(positionsRoot());
+}
+
 function assetHintsFor(element, root) {
   const hints = [];
   const addNodeHints = (node) => {
@@ -375,7 +379,6 @@ function candidateElements(root, scanStats, cryptoOnly = false) {
   if (columns.status < 0 || columns.side < 0 || columns.units < 0 || columns.price < 0 || columns.date < 0) return [];
   if (scanStats) scanStats.headers = headers;
   if ([columns.status, columns.side, columns.units, columns.price, columns.date].some((column) => column < 0)) return [];
-  if (columns.code < 0 && !cryptoOnly) return [];
 
   // Midas görsel tablosunda satır, semantic table/role=row kullanmadan iç içe
   // div'lerle çizilebiliyor. Bu yüzden başlık satırının kardeşlerini varsaymak
@@ -460,9 +463,9 @@ function candidateElements(root, scanStats, cryptoOnly = false) {
     const row = {
       text, headers, cells,
       sourceId: element.getAttribute('data-order-id') || element.getAttribute('data-id') || '',
-      assetCode: columns.code >= 0 ? assetCodeAtRow(root,
+      assetCode: assetCodeAtRow(root,
         matchedContainer && matchedContainer.getBoundingClientRect().height <= 80 ? matchedContainer : element,
-        headerItems[columns.code]) : '',
+        columns.code >= 0 ? headerItems[columns.code] : undefined),
       codeHints: assetHintsFor(element, root),
     };
     const key = row.sourceId || text.replace(/\s+/g, ' ').trim();
@@ -850,12 +853,16 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const headers = scanStats?.headers?.length ? `Algılanan sütunlar: ${scanStats.headers.join(' · ')}.` : 'Satır sütunları eşleştirilemedi.';
       const statuses = Object.entries(scanStats?.statuses || {}).map(([name, count]) => `${name}: ${count}`).join(', ') || 'durum okunamadı';
       const rowStats = `Tablo teşhisi: ${scanStats?.pages || pageCount + 1} sayfa; ${scanStats?.rowNodes || 0} satır öğesi; ${scanStats?.cellCountMatches || 0} sütun sayısı uyan satır; ${scanStats?.tradeDateMatches || 0} alış/satış ve tarih uyan satır; ${scanStats?.completedStatuses || 0} tamamlandı durumlu satır. Durum dağılımı: ${statuses}.`;
-      sendResponse({ ok: false, accountSummary: cryptoOnly ? null : readAccountSummary(), error: `${cryptoOnly ? 'Midas Kripto' : 'Midas yatırım hesabı'} sayfasında tamamlanmış işlem satırı okunamadı. ${pageCount + 1} sayfa tarandı. ${start ? `Başlangıç sayfası: ${start}. ` : ''}${paginationStop ? `Sayfalama: ${paginationStop} ` : ''}${headers} ${rowStats} ${evidence}` });
+      sendResponse({ ok: false, accountSummary: cryptoOnly ? null : readAccountSummary(),
+        positions: cryptoOnly ? [] : positionSnapshotRows(),
+        positionsCaptured: cryptoOnly ? false : positionsTableCaptured(),
+        error: `${cryptoOnly ? 'Midas Kripto' : 'Midas yatırım hesabı'} sayfasında tamamlanmış işlem satırı okunamadı. ${pageCount + 1} sayfa tarandı. ${start ? `Başlangıç sayfası: ${start}. ` : ''}${paginationStop ? `Sayfalama: ${paginationStop} ` : ''}${headers} ${rowStats} ${evidence}` });
       return;
     }
     sendResponse({ ok: true, rows: normalized, scannedPages: pageCount + 1,
       unmatchedCount: normalized.length - ready.length, accountSummary: cryptoOnly ? null : readAccountSummary(),
-      positions: cryptoOnly ? [] : positionSnapshotRows() });
+      positions: cryptoOnly ? [] : positionSnapshotRows(),
+      positionsCaptured: cryptoOnly ? false : positionsTableCaptured() });
   }).catch((error) => {
     sendResponse({ ok: false, error: error.message || 'Midas emir geçmişi okunamadı.' });
   });
