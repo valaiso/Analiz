@@ -17,6 +17,16 @@ function multilineTextOf(element) {
     .split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
 }
 
+function semanticValuesOf(element) {
+  const values = [textOf(element)];
+  for (const attribute of [...(element.attributes || [])]) {
+    if (!/aria-label|title|alt|symbol|ticker|asset|coin|currency|code|^data-/i.test(attribute.name)) continue;
+    const value = String(attribute.value || '').replace(/\s+/g, ' ').trim();
+    if (value && value.length <= 180 && !values.includes(value)) values.push(value);
+  }
+  return values.filter(Boolean);
+}
+
 function directCellElements(row) {
   const explicit = [...row.querySelectorAll(':scope > td, :scope > th, :scope > [role="cell"], :scope > [role="gridcell"]')];
   return explicit.length ? explicit : [...row.children];
@@ -340,18 +350,24 @@ function positionSnapshotRows(cryptoOnly = false, diagnostics = {}) {
     const codeX = (codeHeader.box.left + codeHeader.box.right) / 2;
     const leaves = [...root.querySelectorAll('*')]
       .filter(isVisible)
-      .map((node) => ({ node, text: textOf(node), box: node.getBoundingClientRect() }))
-      .filter(({ node, text, box }) => text && text.length <= 100 && box.height > 0
+      .map((node) => ({ node, values: semanticValuesOf(node), text: textOf(node), box: node.getBoundingClientRect() }))
+      .filter(({ node, values, text, box }) => values.some((value) => value.length <= 180) && box.height > 0
         && box.top > headerRow.getBoundingClientRect().bottom - 4
         && ![...node.children].some((child) => isVisible(child) && textOf(child) === text));
     const excludedCodes = new Set(['AL', 'SAT', 'BUY', 'SELL', 'USD', 'TRY', 'TL', 'FON', 'BIST', 'NASDAQ', 'ADET']);
-    const symbolTokens = leaves
-      .filter(({ text, box }) => /^(?=[A-Z0-9.-]*[A-Z])[A-Z0-9][A-Z0-9.-]{1,14}$/.test(text)
-        && !excludedCodes.has(text) && Math.abs((box.left + box.right) / 2 - codeX) <= Math.max(120, codeHeader.box.width))
+    const symbolTokens = leaves.flatMap((leaf) => leaf.values.map((value) => {
+      const upper = value.toLocaleUpperCase('en-US').trim();
+      const pair = upper.match(/^([A-Z0-9][A-Z0-9.-]{1,14})\s*[\/_-]\s*(?:USDT|USDC|USD|TRY|TL)$/)?.[1] || '';
+      const parenthesized = upper.match(/\(([A-Z0-9][A-Z0-9.-]{1,14})\)/)?.[1] || '';
+      const code = pair || parenthesized
+        || (/^(?=[A-Z0-9.-]*[A-Z])[A-Z0-9][A-Z0-9.-]{1,14}$/.test(upper) ? upper : '');
+      return { ...leaf, code };
+    })).filter(({ code, box }) => code && !excludedCodes.has(code)
+      && Math.abs((box.left + box.right) / 2 - codeX) <= Math.max(180, codeHeader.box.width * 1.5))
       .sort((a, b) => a.box.top - b.box.top);
     const symbolRows = [];
     for (const token of symbolTokens) {
-      const code = token.text.toUpperCase();
+      const code = token.code;
       const y = (token.box.top + token.box.bottom) / 2;
       const existing = symbolRows.find((row) => row.code === code && Math.abs(row.y - y) < 6);
       if (!existing) symbolRows.push({ code, y, box: token.box });
@@ -368,26 +384,30 @@ function positionSnapshotRows(cryptoOnly = false, diagnostics = {}) {
       const x = (header.box.left + header.box.right) / 2;
       const candidates = leaves
         .filter((token) => Math.abs((token.box.top + token.box.bottom) / 2 - row.y) <= rowTolerance
-          && Math.abs((token.box.left + token.box.right) / 2 - x) <= Math.max(88, header.box.width))
+          && Math.abs((token.box.left + token.box.right) / 2 - x) <= Math.max(120, header.box.width * 1.5))
         .map((token) => ({ ...token,
           dx: Math.abs((token.box.left + token.box.right) / 2 - x),
           dy: Math.abs((token.box.top + token.box.bottom) / 2 - row.y),
         }))
         .sort((a, b) => a.dx + a.dy * 0.8 - (b.dx + b.dy * 0.8));
-      return candidates[0]?.text || '';
+      return candidates[0]?.text || candidates[0]?.values[0] || '';
     };
     const numericCell = (columnIndex, row) => {
       const header = headers[columnIndex];
       const x = (header.box.left + header.box.right) / 2;
       const candidates = leaves
         .filter((token) => Math.abs((token.box.top + token.box.bottom) / 2 - row.y) <= rowTolerance
-          && Math.abs((token.box.left + token.box.right) / 2 - x) <= Math.max(88, header.box.width))
-        .map((token) => ({ ...token,
+          && Math.abs((token.box.left + token.box.right) / 2 - x) <= Math.max(120, header.box.width * 1.5))
+        .flatMap((token) => token.values.map((value, valueIndex) => ({ ...token, value, valueIndex,
           dx: Math.abs((token.box.left + token.box.right) / 2 - x),
           dy: Math.abs((token.box.top + token.box.bottom) / 2 - row.y),
-        }))
-        .sort((a, b) => a.dx + a.dy * 0.8 - (b.dx + b.dy * 0.8));
-      return candidates.find(({ text }) => parseQuantity(text) > 0)?.text || '';
+        })))
+        .filter(({ value }) => parseQuantity(value) > 0)
+        .sort((a, b) => Number(/[.…]{2,}|…|\.\.\.$/.test(a.value))
+          - Number(/[.…]{2,}|…|\.\.\.$/.test(b.value))
+          || a.dx + a.dy * 0.8 - (b.dx + b.dy * 0.8)
+          || a.valueIndex - b.valueIndex);
+      return candidates[0]?.value || '';
     };
     const moneyCell = (columnIndex, row) => {
       if (columnIndex < 0) return '';
@@ -395,14 +415,17 @@ function positionSnapshotRows(cryptoOnly = false, diagnostics = {}) {
       const x = (header.box.left + header.box.right) / 2;
       const candidates = leaves
         .filter((token) => Math.abs((token.box.top + token.box.bottom) / 2 - row.y) <= rowTolerance
-          && Math.abs((token.box.left + token.box.right) / 2 - x) <= Math.max(88, header.box.width)
-          && parseMoney(token.text) !== null)
-        .map((token) => ({ ...token,
+          && Math.abs((token.box.left + token.box.right) / 2 - x) <= Math.max(120, header.box.width * 1.5))
+        .flatMap((token) => token.values.map((value, valueIndex) => ({ ...token, value, valueIndex,
           dx: Math.abs((token.box.left + token.box.right) / 2 - x),
           dy: Math.abs((token.box.top + token.box.bottom) / 2 - row.y),
-        }))
-        .sort((a, b) => a.dx + a.dy * 0.8 - (b.dx + b.dy * 0.8));
-      return candidates[0]?.text || '';
+        })))
+        .filter(({ value }) => parseMoney(value) !== null)
+        .sort((a, b) => Number(/[.…]{2,}|…|\.\.\.$/.test(a.value))
+          - Number(/[.…]{2,}|…|\.\.\.$/.test(b.value))
+          || a.dx + a.dy * 0.8 - (b.dx + b.dy * 0.8)
+          || a.valueIndex - b.valueIndex);
+      return candidates[0]?.value || '';
     };
     for (const row of symbolRows) {
       if (found.has(row.code)) continue;

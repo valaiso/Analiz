@@ -277,6 +277,7 @@ async function showComparison(codes, ctx) {
 export function renderFonlar(ctx) {
   const root = h('div', { class: 'stack' });
   const visibleFunds = DB.funds.filter((fund) => !requiresQualifiedInvestor(fund));
+  const comparableFunds = visibleFunds.filter((fund) => ['YAT', 'EMK'].includes(String(fund.kind || '').toUpperCase()));
   const categories = [...new Set(visibleFunds.map((f) => f.cat))]
     .sort((a, b) => a.localeCompare(b, 'tr'));
   const kinds = [...new Set(visibleFunds.map((f) => f.kind))];
@@ -284,6 +285,7 @@ export function renderFonlar(ctx) {
   const state = { query: '', cat: '', kind: '', limit: PAGE_SIZE, onlyMine: false };
   const mine = new Set((ctx.analysis?.open || []).map((x) => x.code));
   const secili = new Set();
+  const fundCompareSelected = new Set();
 
   const search = h('input', {
     type: 'search', placeholder: 'Fon kodu veya ünvan ara…',
@@ -341,6 +343,91 @@ export function renderFonlar(ctx) {
       + 'eksenler uç değerlerden arındırılmıştır; kenardaki noktaların gerçek değerini üzerine '
       + 'gelerek görebilirsin. Filtreler haritayı daraltır; bir noktaya tıklayınca fon detayı açılır.'),
     scatterBox));
+
+  /* ------------------------------------------------------- fon getiri kıyaslaması */
+
+  const fundCompareSearch = h('input', {
+    type: 'search', placeholder: 'Fon kodu veya ünvan yaz…',
+    'aria-label': 'Karşılaştırmak için yatırım veya emeklilik fonu ara',
+    style: 'min-width:220px;flex:1 1 260px',
+  });
+  const fundCompareSuggestions = h('div', {
+    style: 'display:flex;gap:8px;flex-wrap:wrap;margin-top:10px',
+  });
+  const fundCompareTable = h('div');
+  const comparePeriods = [
+    ['1h', '1 Hafta'], ['1a', '1 Ay'], ['3a', '3 Ay'],
+    ['6a', '6 Ay'], ['1y', '1 Yıl'], ['3y', '3 Yıl'],
+  ];
+  const renderFundComparison = () => {
+    const query = fundCompareSearch.value.trim().toLocaleUpperCase('tr');
+    const matches = query
+      ? comparableFunds.filter((fund) => fund.code.toLocaleUpperCase('tr').includes(query)
+        || fund.name.toLocaleUpperCase('tr').includes(query)).slice(0, 8)
+      : [];
+    fundCompareSuggestions.replaceChildren(...matches.map((fund) => h('button', {
+      class: 'btn btn-sm', type: 'button',
+      disabled: fundCompareSelected.has(fund.code),
+      title: fund.name,
+      onclick: () => addFundToCompare(fund),
+    }, fundCompareSelected.has(fund.code) ? `${fund.code} · Eklendi` : `+ ${fund.code} · ${fund.name}`)));
+
+    const selected = [...fundCompareSelected]
+      .map((code) => DB.byCode.get(code))
+      .filter((fund) => fund && comparableFunds.includes(fund));
+    if (!selected.length) {
+      fundCompareTable.replaceChildren(h('p', { class: 'dim', style: 'margin:0' },
+        'Karşılaştırmak için yukarıdan fon kodu veya adı ara.'));
+      return;
+    }
+    fundCompareTable.replaceChildren(h('div', { class: 'table-wrap' }, h('table', {},
+      h('thead', {}, h('tr', {},
+        h('th', { style: 'text-align:left' }, 'Fon'),
+        h('th', { style: 'text-align:left' }, 'Kategori'),
+        comparePeriods.map(([, label]) => h('th', {}, label)),
+        h('th', {}, ''))),
+      h('tbody', {}, selected.map((fund) => h('tr', {},
+        h('td', { style: 'text-align:left' },
+          h('span', { class: 'code-chip' }, fund.code),
+          h('span', { class: 'dim', style: 'margin-left:7px' }, fund.name)),
+        h('td', { style: 'text-align:left' }, fund.cat || '—'),
+        comparePeriods.map(([key]) => h('td', { class: cls(fund.ret?.[key]) }, pctSigned(fund.ret?.[key], 1))),
+        h('td', {}, h('button', {
+          class: 'btn btn-sm', type: 'button',
+          'aria-label': `${fund.code} fonunu karşılaştırmadan çıkar`,
+          onclick: () => { fundCompareSelected.delete(fund.code); renderFundComparison(); },
+        }, 'Çıkar'))))))));
+  };
+  const addFundToCompare = (fund) => {
+    if (!fund || fundCompareSelected.has(fund.code)) return;
+    if (fundCompareSelected.size >= MAX_KARSILASTIRMA) {
+      toast(`En fazla ${MAX_KARSILASTIRMA} fon karşılaştırılabilir`);
+      return;
+    }
+    fundCompareSelected.add(fund.code);
+    fundCompareSearch.value = '';
+    renderFundComparison();
+  };
+  fundCompareSearch.addEventListener('input', renderFundComparison);
+  fundCompareSearch.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const query = fundCompareSearch.value.trim().toLocaleUpperCase('tr');
+    const exact = comparableFunds.find((fund) => fund.code.toLocaleUpperCase('tr') === query);
+    const first = exact || comparableFunds.find((fund) => fund.code.toLocaleUpperCase('tr').includes(query)
+      || fund.name.toLocaleUpperCase('tr').includes(query));
+    if (first) addFundToCompare(first);
+  });
+  root.append(h('section', { class: 'card' },
+    h('div', { class: 'card-head' }, h('div', {},
+      h('h2', {}, 'Fon Getiri Karşılaştırması'),
+      h('span', { class: 'sub' }, 'Yalnızca yatırım ve emeklilik fonları · en fazla 5 fon'))),
+    h('p', { class: 'dim', style: 'margin:0 0 10px;font-size:.85rem' },
+      'Fon getirileri kendi fiyat geçmişlerine göre karşılaştırılır; enflasyon ve endeks eklenmez.'),
+    fundCompareSearch,
+    fundCompareSuggestions,
+    h('div', { style: 'margin-top:12px' }, fundCompareTable)));
+  renderFundComparison();
 
   /* ------------------------------------------------------------------- tablo */
 

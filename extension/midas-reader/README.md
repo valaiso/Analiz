@@ -32,7 +32,7 @@ olarak etiketlenir ve ekranda sağlayıcının tam adı kullanılır.
 7. Midas'ın **Kripto** görünümüne geçip Kripto **Pozisyonlar** ve **Emir geçmişi** tablolarını açın; Analiz'de **Kripto Emirlerini Oku** düğmesine basın. Kripto açık varlıkları yatırım hesabından ayrı kaydedilir. Emir çiftlerinde (ör. ETH/USDT) sembol, çiftin ilk varlığıdır; USDT/USDC tek başına açık pozisyon sayılmaz.
 8. Önizlemede emir sembolü, alış/satış, tarih, adet ve fiyatı kontrol edip içe aktarımı onaylayın.
 
-Güncel paket sürümü `0.28.2`'dır. Kod GitHub'a gönderildiğinde Actions içindeki **Midas eklentisini paketle** işi, yüklenebilir ZIP'i `midas-reader-v0.28.2` adlı artifact olarak üretir. ZIP'i indirip boş bir klasöre açın; Chrome/Edge uzantılar sayfasında **Paketlenmemiş öğe yükle** ile içindeki dosyaların bulunduğu klasörü seçin. Eski paket `0.24.0` görünüyorsa Yenile aynı eski klasörü tekrar yükler; yeni artifact klasörünü kullanıp Midas ve Analiz sekmelerini yenileyin. Aktarım günlüğü okuyucu sürümünü de yazar.
+Güncel paket sürümü `0.28.3`'dır. Kod GitHub'a gönderildiğinde Actions içindeki **Midas eklentisini paketle** işi, yüklenebilir ZIP'i `midas-reader-v0.28.3` adlı artifact olarak üretir. ZIP'i indirip boş bir klasöre açın; Chrome/Edge uzantılar sayfasında **Paketlenmemiş öğe yükle** ile içindeki dosyaların bulunduğu klasörü seçin. Eski paket `0.24.0` görünüyorsa Yenile aynı eski klasörü tekrar yükler; yeni artifact klasörünü kullanıp Midas ve Analiz sekmelerini yenileyin. Aktarım günlüğü okuyucu sürümünü de yazar.
 
 Eklenti Midas Atlas ve Analiz GitHub Pages adreslerinin yanı sıra Yahoo Finance ve
 TEFAS fiyat kaynaklarına erişim izni ister.
