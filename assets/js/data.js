@@ -299,8 +299,8 @@ export const lastDate = () => DB.calendar[DB.calendar.length - 1];
 /** Varlığın işlem/fiyat para birimi. ABD ETF'leri ve kripto USD, diğerleri TRY. */
 export function currencyForCode(code) {
   const meta = DB.byCode.get(code);
-  return meta?.currency === 'USD' || meta?.kind === 'US_ETF' || meta?.kind === 'CRYPTO'
-    ? 'USD' : 'TRY';
+  if (meta?.currency) return meta.currency === 'USD' ? 'USD' : 'TRY';
+  return meta?.kind === 'US_ETF' || meta?.kind === 'CRYPTO' ? 'USD' : 'TRY';
 }
 
 /** Takvim günündeki USD/TRY; seri o güne kadar bilinen son kuru içerir. */

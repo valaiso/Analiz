@@ -53,6 +53,7 @@ function renderLine(container, cfg) {
   const {
     dates = [], series = [], height = 260, yFormat = (v) => String(Math.round(v)),
     valueFormat, baseline = null, legend = true,
+    xFormat = (date) => `${date.slice(5, 7)}/${date.slice(0, 4)}`,
   } = cfg;
 
   const width = Math.max(container.clientWidth || 640, 260);
@@ -121,7 +122,7 @@ function renderLine(container, cfg) {
       'text-anchor': k === 0 ? 'start' : k === labelCount - 1 ? 'end' : 'middle',
       fill: 'var(--text-dim)', 'font-size': 11,
     });
-    t.textContent = `${dates[i].slice(5, 7)}/${dates[i].slice(0, 4)}`;
+    t.textContent = xFormat(dates[i]);
     svg.append(t);
   }
 
@@ -535,7 +536,7 @@ export function scatterChart(container, cfg) {
 }
 
 function renderScatter(container, cfg) {
-  const { points = [], height = 340, xLabel = '', yLabel = '', onPick } = cfg;
+  const { points = [], height = 340, xLabel = '', yLabel = '', onPick, robust = false } = cfg;
   container.replaceChildren();
   const veri = points.filter((p) => isNum(p.x) && isNum(p.y));
   if (!veri.length) {
@@ -549,12 +550,20 @@ function renderScatter(container, cfg) {
   const plotH = height - pad.top - pad.bottom;
 
   const xs = veri.map((p) => p.x), ys = veri.map((p) => p.y);
-  let xMin = Math.min(...xs), xMax = Math.max(...xs);
-  let yMin = Math.min(...ys), yMax = Math.max(...ys);
+  const quantile = (values, q) => {
+    const sorted = [...values].sort((a, b) => a - b);
+    return sorted[Math.floor((sorted.length - 1) * q)];
+  };
+  let xMin = robust ? quantile(xs, .01) : Math.min(...xs);
+  let xMax = robust ? quantile(xs, .99) : Math.max(...xs);
+  let yMin = robust ? quantile(ys, .01) : Math.min(...ys);
+  let yMax = robust ? quantile(ys, .99) : Math.max(...ys);
+  const clippedCount = veri.filter((point) => point.x < xMin || point.x > xMax
+    || point.y < yMin || point.y > yMax).length;
   const xPad = (xMax - xMin) * 0.05 || 1, yPad = (yMax - yMin) * 0.05 || 1;
   xMin -= xPad; xMax += xPad; yMin -= yPad; yMax += yPad;
-  const X = (v) => pad.left + ((v - xMin) / (xMax - xMin)) * plotW;
-  const Y = (v) => pad.top + plotH - ((v - yMin) / (yMax - yMin)) * plotH;
+  const X = (v) => pad.left + ((Math.max(xMin, Math.min(xMax, v)) - xMin) / (xMax - xMin)) * plotW;
+  const Y = (v) => pad.top + plotH - ((Math.max(yMin, Math.min(yMax, v)) - yMin) / (yMax - yMin)) * plotH;
 
   const svg = svgEl('svg', { viewBox: `0 0 ${width} ${height}`, width: '100%', height });
 
@@ -612,6 +621,8 @@ function renderScatter(container, cfg) {
     }
   }
   container.append(svg);
+  if (clippedCount) container.append(h('p', { class: 'dim', style: 'margin:4px 0 0;font-size:.76rem' },
+    `${clippedCount} uç değer grafiğin kenarında gösteriliyor; üzerine gelerek gerçek değerini görebilirsin.`));
 }
 
 export { colorAt };

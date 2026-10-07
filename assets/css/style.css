@@ -215,9 +215,13 @@ select:focus, .input:focus, input:focus { border-color: var(--accent); box-shado
   background: linear-gradient(135deg,
     color-mix(in srgb, var(--kpi-tone, var(--accent)) 9%, var(--surface)), var(--surface) 78%);
 }
-.kpi-blue { --kpi-tone: var(--accent); }
-.kpi-blue-light { --kpi-tone: color-mix(in srgb, var(--accent) 58%, white); }
-.kpi-teal { --kpi-tone: var(--teal); }
+.kpi-blue { --kpi-tone: var(--c1); }
+.kpi-blue-light { --kpi-tone: var(--c5); }
+.kpi-teal { --kpi-tone: var(--c6); }
+.kpi-orange { --kpi-tone: var(--c2); }
+.kpi-burgundy { --kpi-tone: var(--c3); }
+.kpi-green { --kpi-tone: var(--c4); }
+.kpi-purple { --kpi-tone: var(--c5); }
 .kpi-label { color: var(--text-dim); font-size: .8rem; font-weight: 550; letter-spacing: .01em; }
 .kpi-value { font-size: 1.55rem; font-weight: 700; margin-top: 4px; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
 .kpi-sub { margin-top: 3px; font-size: .84rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }

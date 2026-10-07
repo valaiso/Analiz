@@ -1,7 +1,7 @@
 const CHANNEL = 'ANALIZ_MIDAS_EXTENSION';
 
 /** Installed extension reads the already-open Atlas tab and returns visible rows. */
-export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes = [], timeoutMs = 600_000) {
+export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes = [], timeoutMs = 600_000, options = {}) {
   const requestId = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -31,7 +31,10 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
     }
 
     window.addEventListener('message', receive);
-    window.postMessage({ channel: CHANNEL, type: 'READ', requestId, knownCodes, localAssets, fundCodes }, location.origin);
+    window.postMessage({
+      channel: CHANNEL, type: 'READ', requestId, knownCodes, localAssets, fundCodes,
+      cryptoOnly: options.cryptoOnly === true,
+    }, location.origin);
   });
 }
 

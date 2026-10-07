@@ -11,6 +11,7 @@ window.addEventListener('message', async (event) => {
       type: request.type === 'LIVE_QUOTES' ? 'ANALIZ_FETCH_LIVE_QUOTES' : 'ANALIZ_READ_MIDAS_HISTORY',
       codes: request.codes || [], knownCodes: request.knownCodes || [],
       localAssets: request.localAssets || [], fundCodes: request.fundCodes || [],
+      cryptoOnly: request.cryptoOnly === true,
     });
     window.postMessage({
       channel: 'ANALIZ_MIDAS_EXTENSION',

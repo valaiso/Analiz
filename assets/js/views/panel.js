@@ -118,7 +118,7 @@ export function renderPanel(ctx) {
     }),
     plCard({
       label: 'Günlük Kazanç',
-      tone: 'teal',
+      tone: 'orange',
       amount: hasMidasTotal
         ? siteDailyChange : totals.dayPL,
       pct: hasMidasTotal
@@ -133,7 +133,7 @@ export function renderPanel(ctx) {
     }),
     plCard({
       label: 'İşlem Kayıtlarına Göre K/Z',
-      tone: 'blue-light',
+      tone: 'green',
       amount: totals.totalPL,
       pct: totals.totalPct,
       formatMoney: tlSigned,
@@ -144,7 +144,7 @@ export function renderPanel(ctx) {
     }),
     kpiCard({
       label: 'İşlem Kayıtlarına Göre XIRR',
-      tone: 'blue',
+      tone: 'burgundy',
       value: isNum(analysis.xirr) ? pctSigned(analysis.xirr, 1) : '—',
       valueClass: cls(analysis.xirr),
       sub: 'Para ağırlıklı yıllık bileşik getiri',
@@ -156,7 +156,7 @@ export function renderPanel(ctx) {
     }),
     kpiCard({
       label: 'Stopaj Kesintileri',
-      tone: 'teal',
+      tone: 'purple',
       value: tl(stopajEstimate),
       sub: 'Vergili fon kârının %17,5’i',
       hint: 'Otomatik hesaplanır; ana portföy değerini etkilemez.',
@@ -198,14 +198,16 @@ export function renderPanel(ctx) {
   const snapshotDate = hasMidasTotal && midasSnapshot?.capturedAt
     ? new Date(midasSnapshot.capturedAt).toISOString().slice(0, 10) : null;
   const chartEndDate = [series.dates.at(-1), snapshotDate].filter(Boolean).sort().at(-1) || null;
-  const chartStartDate = series.dates[0] || snapshotDate;
+  const untrackedPrincipal = hasMidasTotal
+    ? Math.max(0, midasSummary.totalValue - (series.value.at(-1) || 0)) : 0;
+  // Unknown Midas principal is held flat across available history, so longer
+  // windows can still show a distinct range even when transaction history is short.
+  const chartStartDate = untrackedPrincipal > 0 ? DB.calendar[0] : series.dates[0] || snapshotDate;
   const chartCalendar = chartEndDate && chartStartDate
     ? DB.calendar.filter((date) => date >= chartStartDate && date <= chartEndDate) : [];
   const chartDates = chartCalendar.length
     ? [...chartCalendar, ...(chartEndDate > chartCalendar.at(-1) ? [chartEndDate] : [])]
     : (chartEndDate ? [chartEndDate] : []);
-  const untrackedPrincipal = hasMidasTotal
-    ? Math.max(0, midasSummary.totalValue - (series.value.at(-1) || 0)) : 0;
   const seriesIndexes = new Map(series.dates.map((date, index) => [date, index]));
   const chartValues = chartDates.map((date) => {
     const index = seriesIndexes.get(date);
@@ -224,9 +226,13 @@ export function renderPanel(ctx) {
     const range = { '1a': 30, '3a': 90, '6a': 180, '1y': 365, '3y': 1095, all: 0 }[rangeKey];
     const v = sliceLastDays(chartDates, chartValues, range);
     const inv = sliceLastDays(chartDates, investedValues, range);
+    const visibleDays = v.dates.length > 1
+      ? (Date.parse(`${v.dates.at(-1)}T00:00:00Z`) - Date.parse(`${v.dates[0]}T00:00:00Z`)) / 86400000 : 0;
     lineChart(chartBox, {
       dates: v.dates,
       height: 280,
+      xFormat: (date) => visibleDays <= 180 ? `${date.slice(8, 10)}/${date.slice(5, 7)}`
+        : `${date.slice(5, 7)}/${date.slice(0, 4)}`,
       yFormat: (x) => tl(x, { compact: true }),
       valueFormat: (x) => tl(x),
       series: [

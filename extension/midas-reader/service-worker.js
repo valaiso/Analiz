@@ -19,7 +19,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     // Sayfalar arasında gezen okuyucu aynı anda yalnızca tek sekmeye dokunmalı.
     tabs.sort((a, b) => (b.lastAccessed || 0) - (a.lastAccessed || 0));
     try {
-      const result = await chrome.tabs.sendMessage(tabs[0].id, { type: 'ANALIZ_SCAN_VISIBLE_HISTORY' });
+      const cryptoOnly = message.cryptoOnly === true;
+      const result = await chrome.tabs.sendMessage(tabs[0].id, {
+        type: 'ANALIZ_SCAN_VISIBLE_HISTORY', cryptoOnly,
+      });
       if (!result?.ok) {
         sendResponse(result);
         return;
@@ -30,8 +33,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const positionsRead = positionCodes.size > 0;
       const missingRows = (result.rows || [])
         .filter((row) => !row.missing?.length && row.code && !known.has(String(row.code).toUpperCase())
-          && (!positionsRead || positionCodes.has(String(row.code).toUpperCase())));
-      const missingPositionCodes = (result.positions || [])
+          && (cryptoOnly || !positionsRead || positionCodes.has(String(row.code).toUpperCase())));
+      const missingPositionCodes = (cryptoOnly ? [] : (result.positions || []))
         .filter((position) => position.code && !known.has(String(position.code).toUpperCase()))
         .map((position) => String(position.code).toUpperCase());
       const missingCodes = [...new Set([
@@ -46,7 +49,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const marketErrors = {};
       for (const code of missingCodes) {
         try {
-          const asset = await fetchAssetHistory(code, fundCodes.has(code), '3y', cycleStarts[code] || '');
+          const asset = cryptoOnly
+            ? await cryptoHistory(code, cycleStarts[code] || '')
+            : await fetchAssetHistory(code, fundCodes.has(code), '3y', cycleStarts[code] || '');
           if (asset) marketData[code] = asset;
           else marketErrors[code] = 'Yahoo Finance veya TEFAS 3 yıllık geçmiş döndürmedi.';
         } catch (error) {
@@ -56,8 +61,11 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       for (const localAsset of message.localAssets || []) {
         const code = String(localAsset.code || '').toUpperCase();
         if (!code || marketData[code]) continue;
+        if (cryptoOnly && localAsset.kind !== 'CRYPTO') continue;
         try {
-          const asset = await fetchAssetHistory(code, localAsset.source === 'TEFAS', '1mo');
+          const asset = cryptoOnly
+            ? await cryptoHistory(code, localAsset.startDate || '')
+            : await fetchAssetHistory(code, localAsset.source === 'TEFAS', '1mo');
           if (asset) marketData[code] = { ...asset, partial: true, startDate: localAsset.startDate || '' };
           else marketErrors[code] = 'Güncel fiyat yenilenemedi; önceki yerel fiyat geçmişi korunuyor.';
         } catch (error) {
@@ -184,6 +192,23 @@ async function yahooHistory(code, ticker, range = '3y', startDate = '') {
     currency: chart.meta?.currency || (isBist ? 'TRY' : 'USD'), source: 'Yahoo Finance',
     startDate: /^\d{4}-\d{2}-\d{2}$/.test(startDate) ? startDate : '', prices,
   };
+}
+
+async function cryptoHistory(code, purchaseDate = '') {
+  const normalized = String(code || '').toUpperCase().replace(/[-_/]?(TRY|USD|USDT|USDC)$/, '');
+  if (!normalized) return null;
+  for (const ticker of [`${normalized}-TRY`, `${normalized}-USD`]) {
+    try {
+      const asset = await yahooHistory(code, ticker, 'max', purchaseDate);
+      if (asset) return {
+        ...asset, kind: 'CRYPTO', category: 'Kripto',
+        currency: ticker.endsWith('-TRY') ? 'TRY' : 'USD',
+      };
+    } catch {
+      // Try the dollar pair when Yahoo has no TRY market for this coin.
+    }
+  }
+  return null;
 }
 
 function tefasBody(code, kind, start, end) {

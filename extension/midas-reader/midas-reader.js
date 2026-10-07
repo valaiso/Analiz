@@ -298,7 +298,7 @@ function assetCodeAtRow(root, rowElement, headerItem) {
   return candidates[0]?.code || '';
 }
 
-function orderHistoryRoot() {
+function orderHistoryRoot(cryptoOnly = false) {
   const headings = [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div')]
     .filter((element) => isVisible(element) && /^emir\s+geçmişi$/iu.test(textOf(element)))
     .sort((a, b) => textOf(a).length - textOf(b).length);
@@ -308,6 +308,10 @@ function orderHistoryRoot() {
       const hasOrderHeader = [...scope.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
         .some((element) => isVisible(element) && isOrderHeader(element));
       if (!hasOrderHeader) continue;
+      if (cryptoOnly) {
+        const context = textOf(scope);
+        if (!/kripto|crypto/i.test(context)) continue;
+      }
       headerScope = scope;
       const hasPager = [...scope.querySelectorAll('span, div, p')]
         .some((element) => isVisible(element) && /^\d+\s*[-–]\s*\d+\s*\/\s*\d+$/.test(textOf(element)));
@@ -500,12 +504,14 @@ function paginationState(direction, root) {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function collectCompletedHistory() {
+async function collectCompletedHistory(cryptoOnly = false) {
   const collected = new Map();
   const scanStats = { headers: [], rowNodes: 0, cellCountMatches: 0, tradeDateMatches: 0, completedStatuses: 0, statuses: {} };
-  const root = orderHistoryRoot();
+  const root = orderHistoryRoot(cryptoOnly);
   if (!root) return {
-    rows: [], pageCount: 0, paginationStop: 'Yatırım hesabındaki Emir geçmişi tablosu bulunamadı.',
+    rows: [], pageCount: 0, paginationStop: cryptoOnly
+      ? 'Midas Kripto ekranında Emir geçmişi tablosu bulunamadı.'
+      : 'Bu Midas ekranında Emir geçmişi tablosu bulunamadı.',
     labels: [], start: '', accountSummary: readAccountSummary(),
   };
   const start = paginationState('prev', root)?.label || '';
@@ -740,6 +746,8 @@ function normalizeRow(row) {
     || getLabel(/stopaj|vergi kesintisi/i, 'stopaj|vergi kesintisi');
   const taxMoney = String(taxValue || '').match(/(?:₺|TRY)\s*([\d.,]+)/i)?.[0];
   const withholdingTax = Math.max(0, parseLocaleNumber(taxMoney || taxValue) || 0);
+  const currency = /\$|\bUSD\b/i.test(priceValue || text) ? 'USD'
+    : /₺|\bTRY\b|\bTL\b/i.test(priceValue || text) ? 'TRY' : '';
 
   const missing = [];
   if (!date) missing.push('tarih');
@@ -749,14 +757,15 @@ function normalizeRow(row) {
   if (!(price > 0)) missing.push('fiyat');
   const fieldDump = headers.map((header, index) => `${header}=${cells[index] || '—'}`).join(' | ');
   return {
-    date, type, code, units, price, fee, withholdingTax, sourceId: row.sourceId, rawText: text, missing,
+    date, type, code, units, price, fee, withholdingTax, currency, sourceId: row.sourceId, rawText: text, missing,
     diagnostic: `Alanlar: ${fieldDump}. Ayrıştırılan: kod=${code || '—'}, yön=${type || '—'}, tarih=${date || '—'}, miktar=${units > 0 ? units : '—'}, fiyat=${price > 0 ? price : '—'}. ${!code ? `Sembol ipuçları: ${(row.codeHints || []).slice(0, 6).join(' / ') || 'bulunamadı'}. ` : ''}Eksik=${missing.join(',') || 'yok'}`,
   };
 }
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'ANALIZ_SCAN_VISIBLE_HISTORY') return undefined;
-  collectCompletedHistory().then(({ rows, pageCount, paginationStop, labels, start, scanStats }) => {
+  const cryptoOnly = message.cryptoOnly === true;
+  collectCompletedHistory(cryptoOnly).then(({ rows, pageCount, paginationStop, labels, start, scanStats }) => {
     const normalized = rows.map(normalizeRow);
     const ready = normalized.filter((row) => !row.missing.length);
     if (!rows.length) {
@@ -764,12 +773,12 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const headers = scanStats?.headers?.length ? `Algılanan sütunlar: ${scanStats.headers.join(' · ')}.` : 'Satır sütunları eşleştirilemedi.';
       const statuses = Object.entries(scanStats?.statuses || {}).map(([name, count]) => `${name}: ${count}`).join(', ') || 'durum okunamadı';
       const rowStats = `Tablo teşhisi: ${scanStats?.pages || pageCount + 1} sayfa; ${scanStats?.rowNodes || 0} satır öğesi; ${scanStats?.cellCountMatches || 0} sütun sayısı uyan satır; ${scanStats?.tradeDateMatches || 0} alış/satış ve tarih uyan satır; ${scanStats?.completedStatuses || 0} tamamlandı durumlu satır. Durum dağılımı: ${statuses}.`;
-      sendResponse({ ok: false, accountSummary: readAccountSummary(), error: `Midas yatırım hesabı sayfasında tamamlanmış işlem satırı okunamadı. ${pageCount + 1} sayfa tarandı. ${start ? `Başlangıç sayfası: ${start}. ` : ''}${paginationStop ? `Sayfalama: ${paginationStop} ` : ''}${headers} ${rowStats} ${evidence} Yalnızca “Emir geçmişi” tablosu tarandı; kripto geçmişi dahil edilmedi.` });
+      sendResponse({ ok: false, accountSummary: cryptoOnly ? null : readAccountSummary(), error: `${cryptoOnly ? 'Midas Kripto' : 'Midas yatırım hesabı'} sayfasında tamamlanmış işlem satırı okunamadı. ${pageCount + 1} sayfa tarandı. ${start ? `Başlangıç sayfası: ${start}. ` : ''}${paginationStop ? `Sayfalama: ${paginationStop} ` : ''}${headers} ${rowStats} ${evidence}` });
       return;
     }
     sendResponse({ ok: true, rows: normalized, scannedPages: pageCount + 1,
-      unmatchedCount: normalized.length - ready.length, accountSummary: readAccountSummary(),
-      positions: positionSnapshotRows() });
+      unmatchedCount: normalized.length - ready.length, accountSummary: cryptoOnly ? null : readAccountSummary(),
+      positions: cryptoOnly ? [] : positionSnapshotRows() });
   }).catch((error) => {
     sendResponse({ ok: false, error: error.message || 'Midas emir geçmişi okunamadı.' });
   });

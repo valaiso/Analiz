@@ -4,7 +4,7 @@ import {
   h, tl, money, units as fmtUnits, fmtDate, toast, confirmDialog, isNum, openModal,
 } from '../util.js';
 import {
-  DB, priceOnDate, lastDate, indexForDate, addLocalMarketAssets, pruneLocalMarketAssets,
+  DB, priceOnDate, lastDate, indexForDate, addLocalMarketAssets, pruneLocalMarketAssets, usdTryAtIndex,
 } from '../data.js';
 import {
   transactions, addTransaction, updateTransaction, removeTransaction,
@@ -167,7 +167,7 @@ async function readMidas(ctx, button) {
     const result = await requestMidasHistory(
       DB.funds.map((fund) => fund.code),
       DB.funds.filter((fund) => fund.localMarketData)
-        .map((fund) => ({ code: fund.code, source: fund.catSrc })),
+        .map((fund) => ({ code: fund.code, source: fund.catSrc, kind: fund.kind, startDate: fund.startDate })),
       DB.funds.filter((fund) => ['YAT', 'EMK', 'GYF', 'GSYF'].includes(fund.kind))
         .map((fund) => fund.code),
     );
@@ -279,10 +279,54 @@ async function readMidas(ctx, button) {
   }
 }
 
+async function readMidasCrypto(ctx, button) {
+  button.disabled = true;
+  button.textContent = 'Kripto emir geçmişi okunuyor…';
+  logMidas('Midas kripto emir geçmişi taraması başlatıldı.');
+  try {
+    const result = await requestMidasHistory([], DB.funds.filter((fund) => fund.localMarketData)
+      .map((fund) => ({ code: fund.code, source: fund.catSrc, kind: fund.kind, startDate: fund.startDate })),
+    [], 600_000, { cryptoOnly: true });
+    if (!result.rows.length) throw new Error('Midas Kripto ekranında Emir geçmişi tablosunu açıp tekrar dene.');
+    const assets = Object.values(result.marketData || {}).map((asset) => ({
+      ...asset, kind: 'CRYPTO', category: 'Kripto',
+    }));
+    const assetByCode = new Map(assets.map((asset) => [asset.code, asset]));
+    for (const row of result.rows) {
+      if (!row.code || !row.date || !(row.price > 0) || assetByCode.has(row.code)) continue;
+      assetByCode.set(row.code, {
+        code: row.code, name: row.code, kind: 'CRYPTO', category: 'Kripto',
+        currency: row.currency || 'TRY', source: 'Midas emir geçmişi', partial: true,
+        startDate: row.date, prices: [{ date: row.date, price: row.price }],
+      });
+    }
+    for (const row of result.rows) {
+      const asset = assetByCode.get(row.code);
+      if (!asset || !row.currency || row.currency === asset.currency || !(row.price > 0)) continue;
+      const rate = usdTryAtIndex(Math.max(0, indexForDate(row.date)));
+      if (!(rate > 0)) continue;
+      row.price = row.currency === 'TRY' ? row.price / rate : row.price * rate;
+      row.currency = asset.currency;
+    }
+    const stored = addLocalMarketAssets([...assetByCode.values()]);
+    logMidas(`${result.scannedPages} sayfa tarandı; ${result.rows.length} kripto emri okundu, ${stored} kripto fiyat geçmişi eşitlendi.`);
+    for (const [code, error] of Object.entries(result.marketErrors || {})) logMidas(`${code}: ${error}`);
+    showMidasPreview(result.rows, result, ctx, result.marketErrors || {});
+    if (stored) ctx.refresh();
+  } catch (error) {
+    logMidas(`Kripto aktarım hatası: ${error.message}`);
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+    button.textContent = 'Kripto Emirlerini Oku';
+  }
+}
+
 /** Seçilen varlığın USD bazlı olup olmadığını belirler. */
 function getAssetCurrency(code) {
   const meta = DB.byCode.get(code);
-  const isUsd = meta && (meta.currency === 'USD' || meta.kind === 'US_ETF' || meta.kind === 'CRYPTO');
+  const isUsd = meta?.currency ? meta.currency === 'USD'
+    : Boolean(meta && (meta.kind === 'US_ETF' || meta.kind === 'CRYPTO'));
   return {
     isUsd,
     sym: isUsd ? '$' : '₺',
@@ -310,6 +354,7 @@ function transactionForm({ existing, onDone, prefillCode }) {
     type: 'number', step: 'any', min: '0', placeholder: '0',
     value: existing ? String(existing.units) : '',
   });
+  if (existing) unitsInput.value = String(existing.units);
   const amountInput = h('input', { type: 'number', step: 'any', min: '0', placeholder: '0,00' });
   const priceInput = h('input', {
     type: 'number', step: 'any', min: '0', placeholder: '0,000000',
@@ -327,6 +372,7 @@ function transactionForm({ existing, onDone, prefillCode }) {
 
   const priceHint = h('div', { class: 'hint', text: 'Varlık kodu ve tarih seçince otomatik dolar' });
   const nameHint = h('div', { class: 'hint' });
+  const availableUnitsHint = h('div', { class: 'hint' });
 
   // Dinamik etiket elementleri
   const priceLabel = h('label', { text: 'Birim Fiyat (₺)' });
@@ -386,8 +432,25 @@ function transactionForm({ existing, onDone, prefillCode }) {
     if (price > 0 && qty > 0) amountInput.value = String(Number((qty * price).toFixed(2)));
   }
 
+  function refreshAvailableUnits() {
+    if (typeSel.value !== 'SAT') {
+      availableUnitsHint.textContent = 'Tutar otomatik hesaplanır';
+      return;
+    }
+    const code = picker.get();
+    const txRows = transactions().filter((row) => row.code === code && (!existing || row.id !== existing.id));
+    let available = txRows.reduce((sum, row) => sum + (row.type === 'AL' ? Number(row.units) : -Number(row.units)), 0);
+    if (!txRows.length) {
+      const position = (currentMidasPositions() || []).find((row) => row.code === code);
+      available = Number(position?.units) || 0;
+    }
+    availableUnitsHint.textContent = code && available > 0 ? `Mevcut: ${fmtUnits(available)}` : 'Mevcut: —';
+  }
+
   dateInput.addEventListener('change', () => syncPrice(true));
-  picker.input.addEventListener('blur', () => syncPrice(true));
+  picker.input.addEventListener('input', refreshAvailableUnits);
+  picker.input.addEventListener('blur', () => { syncPrice(true); refreshAvailableUnits(); });
+  typeSel.addEventListener('change', refreshAvailableUnits);
   amountInput.addEventListener('input', recalcFromAmount);
   unitsInput.addEventListener('input', recalcFromUnits);
   priceInput.addEventListener('input', () => {
@@ -436,7 +499,7 @@ function transactionForm({ existing, onDone, prefillCode }) {
       field('Tarih', dateInput),
       fieldWithLabel(priceLabel, priceInput, priceHint),
       fieldWithLabel(amountLabel, amountInput, h('div', { class: 'hint', text: 'Adet otomatik hesaplanır' })),
-      field('Adet', unitsInput, h('div', { class: 'hint', text: 'Tutar otomatik hesaplanır' })),
+      field('Adet', unitsInput, availableUnitsHint),
       fieldWithLabel(feeLabel, feeInput),
       field('Stopaj (₺)', taxInput, h('div', { class: 'hint', text: 'Midas/ekstrede görünen gerçek kesintiyi gir' })),
       field('Not', noteInput)),
@@ -446,6 +509,7 @@ function transactionForm({ existing, onDone, prefillCode }) {
         isEdit ? 'Kaydet' : 'İşlemi Ekle')));
 
   if (existing || prefillCode) syncPrice(!existing);
+  refreshAvailableUnits();
   return form;
 }
 
@@ -459,6 +523,10 @@ export function renderIslemler(ctx) {
     class: 'btn btn-primary', type: 'button', disabled: multiProfile,
     onclick: (event) => readMidas(ctx, event.currentTarget),
   }, multiProfile ? 'Önce tek profil seç' : 'Midas’tan İşlemleri Oku');
+  const cryptoMidasButton = h('button', {
+    class: 'btn', type: 'button', disabled: multiProfile,
+    onclick: (event) => readMidasCrypto(ctx, event.currentTarget),
+  }, multiProfile ? 'Önce tek profil seç' : 'Kripto Emirlerini Oku');
   const copyLogButton = h('button', {
     class: 'btn', type: 'button', onclick: () => copyMidasLog(midasLogField),
   }, 'Yanıtı kopyala');
@@ -467,8 +535,8 @@ export function renderIslemler(ctx) {
     style: 'width:100%;resize:vertical;font: .85rem var(--mono);margin-top:10px',
   }, midasActivity.length ? midasActivity.join('\n') : 'Henüz aktarım yapılmadı. Sonuçlar ve hatalar burada görünür.');
   root.append(sectionCard('Midas Aktarımı',
-    'Yatırım hesabındaki Emir geçmişini sayfalar boyunca tarar; kripto işlem geçmişini dışarıda bırakır. Bekleyen/iptal emirlerini atlar ve Yatırım hesabı toplam değerini yanıt geçmişine yazar. Emir göndermez; işlemler bu tarayıcıda kalır.',
-    h('div', { class: 'btn-row' }, midasButton, copyLogButton),
+    'Yatırım veya Kripto ekranında Emir geçmişini açıp ilgili aktarım düğmesine bas. Bekleyen/iptal emirleri atlanır. Emir gönderilmez; işlem kayıtları bu tarayıcıda tutulur.',
+    h('div', { class: 'btn-row' }, midasButton, cryptoMidasButton, copyLogButton),
     h('label', { style: 'display:block;margin-top:12px;font-weight:600' }, 'Aktarım yanıt geçmişi'),
     midasLogField));
 

@@ -313,6 +313,7 @@ export function renderFonlar(ctx) {
       points: noktalar,
       xLabel: 'Yıllık oynaklık',
       yLabel: '1 yıllık getiri',
+      robust: true,
       onPick: (p) => showFundDetail(p.code, ctx),
     });
   };

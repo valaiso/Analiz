@@ -40,12 +40,14 @@ export function renderRisk(ctx) {
   root.append(h('div', { class: 'grid grid-kpi' },
     kpiCard({
       label: 'Yıllık Oynaklık',
+      tone: 'blue',
       value: isNum(summary.vol) ? pct(summary.vol, 1) : '—',
       sub: summary.vol > 25 ? 'Yüksek dalgalanma' : summary.vol > 12 ? 'Orta' : 'Düşük',
       hint: 'Günlük getirilerin standart sapması, yıllığa çevrilmiş',
     }),
     kpiCard({
       label: 'Sharpe Oranı',
+      tone: 'green',
       value: isNum(summary.sharpe) ? num(summary.sharpe, 2) : '—',
       valueClass: cls(summary.sharpe),
       sub: `Risksiz getiri %${num(riskFree, 0)} varsayıldı`,
@@ -53,12 +55,14 @@ export function renderRisk(ctx) {
     }),
     kpiCard({
       label: 'Maksimum Düşüş',
+      tone: 'burgundy',
       value: isNum(summary.maxDD) ? pct(summary.maxDD, 1) : '—',
       valueClass: 'down',
       sub: 'Zirveden en derin geri çekilme',
     }),
     kpiCard({
       label: 'Yıllık Getiri (TWR)',
+      tone: 'orange',
       value: isNum(summary.annual) ? pctSigned(summary.annual, 1) : '—',
       valueClass: cls(summary.annual),
       sub: `${Math.round(summary.days)} günlük geçmişten`,
@@ -68,6 +72,7 @@ export function renderRisk(ctx) {
     }),
     kpiCard({
       label: 'Kazançlı Gün Oranı',
+      tone: 'teal',
       value: isNum(summary.positiveDays) ? pct(summary.positiveDays, 0) : '—',
       sub: isNum(summary.best)
         ? `En iyi ${pctSigned(summary.best, 1)} · en kötü ${pctSigned(summary.worst, 1)}`
