@@ -346,7 +346,7 @@ function positionSnapshotRows(cryptoOnly = false, diagnostics = {}) {
         && ![...node.children].some((child) => isVisible(child) && textOf(child) === text));
     const excludedCodes = new Set(['AL', 'SAT', 'BUY', 'SELL', 'USD', 'TRY', 'TL', 'FON', 'BIST', 'NASDAQ', 'ADET']);
     const symbolTokens = leaves
-      .filter(({ text, box }) => /^[A-Z][A-Z0-9.-]{1,14}$/.test(text)
+      .filter(({ text, box }) => /^(?=[A-Z0-9.-]*[A-Z])[A-Z0-9][A-Z0-9.-]{1,14}$/.test(text)
         && !excludedCodes.has(text) && Math.abs((box.left + box.right) / 2 - codeX) <= Math.max(120, codeHeader.box.width))
       .sort((a, b) => a.box.top - b.box.top);
     const symbolRows = [];
@@ -497,26 +497,68 @@ function assetHintsFor(element) {
   return hints;
 }
 
-function assetCodeAtRow(root, rowElement, headerItem, allowStablecoins = false) {
+function assetTokenAtRow(root, rowElement, headerItem) {
   const rowBox = rowElement.getBoundingClientRect();
   const rowY = (rowBox.top + rowBox.bottom) / 2;
   const headerBox = headerItem?.box;
-  const assetX = headerBox ? (headerBox.left + headerBox.right) / 2 : null;
-  const excluded = new Set(['AL', 'SAT', 'BUY', 'SELL', 'USD', 'TRY', 'TL', 'FON', 'BIST', 'NASDAQ']);
-  if (!allowStablecoins) { excluded.add('USDT'); excluded.add('USDC'); }
+  const rootBox = root.getBoundingClientRect();
+  // If the crypto grid hides its Varlık header, the asset/pair column is the
+  // leftmost column in the order panel. Use that column as a spatial hint.
+  const assetX = headerBox ? (headerBox.left + headerBox.right) / 2
+    : rootBox.left + Math.min(56, rootBox.width * 0.08);
   const candidates = [...root.querySelectorAll('*')]
     .filter(isVisible)
-    .map((node) => ({ node, code: textOf(node), box: node.getBoundingClientRect() }))
-    .filter(({ code, box }) => /^[A-Z][A-Z0-9.-]{1,9}$/.test(code)
-      && !excluded.has(code) && box.width <= 100 && box.height <= 32)
+    .map((node) => {
+      const text = textOf(node).toUpperCase();
+      const pairCode = text.match(/^([A-Z0-9][A-Z0-9.-]{1,14})\s*[\/_-]\s*(?:USDT|USDC|USD|TRY|TL)$/)?.[1] || '';
+      const directCode = /^(?=[A-Z0-9.-]*[A-Z])[A-Z0-9][A-Z0-9.-]{1,14}$/.test(text) ? text : '';
+      return { text, code: pairCode || directCode, pairCode, box: node.getBoundingClientRect() };
+    })
+    .filter(({ code, pairCode, box }) => code
+      && box.width <= (pairCode ? 180 : 120) && box.height <= 32)
     .map((item) => ({
       ...item,
       yDistance: Math.abs((item.box.top + item.box.bottom) / 2 - rowY),
-      xDistance: assetX == null ? 0 : Math.abs((item.box.left + item.box.right) / 2 - assetX),
+      xDistance: Math.abs((item.box.left + item.box.right) / 2 - assetX),
     }))
-    .filter((item) => item.yDistance <= Math.max(18, rowBox.height / 2 + 4))
+    .filter((item) => item.yDistance <= Math.max(14, Math.min(26, rowBox.height / 2 + 4)))
     .sort((a, b) => a.yDistance - b.yDistance || a.xDistance - b.xDistance);
-  return candidates[0]?.code || '';
+  return candidates[0]?.text || '';
+}
+
+function assetCodeAtRow(root, rowElement, headerItem, allowStablecoins = false) {
+  const token = assetTokenAtRow(root, rowElement, headerItem);
+  if (!token) return '';
+  const pairCode = token.match(/^([A-Z0-9][A-Z0-9.-]{1,14})\s*[\/_-]\s*(?:USDT|USDC|USD|TRY|TL)$/)?.[1] || '';
+  const code = pairCode || token;
+  const excluded = new Set(['AL', 'SAT', 'BUY', 'SELL', 'USD', 'TRY', 'TL', 'FON', 'BIST', 'NASDAQ',
+    'ADET', 'LOT', 'PIYASA', 'LIMIT', 'GERCEKLESTI', 'TAMAMLANDI']);
+  if (!allowStablecoins) { excluded.add('USDT'); excluded.add('USDC'); }
+  return excluded.has(code) ? '' : code;
+}
+
+function compactOrderAnchor(root, sideText, dateText) {
+  const side = String(sideText || '').trim().toLocaleLowerCase('tr');
+  const time = String(dateText || '').match(/\b\d{1,2}:\d{2}:\d{2}\b/)?.[0] || '';
+  const sides = [...root.querySelectorAll('*')]
+    .filter((node) => isVisible(node) && textOf(node).toLocaleLowerCase('tr') === side)
+    .map((node) => ({ node, box: node.getBoundingClientRect() }))
+    .filter(({ box }) => box.height > 0 && box.height <= 32);
+  const dates = [...root.querySelectorAll('*')]
+    .filter((node) => isVisible(node) && DATE_WORDS.test(textOf(node))
+      && (!time || textOf(node).includes(time)))
+    .map((node) => ({ node, box: node.getBoundingClientRect() }))
+    .filter(({ box }) => box.height > 0 && box.height <= 40);
+  let best = null;
+  for (const candidate of sides) {
+    const y = (candidate.box.top + candidate.box.bottom) / 2;
+    for (const date of dates) {
+      const dateY = (date.box.top + date.box.bottom) / 2;
+      const distance = Math.abs(y - dateY);
+      if (distance <= 34 && (!best || distance < best.distance)) best = { node: candidate.node, distance };
+    }
+  }
+  return best?.node || null;
 }
 
 function orderHistoryRoot(cryptoOnly = false) {
@@ -677,13 +719,18 @@ function candidateElements(root, scanStats, cryptoOnly = false) {
     // Yalnızca açıkça tamamlanan işlemleri içe aktar; bekleyen/iptal/kısmi emirleri atla.
     if (!executedStatus(status)) continue;
     const text = cells.join('\n');
+    const rowAnchor = compactOrderAnchor(root, cells[columns.side], cells[columns.date])
+      || (matchedContainer && matchedContainer.getBoundingClientRect().height <= 80 ? matchedContainer : element);
+    const assetToken = assetTokenAtRow(root, rowAnchor,
+      columns.code >= 0 ? headerItems[columns.code] : undefined);
     const row = {
       text, headers, cells,
       sourceId: element.getAttribute('data-order-id') || element.getAttribute('data-id') || '',
-      assetCode: assetCodeAtRow(root,
-        matchedContainer && matchedContainer.getBoundingClientRect().height <= 80 ? matchedContainer : element,
-        columns.code >= 0 ? headerItems[columns.code] : undefined),
-      codeHints: assetHintsFor(matchedContainer || element),
+      assetCode: assetCodeAtRow(root, rowAnchor,
+        columns.code >= 0 ? headerItems[columns.code] : undefined, false),
+      // Never take hints from a grid container that spans adjacent orders.
+      // Those sibling symbols previously contaminated every unresolved row.
+      codeHints: [...new Set([assetToken, ...assetHintsFor(rowAnchor)].filter(Boolean))],
     };
     const key = row.sourceId || text.replace(/\s+/g, ' ').trim();
     if (key && !uniqueRows.has(key)) uniqueRows.set(key, row);
@@ -722,10 +769,13 @@ function candidateElements(root, scanStats, cryptoOnly = false) {
     const status = aligned[columns.status] || '';
     if (!executedStatus(status)) continue;
     const text = aligned.join('\n');
+    const assetToken = assetTokenAtRow(root, sideToken.node,
+      columns.code >= 0 ? headerItems[columns.code] : undefined);
     const row = {
       text, headers, cells: aligned, sourceId: '',
       assetCode: assetCodeAtRow(root, sideToken.node, columns.code >= 0 ? headerItems[columns.code] : undefined),
-      codeHints: [...new Set(rowTokens.map((item) => item.text).filter((value) => value.length <= 100))],
+      codeHints: [...new Set([assetToken, ...rowTokens.map((item) => item.text)].filter(Boolean)
+        .filter((value) => value.length <= 100))],
     };
     const key = text.replace(/\s+/g, ' ').trim();
     if (key && !uniqueRows.has(key)) {
@@ -1076,7 +1126,7 @@ function normalizeRow(row, cryptoOnly = false) {
   const codeSources = [row.assetCode, codeValue, text, ...(row.codeHints || [])].filter(Boolean).map(String);
   const stablecoinPair = cryptoOnly && codeSources.some((value) =>
     /(?:^|[^A-Z0-9])(?:USDT|USDC)\s*[\/_-]\s*(?:USDT|USDC|USD|TRY|TL)(?:$|[^A-Z0-9])/i.test(value));
-  const pairCode = codeSources.map((value) => value.match(/\b([A-Z][A-Z0-9.-]{1,11})\s*[\/_-]\s*(?:USDT|USDC|USD|TRY|TL)\b/i)?.[1]?.toUpperCase())
+  const pairCode = codeSources.map((value) => value.match(/\b([A-Z0-9][A-Z0-9.-]{1,14})\s*[\/_-]\s*(?:USDT|USDC|USD|TRY|TL)\b/i)?.[1]?.toUpperCase())
     .find((candidate) => candidate && !['AL', 'SAT', 'BUY', 'SELL', 'TRY', 'TL'].includes(candidate));
   const cryptoNameCode = cryptoOnly ? codeSources.flatMap((value) => {
     const normalized = value.toLocaleLowerCase('en').replace(/[_-]+/g, ' ');
@@ -1087,20 +1137,20 @@ function normalizeRow(row, cryptoOnly = false) {
   let code = pairCode || cryptoNameCode || (row.assetCode && !codeExcluded.has(String(row.assetCode).toUpperCase())
     ? String(row.assetCode).toUpperCase()
     : (codeValue || getLabel(/sembol|varlık|fon kodu|hisse kodu/i, 'sembol|varlık|fon kodu|hisse kodu'))
-      .match(/[A-Z][A-Z0-9.-]{1,11}/)?.[0] || '');
+      .match(/(?=[A-Z0-9.-]*[A-Z])[A-Z0-9][A-Z0-9.-]{1,14}/)?.[0] || '');
   if (codeExcluded.has(code.toUpperCase()) && !pairCode) code = '';
   if (!code) {
     for (const hint of row.codeHints || []) {
       const value = String(hint).trim();
-      const direct = value.match(/^([A-Z][A-Z0-9.-]{1,9})$/)?.[1];
-      const labelled = value.match(/(?:symbol|ticker|asset(?:\s+code)?|sembol|varlık(?:\s+kodu)?)\s*[:=#/-]\s*([A-Z][A-Z0-9.-]{1,9})/i)?.[1];
-      const pathValue = value.match(/\/(?:symbols?|assets?|tickers?|funds?)\/([A-Z][A-Z0-9.-]{1,9})(?:\/|$|[?#])/i)?.[1];
+      const direct = value.match(/^((?=[A-Z0-9.-]*[A-Z])[A-Z0-9][A-Z0-9.-]{1,14})$/)?.[1];
+      const labelled = value.match(/(?:symbol|ticker|asset(?:\s+code)?|sembol|varlık(?:\s+kodu)?)\s*[:=#/-]\s*((?=[A-Z0-9.-]*[A-Z])[A-Z0-9][A-Z0-9.-]{1,14})/i)?.[1];
+      const pathValue = value.match(/\/(?:symbols?|assets?|tickers?|funds?)\/((?=[A-Z0-9.-]*[A-Z])[A-Z0-9][A-Z0-9.-]{1,14})(?:\/|$|[?#])/i)?.[1];
       const candidate = direct || labelled || pathValue || '';
       if (candidate && !codeExcluded.has(candidate.toLocaleUpperCase('tr'))) { code = candidate.toLocaleUpperCase('tr'); break; }
     }
   }
   if (!code) {
-    code = text.match(/\b[A-Z][A-Z0-9.-]{1,11}\b/g)?.find((token) => !codeExcluded.has(token)) || '';
+    code = text.match(/\b(?=[A-Z0-9.-]*[A-Z])[A-Z0-9][A-Z0-9.-]{1,14}\b/g)?.find((token) => !codeExcluded.has(token)) || '';
   }
 
   const unitsValue = valueByHeader(/gerçekleşen miktar|gerçekleşen adet|adet|miktar|lot/i)
