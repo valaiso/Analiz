@@ -173,13 +173,13 @@ export function renderPanel(ctx) {
       h('td', {}, tl(row.amount))))));
   const stopajContent = stopajRows.length
     ? h('div', { class: 'stack' },
-      h('div', { class: 'table-wrap' }, stopajTable),
+      h('div', { class: 'table-wrap', style: 'max-width:460px' }, stopajTable),
       h('p', { class: 'dim', style: 'margin:0' },
         `Tahmini toplam: ${tl(stopajEstimate)} · kârın %17,5’i`))
     : h('p', { class: 'dim', style: 'margin:0' },
       'Vergili fonlarda kâr oluştuğunda tahmini stopaj burada gösterilir.');
-  root.append(sectionCard('Stopaj Kesintileri',
-    'Vergili fon kârının %17,5’i olarak hesaplanır · portföy değerini etkilemez', stopajContent));
+  const stopajSection = sectionCard('Stopaj Kesintileri',
+    'Vergili fon kârının %17,5’i olarak hesaplanır · portföy değerini etkilemez', stopajContent);
 
   if (txs.length >= 5 && daysSinceBackup() === null) {
     root.append(h('div', { class: 'notice' },
@@ -228,8 +228,11 @@ export function renderPanel(ctx) {
 
   const drawChart = () => {
     const range = { '1a': 30, '3a': 90, '6a': 180, '1y': 365, '3y': 1095, all: 0 }[rangeKey];
-    const v = sliceLastDays(chartDates, chartValues, range);
-    const inv = sliceLastDays(chartDates, investedValues, range);
+    const sinceStart = Math.max(1, Math.ceil((Date.parse(`${chartEndDate}T00:00:00Z`)
+      - Date.parse(`${chartStartDate}T00:00:00Z`)) / 86400000));
+    const selectedDays = range || sinceStart;
+    const v = sliceLastDays(chartDates, chartValues, selectedDays);
+    const inv = sliceLastDays(chartDates, investedValues, selectedDays);
     const visibleDays = v.dates.length > 1
       ? (Date.parse(`${v.dates.at(-1)}T00:00:00Z`) - Date.parse(`${v.dates[0]}T00:00:00Z`)) / 86400000 : 0;
     lineChart(chartBox, {
@@ -348,17 +351,20 @@ export function renderPanel(ctx) {
   /* --------------------------------------------------------------- nakit akışı */
 
   const nakit = cashflowCalendar(txs);
+  let nakitSection = null;
   if (nakit.monthly.length > 1) {
     const kutu = h('div');
     const sonAylar = nakit.monthly.slice(-18);
-    root.append(sectionCard('Aylık Yatırım Akışı',
-      `Son ${sonAylar.length} ay · pozitif = para koydun, negatif = çektin`, kutu));
+    nakitSection = sectionCard('Aylık Yatırım Akışı',
+      `Son ${sonAylar.length} ay · pozitif = para koydun, negatif = çektin`, kutu);
     barChart(kutu, {
       items: sonAylar.map((m) => ({ label: m.month.slice(2), value: m.amount })),
       format: (v) => tlSigned(v),
       labelWidth: 52,
     });
   }
+  if (nakitSection) root.append(h('div', { class: 'grid grid-2' }, stopajSection, nakitSection));
+  else root.append(stopajSection);
 
   if (nakit.realizedByYear.length) {
     root.append(sectionCard('Yıllara Göre Gerçekleşen Kâr/Zarar',

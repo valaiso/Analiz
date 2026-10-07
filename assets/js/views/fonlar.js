@@ -322,8 +322,9 @@ export function renderFonlar(ctx) {
     scatterChart(scatterBox, {
       points: noktalar,
       height: 340,
-      yMinLimit: -40,
-      yQuantiles: [0, 0.97],
+      yMinLimit: 0,
+      yMaxLimit: 100,
+      yQuantiles: [0, 1],
       xQuantiles: [0.01, 0.99],
       xLabel: 'Yıllık oynaklık',
       yLabel: '1 yıllık getiri',

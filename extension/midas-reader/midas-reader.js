@@ -283,7 +283,7 @@ function assetCodeAtRow(root, rowElement, headerItem) {
   const rowY = (rowBox.top + rowBox.bottom) / 2;
   const headerBox = headerItem?.box;
   const assetX = headerBox ? (headerBox.left + headerBox.right) / 2 : null;
-  const excluded = new Set(['AL', 'SAT', 'BUY', 'SELL', 'USD', 'TRY', 'TL', 'FON', 'BIST', 'NASDAQ']);
+  const excluded = new Set(['AL', 'SAT', 'BUY', 'SELL', 'USD', 'USDT', 'USDC', 'TRY', 'TL', 'FON', 'BIST', 'NASDAQ']);
   const candidates = [...root.querySelectorAll('*')]
     .filter(isVisible)
     .map((node) => ({ node, code: textOf(node), box: node.getBoundingClientRect() }))
@@ -761,10 +761,15 @@ function normalizeRow(row) {
     })();
 
   const codeValue = valueByHeader(/varlık|sembol|fon kodu|hisse kodu/i);
-  let code = row.assetCode || (codeValue
-    || getLabel(/sembol|varlık|fon kodu|hisse kodu/i, 'sembol|varlık|fon kodu|hisse kodu'))
-    .match(/[A-Z][A-Z0-9.-]{1,9}/)?.[0] || '';
-  const codeExcluded = new Set(['AL', 'SAT', 'ALIŞ', 'ALIM', 'SATIŞ', 'SATIM', 'BUY', 'SELL', 'USD', 'TRY', 'TL', 'ADET', 'LOT', 'FON', 'PIYASA', 'LIMIT', 'GERCEKLESTI', 'TAMAMLANDI']);
+  const codeExcluded = new Set(['AL', 'SAT', 'ALIŞ', 'ALIM', 'SATIŞ', 'SATIM', 'BUY', 'SELL', 'USD', 'USDT', 'USDC', 'TRY', 'TL', 'ADET', 'LOT', 'FON', 'PIYASA', 'LIMIT', 'GERCEKLESTI', 'TAMAMLANDI']);
+  const codeSources = [row.assetCode, codeValue, text, ...(row.codeHints || [])].filter(Boolean).map(String);
+  const pairCode = codeSources.map((value) => value.match(/\b([A-Z][A-Z0-9.-]{1,11})\s*[\/_-]\s*(?:USDT|USDC|USD|TRY|TL)\b/i)?.[1]?.toUpperCase())
+    .find((candidate) => candidate && !codeExcluded.has(candidate));
+  let code = pairCode || (row.assetCode && !codeExcluded.has(String(row.assetCode).toUpperCase())
+    ? String(row.assetCode).toUpperCase()
+    : (codeValue || getLabel(/sembol|varlık|fon kodu|hisse kodu/i, 'sembol|varlık|fon kodu|hisse kodu'))
+      .match(/[A-Z][A-Z0-9.-]{1,11}/)?.[0] || '');
+  if (codeExcluded.has(code.toUpperCase())) code = '';
   if (!code) {
     for (const hint of row.codeHints || []) {
       const value = String(hint).trim();
@@ -776,7 +781,7 @@ function normalizeRow(row) {
     }
   }
   if (!code) {
-    code = text.match(/\b[A-Z][A-Z0-9.-]{1,9}\b/g)?.find((token) => !codeExcluded.has(token)) || '';
+    code = text.match(/\b[A-Z][A-Z0-9.-]{1,11}\b/g)?.find((token) => !codeExcluded.has(token)) || '';
   }
 
   const unitsValue = valueByHeader(/gerçekleşen miktar|gerçekleşen adet|adet|miktar|lot/i)
@@ -803,6 +808,13 @@ function normalizeRow(row) {
     if (currencyValues.length && units > 0) price = currencyValues[0] / units;
   }
   const totalValue = parseLocaleNumber(valueByHeader(/^toplam$/i));
+  // Midas Crypto bazı satırlarda fiyat hücresini 0,002292, toplamı ise
+  // 33,00 USDT gösteriyor. Adet × fiyat toplamla uyuşmuyorsa gerçek birim
+  // fiyatı işlem toplamından türet; yanlış hücreyi fiyata aktarma.
+  if (totalValue > 0 && units > 0 && price > 0
+    && Math.abs(units * price - totalValue) / totalValue > 0.03) {
+    price = totalValue / units;
+  }
   if (!(price > 0) && totalValue > 0 && units > 0) price = totalValue / units;
   const amount = parseLocaleNumber(getLabel(/işlem tutarı|gerçekleşen tutar|toplam tutar|tutar/i, 'işlem tutarı|gerçekleşen tutar|toplam tutar|tutar'));
   if (!(price > 0) && amount > 0 && units > 0) price = amount / units;
@@ -811,7 +823,7 @@ function normalizeRow(row) {
     || getLabel(/stopaj|vergi kesintisi/i, 'stopaj|vergi kesintisi');
   const taxMoney = String(taxValue || '').match(/(?:₺|TRY)\s*([\d.,]+)/i)?.[0];
   const withholdingTax = Math.max(0, parseLocaleNumber(taxMoney || taxValue) || 0);
-  const currency = /\$|\bUSD\b/i.test(priceValue || text) ? 'USD'
+  const currency = /\$|\bUSD\b|\bUSDT\b|\bUSDC\b/i.test(`${priceValue} ${text}`) ? 'USD'
     : /₺|\bTRY\b|\bTL\b/i.test(priceValue || text) ? 'TRY' : '';
 
   const missing = [];

@@ -539,7 +539,7 @@ export function scatterChart(container, cfg) {
 function renderScatter(container, cfg) {
   const {
     points = [], height = 340, xLabel = '', yLabel = '', onPick, robust = false,
-    xQuantiles = [.01, .99], yQuantiles = [.01, .99], yMinLimit = null,
+    xQuantiles = [.01, .99], yQuantiles = [.01, .99], yMinLimit = null, yMaxLimit = null,
   } = cfg;
   container.replaceChildren();
   const veri = points.filter((p) => isNum(p.x) && isNum(p.y));
@@ -561,13 +561,17 @@ function renderScatter(container, cfg) {
   let xMin = robust ? quantile(xs, xQuantiles[0]) : Math.min(...xs);
   let xMax = robust ? quantile(xs, xQuantiles[1]) : Math.max(...xs);
   let yMin = yMinLimit !== null ? yMinLimit : robust ? quantile(ys, yQuantiles[0]) : Math.min(...ys);
-  let yMax = robust ? quantile(ys, yQuantiles[1]) : Math.max(...ys);
+  let yMax = yMaxLimit !== null ? yMaxLimit : robust ? quantile(ys, yQuantiles[1]) : Math.max(...ys);
   const hiddenBelowCount = yMinLimit !== null
     ? veri.filter((point) => point.y < yMinLimit).length : 0;
-  const plottedPoints = yMinLimit !== null ? veri.filter((point) => point.y >= yMinLimit) : veri;
+  const hiddenAboveCount = yMaxLimit !== null
+    ? veri.filter((point) => point.y > yMaxLimit).length : 0;
+  const plottedPoints = veri.filter((point) => (yMinLimit === null || point.y >= yMinLimit)
+    && (yMaxLimit === null || point.y <= yMaxLimit));
   const clippedCount = plottedPoints.filter((point) => point.x < xMin || point.x > xMax
     || point.y < yMin || point.y > yMax).length;
-  const xPad = (xMax - xMin) * 0.05 || 1, yPad = (yMax - yMin) * 0.05 || 1;
+  const xPad = (xMax - xMin) * 0.05 || 1;
+  const yPad = yMinLimit !== null && yMaxLimit !== null ? 0 : (yMax - yMin) * 0.05 || 1;
   xMin -= xPad; xMax += xPad; yMin -= yPad; yMax += yPad;
   const X = (v) => pad.left + ((Math.max(xMin, Math.min(xMax, v)) - xMin) / (xMax - xMin)) * plotW;
   const Y = (v) => pad.top + plotH - ((Math.max(yMin, Math.min(yMax, v)) - yMin) / (yMax - yMin)) * plotH;
@@ -628,8 +632,9 @@ function renderScatter(container, cfg) {
     }
   }
   container.append(svg);
-  if (hiddenBelowCount || clippedCount) container.append(h('p', { class: 'dim', style: 'margin:4px 0 0;font-size:.76rem' },
-    [hiddenBelowCount ? `-%40 altındaki ${hiddenBelowCount} fon gösterilmiyor` : '',
+  if (hiddenBelowCount || hiddenAboveCount || clippedCount) container.append(h('p', { class: 'dim', style: 'margin:4px 0 0;font-size:.76rem' },
+    [hiddenBelowCount ? `%${yMinLimit} altındaki ${hiddenBelowCount} fon gösterilmiyor` : '',
+      hiddenAboveCount ? `%${yMaxLimit} üzerindeki ${hiddenAboveCount} fon gösterilmiyor` : '',
       clippedCount ? `${clippedCount} uç değer grafiğin kenarında gösteriliyor; üzerine gelerek gerçek değerini görebilirsin` : '']
       .filter(Boolean).join(' · ') + '.'));
 }
