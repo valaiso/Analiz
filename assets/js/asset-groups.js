@@ -30,7 +30,8 @@ export function groupAssetRows(rows) {
 
 export function currentMidasPositions() {
   const snapshot = getMidasAccountSnapshot();
-  if (snapshot?.positionsCaptured !== true || !Array.isArray(snapshot.positions)) return null;
+  if (snapshot?.positionsSource !== 'midas-visible-v1'
+    || snapshot.positionsCaptured !== true || !Array.isArray(snapshot.positions)) return null;
   return snapshot.positions.map((row) => {
     const meta = DB.byCode.get(row.code) || {};
     const currency = row.currency || meta.currency || (meta.kind === 'US_ETF' || meta.kind === 'CRYPTO' ? 'USD' : 'TRY');
@@ -44,6 +45,7 @@ export function currentMidasPositions() {
       value: Number.isFinite(row.allocationPct) ? row.allocationPct : 0,
       weight: Number.isFinite(row.allocationPct) ? row.allocationPct : 0,
       // Midas'ın anlık pozisyon fiyatı ve getiri alanları eşitleme anında gelir.
+      midasStockSnapshot: true,
       closed: false,
     };
   });
@@ -52,7 +54,8 @@ export function currentMidasPositions() {
 /** Current crypto holdings come from Midas's separate Crypto Positions table. */
 export function currentMidasCryptoPositions() {
   const snapshot = getMidasAccountSnapshot();
-  if (snapshot?.cryptoPositionsCaptured !== true || !Array.isArray(snapshot.cryptoPositions)) return null;
+  if (snapshot?.cryptoPositionsSource !== 'midas-visible-v1'
+    || snapshot.cryptoPositionsCaptured !== true || !Array.isArray(snapshot.cryptoPositions)) return null;
   const latestIndex = Math.max(0, lastIndex());
   return snapshot.cryptoPositions.map((row) => {
     const meta = DB.byCode.get(row.code) || {};
@@ -151,12 +154,20 @@ export function addSiteMarketMetrics(positions) {
     const liveQuote = canUseIntraday ? liveQuotes[position.code] : null;
     const hasLiveQuote = Number.isFinite(liveQuote?.price) && liveQuote.price > 0
       && Number.isFinite(liveQuote?.previousClose) && liveQuote.previousClose > 0;
-    const useQuotePrice = hasLiveQuote && liveQuote.isRegularSessionBar !== false;
-    // Midas aktarımındaki fiyat yerine piyasa fiyat havuzunu; varsa en güncel
-    // tarayıcı kotasyonunu kullan.
-    const price = useQuotePrice ? liveQuote.price : Number.isFinite(priceFromHistory) ? priceFromHistory
-      : (Number.isFinite(DB.byCode.get(position.code)?.price) ? DB.byCode.get(position.code).price
-        : Number.isFinite(position.price) && position.price > 0 ? position.price : null);
+    const quoteTimestamp = Number(liveQuote?.timestamp);
+    const quoteAgeMinutes = Number.isFinite(quoteTimestamp)
+      ? Math.max(0, Math.ceil((Date.now() - quoteTimestamp) / 60_000)) : null;
+    const marketSessionOpenNow = liveQuote?.isRegularSessionNow === true;
+    const useQuotePrice = hasLiveQuote && liveQuote.isRegularSessionBar !== false
+      && marketSessionOpenNow && quoteAgeMinutes !== null && quoteAgeMinutes <= 30;
+    // Use a fresh in-session quote when available; otherwise keep the price
+    // read from Midas. Historical series must not replace the holding's price:
+    // they can be stale or adjusted differently (notably THF/TP2).
+    const price = useQuotePrice ? liveQuote.price
+      : position.midasStockSnapshot && Number.isFinite(position.price) && position.price > 0 ? position.price
+        : Number.isFinite(priceFromHistory) ? priceFromHistory
+          : (Number.isFinite(DB.byCode.get(position.code)?.price) ? DB.byCode.get(position.code).price
+            : Number.isFinite(position.price) && position.price > 0 ? position.price : null);
     const avgCost = Number.isFinite(position.avgCost) && position.avgCost > 0
       ? position.avgCost : null;
     const fx = fxToTRY(position.code, latestIndex);
@@ -168,7 +179,7 @@ export function addSiteMarketMetrics(positions) {
     const recentQuote = quoteIndex >= 0 && latestIndex - quoteIndex <= 1;
     const firstTrackedPoint = !hasLiveQuote && quoteIndex >= 0 && hist?.i === quoteIndex
       && Boolean(meta.startDate);
-    const noDailyChange = NO_DAILY_CHANGE_CODES.has(position.code);
+    const noDailyChange = NO_DAILY_CHANGE_CODES.has(position.code) && !position.midasStockSnapshot;
     // Kapanış saati varsaymak yerine, kotasyonun piyasa tarihini bugünkü piyasa
     // tarihiyle karşılaştır. Yeni tarihli kotasyon yoksa son fiyat değerlemede
     // kalır; önceki seansın günlük hareketi bugüne kopyalanmaz.
@@ -179,10 +190,6 @@ export function addSiteMarketMetrics(positions) {
     const quoteIsFromCurrentMarketDate = hasLiveQuote && liveQuote.date === marketToday
       && liveQuote.isRegularSessionBar !== false;
     const useIntradayChange = hasLiveQuote && quoteIsFromCurrentMarketDate;
-    const quoteTimestamp = Number(liveQuote?.timestamp);
-    const quoteAgeMinutes = Number.isFinite(quoteTimestamp)
-      ? Math.max(0, Math.ceil((Date.now() - quoteTimestamp) / 60_000)) : null;
-    const marketSessionOpenNow = liveQuote?.isRegularSessionNow === true;
     const quoteStale = exchangeTraded && hasLiveQuote && marketSessionOpenNow
       && (quoteAgeMinutes === null || quoteAgeMinutes > 30);
     const quoteMissing = exchangeTraded && (!hasLiveQuote
@@ -195,28 +202,34 @@ export function addSiteMarketMetrics(positions) {
       && (useIntradayChange || recentQuote && previousIndex >= 0)
       && Number.isFinite(dailyReferencePrice) && dailyReferencePrice > 0
       && Number.isFinite(previousFx);
-    const dailyPLNative = noDailyChange ? 0
+    const calculatedDailyPLNative = noDailyChange ? 0
       : quoteMissing ? null
       : quoteStale ? null
       : exchangeTraded && hasLiveQuote && !useIntradayChange ? 0
         : hasPreviousPrice ? units * (price - dailyReferencePrice) : firstTrackedPoint ? 0 : null;
-    const dailyPLTRY = noDailyChange ? 0
+    const calculatedDailyPLTRY = noDailyChange ? 0
       : quoteMissing ? null
       : quoteStale ? null
       : exchangeTraded && hasLiveQuote && !useIntradayChange ? 0
         : hasPreviousPrice ? units * (price * fx - dailyReferencePrice * previousFx) : firstTrackedPoint ? 0 : null;
-    const dailyPct = noDailyChange ? 0
+    const calculatedDailyPct = noDailyChange ? 0
       : quoteMissing ? null
       : quoteStale ? null
       : exchangeTraded && hasLiveQuote && !useIntradayChange ? 0
         : hasPreviousPrice ? ((price / dailyReferencePrice) - 1) * 100 : firstTrackedPoint ? 0 : null;
+    const dailyPLNative = Number.isFinite(position.dailyPL) ? position.dailyPL : calculatedDailyPLNative;
+    const dailyPLTRY = Number.isFinite(position.dailyPL) && Number.isFinite(fx)
+      ? position.dailyPL * fx : calculatedDailyPLTRY;
+    const dailyPct = Number.isFinite(position.dailyPct) ? position.dailyPct : calculatedDailyPct;
     const totalPLNative = noDailyChange ? 0
+      : Number.isFinite(position.totalPL) ? position.totalPL
       : hasSitePrice && Number.isFinite(avgCost) ? units * (price - avgCost)
-        : Number.isFinite(position.totalPL) ? position.totalPL : null;
+        : null;
     const totalPLTRY = noDailyChange ? 0 : Number.isFinite(totalPLNative) ? totalPLNative * fx : null;
     const totalPct = noDailyChange ? 0
-      : hasSitePrice && Number.isFinite(avgCost) && avgCost > 0 ? ((price / avgCost) - 1) * 100
-        : Number.isFinite(position.totalPct) ? position.totalPct : null;
+      : Number.isFinite(position.totalPct) ? position.totalPct
+        : hasSitePrice && Number.isFinite(avgCost) && avgCost > 0 ? ((price / avgCost) - 1) * 100
+        : null;
     const marketValuePrevTRY = ((exchangeTraded && hasLiveQuote && !useIntradayChange) || noDailyChange)
       ? (hasSitePrice ? units * price * fx : null)
       : hasPreviousPrice ? units * dailyReferencePrice * previousFx

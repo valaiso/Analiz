@@ -22,14 +22,18 @@ export function renderDagilim(ctx) {
   const { analysis, navigate } = ctx;
   const { open, totals } = analysis;
   const snapshot = getMidasAccountSnapshot();
-  const usingMidas = snapshot?.positionsCaptured === true || snapshot?.cryptoPositionsCaptured === true;
+  const usingMidas = snapshot?.positionsSource === 'midas-visible-v1' && snapshot.positionsCaptured === true
+    || snapshot?.cryptoPositionsSource === 'midas-visible-v1' && snapshot.cryptoPositionsCaptured === true;
   const liveRaw = [
     ...(currentMidasPositions() || []),
     ...(currentMidasCryptoPositions() || []),
   ];
   const measuredLive = addSiteMarketMetrics(liveRaw || []);
-  const stockTotal = Number(snapshot?.summary?.totalValue) > 0 ? Number(snapshot.summary.totalValue)
-    : measuredLive.filter((row) => !row.midasCryptoSnapshot).reduce((sum, row) => sum + (row.marketValueTRY || 0), 0);
+  const stockPositionTotal = measuredLive.filter((row) => !row.midasCryptoSnapshot)
+    .reduce((sum, row) => sum + (row.marketValueTRY || 0), 0);
+  const stockSummaryTotal = snapshot?.summarySource === 'midas-visible-v1'
+    ? Number(snapshot.summary?.totalValue) || 0 : 0;
+  const stockTotal = Math.max(stockPositionTotal, stockSummaryTotal);
   const cryptoTotal = measuredLive.filter((row) => row.midasCryptoSnapshot)
     .reduce((sum, row) => sum + (row.marketValueTRY || 0), 0);
   const midasTotal = stockTotal + cryptoTotal;
@@ -37,8 +41,9 @@ export function renderDagilim(ctx) {
     ? { ...row, allocationPct: row.marketValueTRY / midasTotal * 100 }
     : row);
   const liveValueTotal = live.reduce((sum, row) => sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0);
+  const trustedSummaryTotal = stockSummaryTotal;
   const liveValuesReconcile = !usingMidas || live.every((row) => isNum(row.marketValueTRY))
-    && (!Number(snapshot?.summary?.totalValue) || liveValueTotal <= midasTotal * 1.1);
+    && (!trustedSummaryTotal || liveValueTotal <= midasTotal * 1.1);
   const positions = usingMidas ? live : open;
 
   if (!positions.length) {

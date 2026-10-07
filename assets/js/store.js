@@ -72,26 +72,74 @@ export function saveMidasAccountSnapshot(snapshot) {
     .some((key) => Object.prototype.hasOwnProperty.call(snapshot, key));
   const hasCryptoUpdate = ['cryptoSummary', 'cryptoPositions', 'cryptoPositionsCaptured']
     .some((key) => Object.prototype.hasOwnProperty.call(snapshot, key));
+  const capturedAt = snapshot.capturedAt || new Date().toISOString();
   const stockCaptured = snapshot.positionsCaptured === true
-    || (Array.isArray(snapshot.positions) && snapshot.positions.length > 0);
+    && Array.isArray(snapshot.positions) && snapshot.positions.length > 0;
   const cryptoCaptured = snapshot.cryptoPositionsCaptured === true
-    || (Array.isArray(snapshot.cryptoPositions) && snapshot.cryptoPositions.length > 0);
-  midasSnapshot = {
-    ...(midasSnapshot || {}),
-    capturedAt: snapshot.capturedAt || new Date().toISOString(),
-    ...(hasStockUpdate ? {
-      summary: snapshot.summary || null,
-      positions: stockCaptured && Array.isArray(snapshot.positions) ? snapshot.positions : [],
-      positionsCaptured: stockCaptured,
-      stockCapturedAt: snapshot.capturedAt || new Date().toISOString(),
-    } : {}),
-    ...(hasCryptoUpdate ? {
-      cryptoSummary: snapshot.cryptoSummary || null,
-      cryptoPositions: cryptoCaptured && Array.isArray(snapshot.cryptoPositions) ? snapshot.cryptoPositions : [],
-      cryptoPositionsCaptured: cryptoCaptured,
-      cryptoCapturedAt: snapshot.capturedAt || new Date().toISOString(),
-    } : {}),
-  };
+    && Array.isArray(snapshot.cryptoPositions) && snapshot.cryptoPositions.length > 0;
+  const prior = midasSnapshot || {};
+  midasSnapshot = { ...prior, capturedAt };
+  if (hasStockUpdate) {
+    const summaryValid = Number.isFinite(snapshot.summary?.totalValue) && snapshot.summary.totalValue > 0;
+    if (stockCaptured) {
+      midasSnapshot = {
+        ...midasSnapshot,
+        summary: summaryValid ? snapshot.summary : null,
+        summarySource: summaryValid ? 'midas-visible-v1' : null,
+        summaryCapturedAt: summaryValid ? capturedAt : null,
+        positions: snapshot.positions,
+        positionsCaptured: true,
+        positionsSource: 'midas-visible-v1',
+        stockCapturedAt: capturedAt,
+        stockScanFailedAt: null,
+        positionsDiagnostic: null,
+      };
+    } else {
+      // An incomplete screen scan must not erase the last valid snapshot. Old
+      // snapshots without an authority marker are deliberately not trusted.
+      midasSnapshot = {
+        ...midasSnapshot,
+        summary: summaryValid ? snapshot.summary : prior.summary,
+        summarySource: summaryValid ? 'midas-visible-v1' : prior.summarySource,
+        summaryCapturedAt: summaryValid ? capturedAt : prior.summaryCapturedAt || null,
+        positions: prior.positionsSource === 'midas-visible-v1' ? prior.positions : [],
+        positionsCaptured: prior.positionsSource === 'midas-visible-v1' && prior.positionsCaptured === true,
+        positionsSource: prior.positionsSource === 'midas-visible-v1' ? prior.positionsSource : null,
+        stockCapturedAt: prior.stockCapturedAt || null,
+        stockScanFailedAt: capturedAt,
+        positionsDiagnostic: snapshot.positionsDiagnostic || prior.positionsDiagnostic || null,
+      };
+    }
+  }
+  if (hasCryptoUpdate) {
+    if (cryptoCaptured) {
+      midasSnapshot = {
+        ...midasSnapshot,
+        cryptoSummary: snapshot.cryptoSummary || null,
+        cryptoSummarySource: snapshot.cryptoSummary ? 'midas-visible-v1' : null,
+        cryptoSummaryCapturedAt: snapshot.cryptoSummary ? capturedAt : null,
+        cryptoPositions: snapshot.cryptoPositions,
+        cryptoPositionsCaptured: true,
+        cryptoPositionsSource: 'midas-visible-v1',
+        cryptoCapturedAt: capturedAt,
+        cryptoScanFailedAt: null,
+        cryptoPositionsDiagnostic: null,
+      };
+    } else {
+      midasSnapshot = {
+        ...midasSnapshot,
+        cryptoSummary: prior.cryptoPositionsSource === 'midas-visible-v1' ? prior.cryptoSummary : null,
+        cryptoSummarySource: prior.cryptoPositionsSource === 'midas-visible-v1' ? prior.cryptoSummarySource : null,
+        cryptoSummaryCapturedAt: prior.cryptoSummaryCapturedAt || null,
+        cryptoPositions: prior.cryptoPositionsSource === 'midas-visible-v1' ? prior.cryptoPositions : [],
+        cryptoPositionsCaptured: prior.cryptoPositionsSource === 'midas-visible-v1' && prior.cryptoPositionsCaptured === true,
+        cryptoPositionsSource: prior.cryptoPositionsSource === 'midas-visible-v1' ? prior.cryptoPositionsSource : null,
+        cryptoCapturedAt: prior.cryptoCapturedAt || null,
+        cryptoScanFailedAt: capturedAt,
+        cryptoPositionsDiagnostic: snapshot.cryptoPositionsDiagnostic || prior.cryptoPositionsDiagnostic || null,
+      };
+    }
+  }
   try {
     localStorage.setItem(MIDAS_SNAPSHOT_KEY, JSON.stringify(midasSnapshot));
   } catch (err) {

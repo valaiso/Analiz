@@ -25,6 +25,7 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
         error.cryptoPositionsCaptured = data.response?.cryptoPositionsCaptured === true;
         error.cryptoPositionsDiagnostic = data.response?.cryptoPositionsDiagnostic || null;
         error.duplicateOrdersRemoved = Number(data.response?.duplicateOrdersRemoved) || 0;
+        error.ignoredStablecoinCount = Number(data.response?.ignoredStablecoinCount) || 0;
         reject(error);
       } else resolve({
         rows: data.response.rows || [],
@@ -38,6 +39,7 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
         cryptoPositionsCaptured: data.response.cryptoPositionsCaptured === true,
         cryptoPositionsDiagnostic: data.response.cryptoPositionsDiagnostic || null,
         duplicateOrdersRemoved: Number(data.response.duplicateOrdersRemoved) || 0,
+        ignoredStablecoinCount: Number(data.response.ignoredStablecoinCount) || 0,
         marketData: data.response.marketData || {},
         marketErrors: data.response.marketErrors || {},
       });

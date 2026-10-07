@@ -68,7 +68,9 @@ function logMidasAccount(summary) {
 
 function positionDiagnosticText(diagnostic) {
   if (!diagnostic) return '';
-  return `Tanı: Pozisyonlar başlığı ${diagnostic.headingFound ? 'var' : 'yok'}, uygun sütun başlığı ${diagnostic.headerFound ? 'var' : 'yok'}, ${diagnostic.rowCandidates || 0} satır adayı, ${diagnostic.validRows || 0} geçerli açık varlık.`;
+  const columns = diagnostic.columns?.length ? ` Sütunlar: ${diagnostic.columns.join(' · ')}.` : '';
+  const view = diagnostic.activeViewMatches === false ? 'Yanlış Midas çalışma alanı açık. ' : '';
+  return `Tanı: ${view}Pozisyonlar başlığı ${diagnostic.headingFound ? 'var' : 'yok'}, uygun sütun başlığı ${diagnostic.headerFound ? 'var' : 'yok'}, ${diagnostic.rowCandidates || 0} satır adayı, ${diagnostic.validRows || 0} geçerli açık varlık.${columns}`;
 }
 
 async function copyMidasLog(field) {
@@ -182,6 +184,7 @@ async function readMidas(ctx, button) {
       summary: result.accountSummary,
       positions: result.positions,
       positionsCaptured: result.positionsCaptured,
+      positionsDiagnostic: result.positionsDiagnostic,
     });
     if (result.accountSummary) {
       logMidasAccount(result.accountSummary);
@@ -197,6 +200,13 @@ async function readMidas(ctx, button) {
     if (result.positions?.length) {
       const withUnits = result.positions.filter((position) => Number.isFinite(position.units) && position.units > 0).length;
       logMidas(`Midas Pozisyonlar tablosundan ${result.positions.length} açık varlık kaydı okundu; ${withUnits} kayıtta adet bilgisi var.`);
+      const latestFxIndex = Math.max(0, DB.calendar.length - 1);
+      const positionValueTRY = result.positions.reduce((sum, position) => {
+        if (!(position.units > 0) || !(position.price > 0)) return sum;
+        const fx = position.currency === 'USD' ? usdTryAtIndex(latestFxIndex) : 1;
+        return sum + position.units * position.price * (Number.isFinite(fx) ? fx : 1);
+      }, 0);
+      logMidas(`Midas canlı adet×fiyat toplamı yaklaşık ${tl(positionValueTRY)}; pozisyon kartı bunu eski emir adetleri yerine kullanacak.`);
       for (const position of result.positions.filter((row) => row.code === 'TP2')) {
         logMidas(`TP2 adet kontrolü: Midas hücresi “${position.unitsText || 'okunamadı'}” → ayrıştırılan adet ${Number.isFinite(position.units) ? fmtUnits(position.units) : 'okunamadı'}.`);
       }
@@ -282,6 +292,7 @@ async function readMidas(ctx, button) {
       saveMidasAccountSnapshot({
         capturedAt: new Date().toISOString(), summary: error.accountSummary,
         positions: error.positions, positionsCaptured: error.positionsCaptured,
+        positionsDiagnostic: error.positionsDiagnostic,
       });
       if (error.positionsCaptured || error.positions?.length) {
         logMidas(`Emir satırları okunamasa da güncel Midas pozisyonları eşitlendi (${error.positions?.length || 0} varlık).`);
@@ -321,12 +332,16 @@ async function readMidasCrypto(ctx, button) {
       cryptoSummary: result.cryptoPositionsCaptured ? { totalValue: cryptoPositionValue } : null,
       cryptoPositions: result.cryptoPositions || [],
       cryptoPositionsCaptured: result.cryptoPositionsCaptured,
+      cryptoPositionsDiagnostic: result.cryptoPositionsDiagnostic,
     });
     if (result.cryptoPositionsCaptured) {
       logMidas(`Midas Kripto Pozisyonlar tablosundan ${(result.cryptoPositions || []).length} açık varlık okundu; güncel değer ${tl(cryptoPositionValue)}.`);
       ctx.refresh();
     } else {
       logMidas(`Midas Crypto Pozisyonlar tablosu bu taramada okunamadı; emir geçmişinden açık kripto pozisyonu türetilmeyecek. ${positionDiagnosticText(result.cryptoPositionsDiagnostic)}`);
+    }
+    if (result.ignoredStablecoinCount) {
+      logMidas(`${result.ignoredStablecoinCount} USDT/USDC karşıt para birimi emri kripto varlık işlemi olarak aktarılmadı.`);
     }
     if (!result.rows.length) {
       logMidas('Kripto emir geçmişinde tamamlanmış satır bulunamadı; mevcut pozisyon tablosu eşitlendi.');
@@ -372,6 +387,7 @@ async function readMidasCrypto(ctx, button) {
         capturedAt: new Date().toISOString(),
         cryptoSummary: error.cryptoPositionsCaptured ? { totalValue } : null,
         cryptoPositions: positions, cryptoPositionsCaptured: error.cryptoPositionsCaptured,
+        cryptoPositionsDiagnostic: error.cryptoPositionsDiagnostic,
       });
       logMidas(error.cryptoPositionsCaptured
         ? `Emir satırları okunamasa da güncel kripto pozisyonları eşitlendi (${positions.length} varlık).`

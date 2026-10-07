@@ -89,15 +89,16 @@ function isOrderHeader(element, cryptoOnly = false) {
 
 function isPositionsHeader(element, cryptoOnly = false) {
   const cells = headerCells(element);
-  if (cryptoOnly) {
-    return ['Varlık', 'Adet', 'Fiyat', 'Ort. Maliyet', 'Pozisyon']
-      .every((label) => cells.includes(label));
-  }
-  return ['Varlık', 'Fiyat', 'Ort. Maliyet', 'Dağılım', 'Günlük getiri', 'Toplam getiri']
-    .every((label) => cells.includes(label));
+  // Günlük/getiri/dağılım sütunları dar ekranda gizlenebilir. Tabloyu tanımak
+  // için yalnızca sembol ve miktar/fiyat eksenlerini şart koş.
+  return ['Varlık', 'Adet', 'Fiyat'].every((label) => cells.includes(label))
+    && (!cryptoOnly || cells.includes('Pozisyon') || cells.includes('Ort. Maliyet'));
 }
 
 function positionsRoot(cryptoOnly = false) {
+  // The two Midas workspaces can keep their grids mounted at the same time.
+  // Never reinterpret the investment table as crypto (or vice versa).
+  if (cryptoOnly !== activeCryptoTab()) return null;
   const headings = [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div')]
     .filter((element) => isVisible(element) && /^pozisyonlar$/iu.test(textOf(element)))
     .sort((a, b) => textOf(a).length - textOf(b).length);
@@ -126,21 +127,17 @@ function positionSnapshotRows(cryptoOnly = false) {
     value: col('Pozisyon'),
   };
   const requiredIndexes = cryptoOnly
-    ? [ix.code, ix.price, ix.avg, ix.units, ix.value]
-    : [ix.code, ix.price, ix.avg, ix.units, ix.allocation, ix.daily, ix.total];
+    ? [ix.code, ix.price, ix.units]
+    : [ix.code, ix.price, ix.units];
   if (requiredIndexes.some((value) => value < 0)) return [];
   const rowNodes = [...root.querySelectorAll('tr, [role="row"], [class*="row" i], li, div')]
     .filter((element) => element !== headerRow && isVisible(element))
     .map((element) => ({ element, text: textOf(element) }))
-    .filter(({ text }) => text.length > 0 && text.length < 400 && /[₺$€]|\b(?:USD|TRY)\b/i.test(text)
-      && (cryptoOnly || /%/.test(text)))
+    .filter(({ text }) => text.length > 0 && text.length < 600 && /[₺$€]|\b(?:USD|TRY)\b/i.test(text))
     .sort((a, b) => a.text.length - b.text.length);
   const found = new Map();
   const moneyFrom = (value) => {
-    const match = String(value || '').match(/([−-])?\s*(?:₺|\$|€|USD|TRY)\s*([\d.,]+)/i);
-    if (!match) return parseLocaleNumber(value);
-    const amount = parseLocaleNumber(match[2]);
-    return amount === null ? null : (match[1] ? -amount : amount);
+    return parseMoney(value);
   };
   const percentFrom = (value) => {
     const text = String(value || '').replace(/[()]/g, ' ');
@@ -184,21 +181,55 @@ function positionSnapshotRows(cryptoOnly = false) {
       });
       const code = assetCodeAtRow(root, container, headers[ix.code], cryptoOnly)
         || String(aligned[ix.code] || '').match(/\b[A-Z][A-Z0-9.-]{1,9}\b/)?.[0] || '';
-      if (code && moneyFrom(aligned[ix.price]) !== null && moneyFrom(aligned[ix.avg]) !== null) {
+      if (code && moneyFrom(aligned[ix.price]) !== null
+        && (ix.avg < 0 || moneyFrom(aligned[ix.avg]) !== null)) {
         cells = aligned;
         sourceCells = sourceAligned;
         rowElement = container;
         break;
+      }
+      // Midas bazen hücreleri ayrı sütunlarda değil, iç içe span/div metinleri
+      // olarak üretir. Satır içindeki görünen metin düğümlerini sütunların x
+      // koordinatlarına göre tekrar eşleştir; hücre sayısının eşit olmasına
+      // veya her alanın başlık genişliğine sığmasına bağlı kalma.
+      const rowBox = container.getBoundingClientRect();
+      const rowCenterY = (rowBox.top + rowBox.bottom) / 2;
+      const leafTokens = [...container.querySelectorAll('*')]
+        .filter(isVisible)
+        .map((node) => ({ node, text: textOf(node), box: node.getBoundingClientRect() }))
+        .filter(({ node, text, box }) => text && text.length <= 100 && box.height > 0
+          && box.top >= rowBox.top - 3 && box.bottom <= rowBox.bottom + 3
+          && ![...node.children].some((child) => isVisible(child) && textOf(child) === text));
+      if (leafTokens.length >= 3) {
+        const unusedTokens = new Set(leafTokens);
+        const tokenAligned = headers.map(({ box }) => {
+          const x = (box.left + box.right) / 2;
+          const nearest = [...unusedTokens].reduce((best, token) => {
+            const dx = Math.abs((token.box.left + token.box.right) / 2 - x);
+            const dy = Math.abs((token.box.top + token.box.bottom) / 2 - rowCenterY);
+            const score = dx + dy * 0.45;
+            return !best || score < best.score ? { token, score, dx } : best;
+          }, null);
+          if (!nearest || nearest.dx > Math.max(72, box.width)) return '';
+          unusedTokens.delete(nearest.token);
+          return nearest.token.text;
+        });
+        const tokenCode = assetCodeAtRow(root, container, headers[ix.code], cryptoOnly)
+          || String(tokenAligned[ix.code] || '').match(/\b[A-Z][A-Z0-9.-]{1,9}\b/)?.[0] || '';
+        if (tokenCode && moneyFrom(tokenAligned[ix.price]) !== null
+          && (ix.avg < 0 || moneyFrom(tokenAligned[ix.avg]) !== null)) {
+          cells = tokenAligned;
+          sourceCells = tokenAligned;
+          rowElement = container;
+          break;
+        }
       }
       const repeatedCell = cellElements.map(textOf);
       if (repeatedCell.length > 1 && repeatedCell.every((value) => value === repeatedCell[0])) {
         const code = assetCodeAtRow(root, container, headers[ix.code], cryptoOnly)
           || String(repeatedCell[0] || '').match(/\b[A-Z][A-Z0-9.-]{1,9}\b/)?.[0] || '';
         const moneyValues = [...repeatedCell[0].matchAll(/([−-])?\s*(?:₺|\$|€|USD|TRY)\s*([\d.,]+)/gi)]
-          .map((match) => {
-            const amount = parseLocaleNumber(match[2]);
-            return amount === null ? null : (match[1] ? -amount : amount);
-          }).filter((value) => value !== null);
+          .map((match) => parseMoney(match[0])).filter((value) => value !== null);
         if (code && moneyValues.length >= 2) {
           const symbol = repeatedCell[0].match(/\$|€|USD|TRY|₺/i)?.[0] || '₺';
           const percents = [...repeatedCell[0].matchAll(/([−+-])?\s*%\s*([\d.,]+)|([−+-])?\s*([\d.,]+)\s*%/g)]
@@ -225,7 +256,7 @@ function positionSnapshotRows(cryptoOnly = false) {
       code,
       units: ix.units >= 0 ? parseQuantity(cells[ix.units]) : null,
       unitsText: ix.units >= 0 ? String(cells[ix.units] || '').trim() : '',
-      price: moneyFrom(cells[ix.price]) ?? moneyFrom(text),
+      price: moneyFrom(cells[ix.price]),
       avgCost: moneyFrom(cells[ix.avg]) ?? null,
       marketValue: cryptoOnly ? moneyFrom(cells[ix.value]) ?? null : null,
       allocationPct: ix.allocation >= 0 ? percentFrom(cells[ix.allocation]) ?? null : null,
@@ -233,17 +264,16 @@ function positionSnapshotRows(cryptoOnly = false) {
       dailyPct: ix.daily >= 0 ? percentFrom(cells[ix.daily]) ?? null : null,
       totalPL: ix.total >= 0 ? moneyFrom(cells[ix.total]) ?? null : null,
       totalPct: ix.total >= 0 ? percentFrom(cells[ix.total]) ?? null : null,
-      currency: /\$|USD/i.test(text) ? 'USD' : 'TRY',
+      currency: /\$|\bUSD\b/i.test(String(cells[ix.price] || '')) ? 'USD' : 'TRY',
     };
     if (code) {
       fields.domCells = headers.map(({ label }, index) => ({
         header: label, raw: sourceCells[index] || '', selected: cells[index] || '',
       }));
     }
-    // Bu Midas görünümünde bazı sanal satırlarda fiyat hücresi yanlışlıkla
-    // adet alanına eşleniyor. Adet fiyatla neredeyse aynıysa geçersiz say.
-    if (fields.units > 0 && fields.price > 0
-      && Math.abs(fields.units - fields.price) / fields.price < 0.005) {
+    // Fiyatla miktar değerlerinin tesadüfen yakın olması geçerli bir pozisyonu
+    // reddetmemeli; yalnızca adet hücresinde para simgesi varsa alan eşleşmesi bozuktur.
+    if (/[₺$€]|\b(?:USD|TRY)\b/i.test(fields.unitsText)) {
       fields.units = null;
       fields.unitsText = `${fields.unitsText} (fiyatla aynı, adet reddedildi)`.trim();
     }
@@ -262,54 +292,42 @@ function positionSnapshotRows(cryptoOnly = false) {
 }
 
 function positionTableDiagnosis(cryptoOnly, rows) {
-  const headers = [...document.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
+  const activeViewMatches = cryptoOnly === activeCryptoTab();
+  const headers = (activeViewMatches ? [...document.querySelectorAll('tr, [role="row"], [class*="row" i], div')] : [])
     .filter((element) => isVisible(element) && isPositionsHeader(element, cryptoOnly));
-  const root = positionsRoot(cryptoOnly);
+  const root = activeViewMatches ? positionsRoot(cryptoOnly) : null;
   const rowCandidates = root ? [...root.querySelectorAll('tr, [role="row"], [class*="row" i], li, div')]
     .filter((element) => element !== headers[0] && isVisible(element))
     .map(textOf)
-    .filter((text) => text.length > 0 && text.length < 400 && /[₺$€]|\b(?:USD|TRY)\b/i.test(text)
-      && (cryptoOnly || /%/.test(text))).length : 0;
+    .filter((text) => text.length > 0 && text.length < 600 && /[₺$€]|\b(?:USD|TRY)\b/i.test(text)).length : 0;
   return {
+    activeViewMatches,
     headingFound: [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div')]
       .some((element) => isVisible(element) && /^pozisyonlar$/iu.test(textOf(element))),
     headerFound: headers.length > 0,
+    columns: headers[0] ? headerCells(headers[0]) : [],
     rowCandidates,
     validRows: rows.length,
   };
 }
 
-function assetHintsFor(element, root) {
+function assetHintsFor(element) {
   const hints = [];
-  const isOrderText = (value) => TRADE_WORDS.test(value) && DATE_WORDS.test(value);
   const addNodeHints = (node) => {
     for (const attribute of [...(node.attributes || [])]) {
       if (!/aria-label|title|alt|symbol|ticker|asset|coin|currency|code|href|src|^data-/i.test(attribute.name)) continue;
       const value = String(attribute.value || '').trim();
-      if (value && value.length <= 180 && !isOrderText(value) && !hints.includes(value)) hints.push(value);
+      if (value && value.length <= 180 && !hints.includes(value)) hints.push(value);
     }
   };
   for (const node of [element, ...element.querySelectorAll('*')]) {
     addNodeHints(node);
+    const value = textOf(node);
+    // Only keep text from this row subtree. Looking at siblings of an individual
+    // side/date cell leaked other orders' crypto pairs into symbol diagnosis.
+    if (value && value.length <= 100 && !TRADE_WORDS.test(value) && !DATE_WORDS.test(value)
+      && !hints.includes(value)) hints.push(value);
     if (hints.length >= 20) return hints;
-  }
-  // Bazen Midas tarih/yön hücresini ayrı bir alt ağaca koyuyor; varlık kodu
-  // aynı satırın komşu hücresinde kaldığı için satırın yakın kardeşlerini tara.
-  let current = element;
-  for (let depth = 0; depth < 3; depth += 1) {
-    const parent = current.parentElement;
-    if (!parent || !root.contains(parent)) break;
-    for (const sibling of parent.children) {
-      if (sibling === current || !isVisible(sibling)) continue;
-      const siblingText = textOf(sibling);
-      // Don't leak adjacent order rows into the current row's asset hints.
-      if (isOrderText(siblingText)) continue;
-      if (siblingText && siblingText.length <= 100 && !hints.includes(siblingText)) hints.push(siblingText);
-      addNodeHints(sibling);
-      for (const child of sibling.querySelectorAll('*')) addNodeHints(child);
-      if (hints.length >= 40) return hints;
-    }
-    current = parent;
   }
   return hints;
 }
@@ -337,6 +355,7 @@ function assetCodeAtRow(root, rowElement, headerItem, allowStablecoins = false) 
 }
 
 function orderHistoryRoot(cryptoOnly = false) {
+  if (cryptoOnly !== activeCryptoTab()) return null;
   const headings = [...document.querySelectorAll('h1, h2, h3, h4, [role="heading"], span, div')]
     .filter((element) => isVisible(element) && /^emir\s+geçmişi$/iu.test(textOf(element)))
     .sort((a, b) => textOf(a).length - textOf(b).length);
@@ -499,7 +518,7 @@ function candidateElements(root, scanStats, cryptoOnly = false) {
       assetCode: assetCodeAtRow(root,
         matchedContainer && matchedContainer.getBoundingClientRect().height <= 80 ? matchedContainer : element,
         columns.code >= 0 ? headerItems[columns.code] : undefined),
-      codeHints: assetHintsFor(element, root),
+      codeHints: assetHintsFor(matchedContainer || element),
     };
     const key = row.sourceId || text.replace(/\s+/g, ' ').trim();
     if (key && !uniqueRows.has(key)) uniqueRows.set(key, row);
@@ -541,7 +560,7 @@ function candidateElements(root, scanStats, cryptoOnly = false) {
     const row = {
       text, headers, cells: aligned, sourceId: '',
       assetCode: assetCodeAtRow(root, sideToken.node, columns.code >= 0 ? headerItems[columns.code] : undefined),
-      codeHints: assetHintsFor(sideToken.node, root),
+      codeHints: [...new Set(rowTokens.map((item) => item.text).filter((value) => value.length <= 100))],
     };
     const key = text.replace(/\s+/g, ' ').trim();
     if (key && !uniqueRows.has(key)) {
@@ -759,6 +778,20 @@ function parseLocaleNumber(value) {
   return Number.isFinite(n) ? (signBeforeCurrency ? -Math.abs(n) : signBeforeNumber ? Math.abs(n) : n) : null;
 }
 
+function parseMoney(value) {
+  if (!value) return null;
+  const raw = String(value).trim();
+  const token = raw.match(/[+-]?\d[\d.,]*/)?.[0] || '';
+  const unsigned = token.replace(/^[+-]/, '');
+  const isForeignCurrency = /\$|€|\b(?:USD|USDT|USDC)\b/i.test(raw);
+  // Turkish Midas prices use dots for thousands and commas for decimals:
+  // ₺126.677 means 126,677 TL, while $126.677 remains a decimal quote.
+  if (!isForeignCurrency && /^\d{1,3}(?:\.\d{3})+$/.test(unsigned)) {
+    return parseLocaleNumber(raw.replace(token, token.replaceAll('.', '')));
+  }
+  return parseLocaleNumber(raw);
+}
+
 function parseQuantity(value) {
   const number = String(value || '').trim().match(/[+-]?\d[\d.,]*/)?.[0];
   if (!number) return null;
@@ -801,7 +834,7 @@ function readAccountSummary() {
         if (index < 0) return null;
         for (const line of lines.slice(index, index + 3)) {
           if (/₺|\$|TRY|USD/i.test(line)) {
-            const amount = parseLocaleNumber(line.replace(/^.*?(?:alım gücü|nakit bakiye|takas bekleyen bakiye)/i, ''));
+            const amount = parseMoney(line.replace(/^.*?(?:alım gücü|nakit bakiye|takas bekleyen bakiye)/i, ''));
             if (amount !== null) return amount;
           }
         }
@@ -813,8 +846,8 @@ function readAccountSummary() {
       const dailyPctValue = dailyPctMatch
         ? parseLocaleNumber(dailyPctMatch[2] || dailyPctMatch[4]) : null;
       return {
-        totalValue: valueLine ? parseLocaleNumber(valueLine) : null,
-        dailyChange: dailyMoney ? parseLocaleNumber(dailyMoney[0]) : null,
+        totalValue: valueLine ? parseMoney(valueLine) : null,
+        dailyChange: dailyMoney ? parseMoney(dailyMoney[0]) : null,
         dailyPct: dailyPctValue === null ? null
           : (dailyPctMatch[1] || dailyPctMatch[3] ? -Math.abs(dailyPctValue) : Math.abs(dailyPctValue)),
         tryBuyingPower: amountAfter(/alım gücü/i),
@@ -876,6 +909,8 @@ function normalizeRow(row, cryptoOnly = false) {
   const codeValue = valueByHeader(/varlık|sembol|fon kodu|hisse kodu/i);
   const codeExcluded = new Set(['AL', 'SAT', 'ALIŞ', 'ALIM', 'SATIŞ', 'SATIM', 'BUY', 'SELL', 'USD', 'USDT', 'USDC', 'TRY', 'TL', 'ADET', 'LOT', 'FON', 'PIYASA', 'LIMIT', 'GERCEKLESTI', 'TAMAMLANDI']);
   const codeSources = [row.assetCode, codeValue, text, ...(row.codeHints || [])].filter(Boolean).map(String);
+  const stablecoinPair = cryptoOnly && codeSources.some((value) =>
+    /(?:^|[^A-Z0-9])(?:USDT|USDC)\s*[\/_-]\s*(?:USDT|USDC|USD|TRY|TL)(?:$|[^A-Z0-9])/i.test(value));
   const pairCode = codeSources.map((value) => value.match(/\b([A-Z][A-Z0-9.-]{1,11})\s*[\/_-]\s*(?:USDT|USDC|USD|TRY|TL)\b/i)?.[1]?.toUpperCase())
     .find((candidate) => candidate && !['AL', 'SAT', 'BUY', 'SELL', 'TRY', 'TL'].includes(candidate));
   const cryptoNameCode = cryptoOnly ? codeSources.flatMap((value) => {
@@ -914,9 +949,9 @@ function normalizeRow(row, cryptoOnly = false) {
 
   const priceValue = valueByHeader(/birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat/i)
     || getLabel(/birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat/i, 'birim fiyat|gerçekleşme fiyatı|işlem fiyatı|fiyat');
-  let price = parseLocaleNumber(priceValue);
+  let price = parseMoney(priceValue);
   const currencyValues = [...text.matchAll(/(?:₺|\$|€|USD|TRY)\s*([+-]?\d[\d.,]*)/gi)]
-    .map((match) => parseLocaleNumber(match[1])).filter((value) => value > 0);
+    .map((match) => parseMoney(match[0])).filter((value) => value > 0);
   const repeatedCellText = cells.length > 1 && cells.every((cell) => cell === cells[0]);
   // Midas görsel satırlarında başlığa göre eşleşen hücre bazen adet sütununa
   // düşebiliyor. İşlem satırında hem toplam hem birim fiyat para birimiyle
@@ -926,7 +961,7 @@ function normalizeRow(row, cryptoOnly = false) {
   } else if (repeatedCellText || priceValue === text || price === units) {
     if (currencyValues.length && units > 0) price = currencyValues[0] / units;
   }
-  const totalValue = parseLocaleNumber(valueByHeader(/^toplam$/i));
+  const totalValue = parseMoney(valueByHeader(/^toplam$/i));
   // Midas Crypto bazı satırlarda fiyat hücresini 0,002292, toplamı ise
   // 33,00 USDT gösteriyor. Adet × fiyat toplamla uyuşmuyorsa gerçek birim
   // fiyatı işlem toplamından türet; yanlış hücreyi fiyata aktarma.
@@ -935,13 +970,13 @@ function normalizeRow(row, cryptoOnly = false) {
     price = totalValue / units;
   }
   if (!(price > 0) && totalValue > 0 && units > 0) price = totalValue / units;
-  const amount = parseLocaleNumber(getLabel(/işlem tutarı|gerçekleşen tutar|toplam tutar|tutar/i, 'işlem tutarı|gerçekleşen tutar|toplam tutar|tutar'));
+  const amount = parseMoney(getLabel(/işlem tutarı|gerçekleşen tutar|toplam tutar|tutar/i, 'işlem tutarı|gerçekleşen tutar|toplam tutar|tutar'));
   if (!(price > 0) && amount > 0 && units > 0) price = amount / units;
-  const fee = parseLocaleNumber(getLabel(/komisyon|masraf|ücret/i, 'komisyon|masraf|ücret')) || 0;
+  const fee = parseMoney(getLabel(/komisyon|masraf|ücret/i, 'komisyon|masraf|ücret')) || 0;
   const taxValue = valueByHeader(/stopaj|vergi kesintisi/i)
     || getLabel(/stopaj|vergi kesintisi/i, 'stopaj|vergi kesintisi');
   const taxMoney = String(taxValue || '').match(/(?:₺|TRY)\s*([\d.,]+)/i)?.[0];
-  const withholdingTax = Math.max(0, parseLocaleNumber(taxMoney || taxValue) || 0);
+  const withholdingTax = Math.max(0, parseMoney(taxMoney || taxValue) || 0);
   const currency = /\$|\bUSD\b|\bUSDT\b|\bUSDC\b/i.test(`${priceValue} ${text}`) ? 'USD'
     : /₺|\bTRY\b|\bTL\b/i.test(priceValue || text) ? 'TRY' : '';
 
@@ -953,7 +988,8 @@ function normalizeRow(row, cryptoOnly = false) {
   if (!(price > 0)) missing.push('fiyat');
   const fieldDump = headers.map((header, index) => `${header}=${cells[index] || '—'}`).join(' | ');
   return {
-    date, time, type, code, units, price, fee, withholdingTax, currency, sourceId: row.sourceId, rawText: text, missing,
+    date, time, type, code, units, price, fee, withholdingTax, currency, sourceId: row.sourceId,
+    rawText: text, missing, ignoredStablecoin: stablecoinPair,
     diagnostic: `Alanlar: ${fieldDump}. Ayrıştırılan: kod=${code || '—'}, yön=${type || '—'}, tarih=${date || '—'}, miktar=${units > 0 ? units : '—'}, fiyat=${price > 0 ? price : '—'}. ${!code ? `Sembol ipuçları: ${(row.codeHints || []).slice(0, 6).join(' / ') || 'bulunamadı'}. ` : ''}Eksik=${missing.join(',') || 'yok'}`,
   };
 }
@@ -975,8 +1011,10 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   const cryptoOnly = message.cryptoOnly === true;
   collectCompletedHistory(cryptoOnly).then(({ rows, pageCount, paginationStop, labels, start, scanStats }) => {
     const normalizedCandidates = rows.map((row) => normalizeRow(row, cryptoOnly));
-    const normalized = deduplicateOrders(normalizedCandidates);
-    const duplicateOrdersRemoved = normalizedCandidates.length - normalized.length;
+    const uniqueRows = deduplicateOrders(normalizedCandidates);
+    const duplicateOrdersRemoved = normalizedCandidates.length - uniqueRows.length;
+    const ignoredStablecoinCount = cryptoOnly ? uniqueRows.filter((row) => row.ignoredStablecoin).length : 0;
+    const normalized = uniqueRows.filter((row) => !row.ignoredStablecoin);
     const ready = normalized.filter((row) => !row.missing.length);
     const positions = cryptoOnly ? [] : positionSnapshotRows(false);
     const cryptoPositions = cryptoOnly ? positionSnapshotRows(true) : [];
@@ -991,13 +1029,13 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const rowStats = `Tablo teşhisi: ${scanStats?.pages || pageCount + 1} sayfa; ${scanStats?.rowNodes || 0} satır öğesi; ${scanStats?.cellCountMatches || 0} sütun sayısı uyan satır; ${scanStats?.tradeDateMatches || 0} alış/satış ve tarih uyan satır; ${scanStats?.completedStatuses || 0} tamamlandı durumlu satır; geometrik tarama ${scanStats?.geometryTextTokens || 0} metin, ${scanStats?.geometrySideTokens || 0} yön, ${scanStats?.geometryDateTokens || 0} tarih adayı buldu. Durum dağılımı: ${statuses}.`;
       sendResponse({ ok: false, accountSummary: cryptoOnly ? null : readAccountSummary(),
         positions, positionsCaptured, positionsDiagnostic, cryptoPositions, cryptoPositionsCaptured, cryptoPositionsDiagnostic,
-        duplicateOrdersRemoved,
+        duplicateOrdersRemoved, ignoredStablecoinCount,
         error: `${cryptoOnly ? 'Midas Kripto' : 'Midas yatırım hesabı'} sayfasında tamamlanmış işlem satırı okunamadı. ${pageCount + 1} sayfa tarandı. ${start ? `Başlangıç sayfası: ${start}. ` : ''}${paginationStop ? `Sayfalama: ${paginationStop} ` : ''}${headers} ${rowStats} ${evidence}` });
       return;
     }
     sendResponse({ ok: true, rows: normalized, scannedPages: pageCount + 1,
       unmatchedCount: normalized.length - ready.length, accountSummary: cryptoOnly ? null : readAccountSummary(),
-      duplicateOrdersRemoved,
+      duplicateOrdersRemoved, ignoredStablecoinCount,
       positions, positionsCaptured, positionsDiagnostic, cryptoPositions, cryptoPositionsCaptured, cryptoPositionsDiagnostic });
   }).catch((error) => {
     sendResponse({ ok: false, error: error.message || 'Midas emir geçmişi okunamadı.' });

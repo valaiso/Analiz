@@ -490,8 +490,10 @@ async function render({ preserveScroll = false } = {}) {
       const txs = transactions();
       const accountSnapshot = getMidasAccountSnapshot();
       const verifiedMidasCodes = new Set([
-        ...(accountSnapshot?.positionsCaptured === true ? accountSnapshot.positions || [] : []),
-        ...(accountSnapshot?.cryptoPositionsCaptured === true ? accountSnapshot.cryptoPositions || [] : []),
+        ...(accountSnapshot?.positionsSource === 'midas-visible-v1' && accountSnapshot.positionsCaptured === true
+          ? accountSnapshot.positions || [] : []),
+        ...(accountSnapshot?.cryptoPositionsSource === 'midas-visible-v1' && accountSnapshot.cryptoPositionsCaptured === true
+          ? accountSnapshot.cryptoPositions || [] : []),
       ].map((position) => String(position.code || '').toUpperCase()).filter(Boolean));
       // The stock/fund and Crypto live Positions tables are authoritative.
       // Closed or otherwise absent symbols in order history must not reappear as holdings.

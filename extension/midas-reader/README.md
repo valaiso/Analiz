@@ -32,6 +32,8 @@ olarak etiketlenir ve ekranda sağlayıcının tam adı kullanılır.
 7. Midas'ın **Kripto** görünümüne geçip Kripto **Pozisyonlar** ve **Emir geçmişi** tablolarını açın; Analiz'de **Kripto Emirlerini Oku** düğmesine basın. Kripto açık varlıkları yatırım hesabından ayrı kaydedilir. Emir çiftlerinde (ör. ETH/USDT) sembol, çiftin ilk varlığıdır; USDT/USDC tek başına açık pozisyon sayılmaz.
 8. Önizlemede emir sembolü, alış/satış, tarih, adet ve fiyatı kontrol edip içe aktarımı onaylayın.
 
+Güncel paket sürümü `0.26.0`'dır. Sürüm değişmiyorsa Chrome/Edge uzantılar sayfasındaki **Yenile** düğmesini kullanın; sonra hem Midas hem Analiz sekmesini yeniden yükleyin. Yatırım ve Kripto çalışma alanları ayrı okunur.
+
 Eklenti Midas Atlas ve Analiz GitHub Pages adreslerinin yanı sıra Yahoo Finance ve
 TEFAS fiyat kaynaklarına erişim izni ister.
 İçe aktarılan işlemler `localStorage` içinde ayrı bir anahtarda tutulur; Supabase portföy
@@ -45,9 +47,12 @@ bekleyen, iptal edilmiş ve kısmi emirleri atlar. Eklenti yalnızca sayfalama o
 kullanır; alım/satım emirlerine dokunmaz. Midas'ın açık olan tablo aralığındaki tüm
 sayfalar taranır.
 Yatırım ve kripto Pozisyonlar tablolarındaki sembol, adet, fiyat ve ortalama maliyet
-yerel portföyün açık pozisyon kaynağıdır. Yatırım hesabının toplamı ve kripto pozisyon
-değerleri ayrı okunur. Emir geçmişindeki semboller canlı pozisyon tablosunda bulunmuyorsa
-panelde açık varlık olarak gösterilmez.
+yerel portföyün açık pozisyon kaynağıdır. Midas tablosundaki fiyat, eski yerel fiyat
+geçmişiyle ezilmez. Yatırım hesabının toplamı ve kripto pozisyon değerleri ayrı okunur.
+Emir geçmişindeki semboller canlı pozisyon tablosunda bulunmuyorsa panelde açık varlık
+olarak gösterilmez. Okuma başarısız olursa son doğrulanmış pozisyon verisi korunur ve
+panelde son taramanın başarısız olduğu belirtilir; eski aktarım biçimindeki pozisyonlar
+canlı Midas verisi kabul edilmez.
 
 Analiz açıkken eklenti, açık pozisyonların piyasa kotasyonlarını dakikada bir alır.
 BIST ve ABD kotasyonları ayrı ayrı kendi piyasa tarihine ve sağlayıcının bildirdiği
