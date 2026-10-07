@@ -66,7 +66,7 @@ function canonicalHeader(value) {
   if (/^(emir tarihi|işlem tarihi)$/.test(text)) return 'Emir tarihi';
   if (/^(ort\.?\s*maliyet|ortalama maliyet)$/.test(text)) return 'Ort. Maliyet';
   if (/^dağılım$/.test(text)) return 'Dağılım';
-  if (/^günlük getirisi?$/.test(text)) return 'Günlük getiri';
+  if (/^(günlük(?:\s+getiri(?:si)?|\s+değişim(?:i)?|\s+kazanç)?)$/.test(text)) return 'Günlük getiri';
   if (/^toplam getirisi?$/.test(text)) return 'Toplam getiri';
   if (/^(pozisyon|değer)$/.test(text)) return 'Pozisyon';
   return '';

@@ -64,18 +64,65 @@ export function currentMidasCryptoPositions() {
       ? currency === 'USD' ? row.marketValue * fxToTRY(row.code, latestIndex) : row.marketValue
       : Number.isFinite(row.units) && Number.isFinite(row.price)
         ? row.units * row.price * (currency === 'USD' ? fxToTRY(row.code, latestIndex) : 1) : null;
+    const units = Number.isFinite(row.units) && row.units > 0 ? row.units : null;
+    const price = Number.isFinite(row.price) && row.price > 0 ? row.price : null;
+    const history = cachedHistory(row.code);
+    const historyCurrency = DB.byCode.get(row.code)?.currency === 'USD' ? 'USD' : 'TRY';
+    const snapshotCurrency = currency === 'USD' ? 'USD' : 'TRY';
+    const currentDate = marketDateInTimezone('Europe/Istanbul');
+    let referenceIndex = -1;
+    let referencePrice = null;
+    for (let index = latestIndex; index >= 0; index -= 1) {
+      if (DB.calendar[index] >= currentDate) continue;
+      const candidate = exactPriceAtIndex(history, index);
+      if (Number.isFinite(candidate) && candidate > 0) {
+        referenceIndex = index;
+        referencePrice = candidate;
+        break;
+      }
+    }
+    const referenceFx = referenceIndex >= 0 && snapshotCurrency === 'USD'
+      ? fxToTRY(row.code, referenceIndex) : 1;
+    const historyFx = referenceIndex >= 0 && historyCurrency === 'USD'
+      ? fxToTRY(row.code, referenceIndex) : 1;
+    const referencePriceInSnapshotCurrency = Number.isFinite(referencePrice)
+      ? historyCurrency === snapshotCurrency ? referencePrice
+        : snapshotCurrency === 'TRY' ? referencePrice * historyFx : referencePrice / historyFx
+      : null;
+    const calculatedDailyPLNative = units && price && Number.isFinite(referencePriceInSnapshotCurrency)
+      ? units * (price - referencePriceInSnapshotCurrency) : null;
+    const currentFx = snapshotCurrency === 'USD' ? fxToTRY(row.code, latestIndex) : 1;
+    const calculatedDailyPLTRY = units && price && Number.isFinite(referencePriceInSnapshotCurrency)
+      && Number.isFinite(currentFx) && Number.isFinite(referenceFx)
+      ? units * (price * currentFx - referencePriceInSnapshotCurrency * referenceFx) : null;
+    const dailyPLNative = Number.isFinite(row.dailyPL) ? row.dailyPL : calculatedDailyPLNative;
+    const dailyPLTRY = Number.isFinite(row.dailyPL) && Number.isFinite(currentFx)
+      ? row.dailyPL * currentFx : calculatedDailyPLTRY;
+    const dailyPct = Number.isFinite(row.dailyPct) ? row.dailyPct
+      : Number.isFinite(referencePriceInSnapshotCurrency) && referencePriceInSnapshotCurrency > 0 && price
+        ? (price / referencePriceInSnapshotCurrency - 1) * 100 : null;
+    const noDailyChange = NO_DAILY_CHANGE_CODES.has(row.code) && !Number.isFinite(row.dailyPL);
     return {
       ...row,
       name: meta.name || row.code,
       kind: 'CRYPTO',
       category: meta.cat || meta.category || 'Kripto',
       currency,
+      units,
+      price,
       marketValueTRY,
+      dailyPLTRY: noDailyChange ? 0 : dailyPLTRY,
+      dailyPLNative: noDailyChange ? 0 : dailyPLNative,
+      dailyPct: noDailyChange ? 0 : dailyPct,
+      marketValuePrevTRY: noDailyChange ? marketValueTRY
+        : Number.isFinite(referencePriceInSnapshotCurrency) && units && Number.isFinite(referenceFx)
+          ? units * referencePriceInSnapshotCurrency * referenceFx : null,
       allocationPct: null,
       value: Number.isFinite(marketValueTRY) ? marketValueTRY : 0,
       weight: null,
       midasCryptoSnapshot: true,
       closed: false,
+      noDailyChange,
     };
   });
 }
@@ -179,7 +226,7 @@ export function addSiteMarketMetrics(positions) {
     const recentQuote = quoteIndex >= 0 && latestIndex - quoteIndex <= 1;
     const firstTrackedPoint = !hasLiveQuote && quoteIndex >= 0 && hist?.i === quoteIndex
       && Boolean(meta.startDate);
-    const noDailyChange = NO_DAILY_CHANGE_CODES.has(position.code) && !position.midasStockSnapshot;
+    const noDailyChange = NO_DAILY_CHANGE_CODES.has(position.code) && !Number.isFinite(position.dailyPL);
     // Kapanış saati varsaymak yerine, kotasyonun piyasa tarihini bugünkü piyasa
     // tarihiyle karşılaştır. Yeni tarihli kotasyon yoksa son fiyat değerlemede
     // kalır; önceki seansın günlük hareketi bugüne kopyalanmaz.
@@ -202,25 +249,29 @@ export function addSiteMarketMetrics(positions) {
       && (useIntradayChange || recentQuote && previousIndex >= 0)
       && Number.isFinite(dailyReferencePrice) && dailyReferencePrice > 0
       && Number.isFinite(previousFx);
+    const dailyQuoteUnavailable = exchangeTraded && (quoteMissing || quoteStale);
     const calculatedDailyPLNative = noDailyChange ? 0
-      : quoteMissing ? null
-      : quoteStale ? null
+      : dailyQuoteUnavailable ? null
       : exchangeTraded && hasLiveQuote && !useIntradayChange ? 0
         : hasPreviousPrice ? units * (price - dailyReferencePrice) : firstTrackedPoint ? 0 : null;
     const calculatedDailyPLTRY = noDailyChange ? 0
-      : quoteMissing ? null
-      : quoteStale ? null
+      : dailyQuoteUnavailable ? null
       : exchangeTraded && hasLiveQuote && !useIntradayChange ? 0
         : hasPreviousPrice ? units * (price * fx - dailyReferencePrice * previousFx) : firstTrackedPoint ? 0 : null;
     const calculatedDailyPct = noDailyChange ? 0
-      : quoteMissing ? null
-      : quoteStale ? null
+      : dailyQuoteUnavailable ? null
       : exchangeTraded && hasLiveQuote && !useIntradayChange ? 0
         : hasPreviousPrice ? ((price / dailyReferencePrice) - 1) * 100 : firstTrackedPoint ? 0 : null;
-    const dailyPLNative = Number.isFinite(position.dailyPL) ? position.dailyPL : calculatedDailyPLNative;
-    const dailyPLTRY = Number.isFinite(position.dailyPL) && Number.isFinite(fx)
-      ? position.dailyPL * fx : calculatedDailyPLTRY;
-    const dailyPct = Number.isFinite(position.dailyPct) ? position.dailyPct : calculatedDailyPct;
+    const dailyPLNative = dailyQuoteUnavailable ? null
+      : useIntradayChange ? calculatedDailyPLNative
+        : Number.isFinite(position.dailyPL) ? position.dailyPL : calculatedDailyPLNative;
+    const dailyPLTRY = dailyQuoteUnavailable ? null
+      : useIntradayChange ? calculatedDailyPLTRY
+        : Number.isFinite(position.dailyPL) && Number.isFinite(fx)
+          ? position.dailyPL * fx : calculatedDailyPLTRY;
+    const dailyPct = dailyQuoteUnavailable ? null
+      : useIntradayChange ? calculatedDailyPct
+        : Number.isFinite(position.dailyPct) ? position.dailyPct : calculatedDailyPct;
     const totalPLNative = noDailyChange ? 0
       : Number.isFinite(position.totalPL) ? position.totalPL
       : hasSitePrice && Number.isFinite(avgCost) ? units * (price - avgCost)

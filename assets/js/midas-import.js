@@ -1,5 +1,5 @@
 const CHANNEL = 'ANALIZ_MIDAS_EXTENSION';
-const REQUIRED_READER_VERSION = '0.28.3';
+const REQUIRED_READER_VERSION = '0.28.4';
 
 function compareVersions(left, right) {
   const a = String(left || '').split('.').map((part) => Number(part) || 0);
