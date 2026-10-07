@@ -24,7 +24,7 @@ window.addEventListener('message', async (event) => {
       channel: 'ANALIZ_MIDAS_EXTENSION',
       type: request.type === 'LIVE_QUOTES' ? 'LIVE_QUOTES_RESULT' : 'RESULT',
       requestId: request.requestId,
-      response: { ok: false, error: 'Eklenti yanıt vermedi. Eklentiyi yenileyip yeniden deneyin.' },
+      response: { ok: false, error: `Eklenti mesaj köprüsü yanıt vermedi: ${error?.message || 'bilinmeyen bağlantı hatası'}. Midas ve Analiz sekmelerini yenileyip yeniden deneyin.` },
     }, location.origin);
   }
 });

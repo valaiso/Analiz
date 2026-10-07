@@ -26,10 +26,11 @@ olarak etiketlenir ve ekranda sağlayıcının tam adı kullanılır.
 1. Chrome/Edge'de `chrome://extensions` / `edge://extensions` sayfasını açın.
 2. Geliştirici modunu açın ve **Paketlenmemiş öğe yükle** seçeneğini kullanın.
 3. Bu klasörü seçin: `extension/midas-reader`.
-4. `https://atlas.getmidas.com/` sekmesini yenileyin ve Midas'ta **Emir geçmişi** tablosunu açın.
-5. Midas emir geçmişinde, eklenti son eriştiğiniz Midas sekmesindeki tablonun sayfalarını sırayla tarar ve başladığı sayfaya geri döner. Sayfa göstergesi ve oklar farklı kapsayıcılarda olsa da yalnızca göstergeyle aynı satırdaki yakın sayfalama kontrolü kullanılır.
-6. Analiz'i ayrı sekmede yenileyin. **İşlemler → Midas Aktarımı → Midas’tan İşlemleri Oku** düğmesine basın.
-7. Önizlemede sembol, alış/satış, tarih, adet ve fiyatı kontrol edip içe aktarımı onaylayın.
+4. Eklentiyi güncelledikten sonra açık **Analiz** ve `https://atlas.getmidas.com/` sekmelerini yenileyin. Analiz köprüsü de açık sekmeye içerik betiği olarak yüklenir.
+5. Midas'ın yatırım görünümünde **Pozisyonlar** ve **Emir geçmişi** tablolarını açın.
+6. Analiz sekmesinde **İşlemler → Midas Aktarımı → Midas’tan İşlemleri Oku** düğmesine basın. Güncel hisse/fon adetleri yalnızca Pozisyonlar tablosundan alınır; emir geçmişi açık pozisyon kanıtı olarak kullanılmaz.
+7. Midas'ın **Kripto** görünümüne geçip Kripto **Pozisyonlar** ve **Emir geçmişi** tablolarını açın; Analiz'de **Kripto Emirlerini Oku** düğmesine basın. Kripto açık varlıkları yatırım hesabından ayrı kaydedilir. Emir çiftlerinde (ör. ETH/USDT) sembol, çiftin ilk varlığıdır; USDT/USDC tek başına açık pozisyon sayılmaz.
+8. Önizlemede emir sembolü, alış/satış, tarih, adet ve fiyatı kontrol edip içe aktarımı onaylayın.
 
 Eklenti Midas Atlas ve Analiz GitHub Pages adreslerinin yanı sıra Yahoo Finance ve
 TEFAS fiyat kaynaklarına erişim izni ister.
@@ -43,8 +44,10 @@ Eklenti yalnızca emir tablosunda durumu **Gerçekleşti/Tamamlandı** olan sat�
 bekleyen, iptal edilmiş ve kısmi emirleri atlar. Eklenti yalnızca sayfalama oklarını
 kullanır; alım/satım emirlerine dokunmaz. Midas'ın açık olan tablo aralığındaki tüm
 sayfalar taranır.
-Pozisyonlar tablosunda “Adet” veya “Miktar” sütunu görünüyorsa açık adet, ortalama maliyet
-ve sembol yerel portföy hesapları için okunur; günlük/toplam getiri hücreleri kullanılmaz.
+Yatırım ve kripto Pozisyonlar tablolarındaki sembol, adet, fiyat ve ortalama maliyet
+yerel portföyün açık pozisyon kaynağıdır. Yatırım hesabının toplamı ve kripto pozisyon
+değerleri ayrı okunur. Emir geçmişindeki semboller canlı pozisyon tablosunda bulunmuyorsa
+panelde açık varlık olarak gösterilmez.
 
 Analiz açıkken eklenti, açık pozisyonların piyasa kotasyonlarını dakikada bir alır.
 BIST ve ABD kotasyonları ayrı ayrı kendi piyasa tarihine ve sağlayıcının bildirdiği

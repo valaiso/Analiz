@@ -148,7 +148,7 @@ export function renderKiyaslama(ctx) {
 
   /* --------------------------------------------------- karşı-olgusal senaryo */
 
-  const txs = transactions();
+  const txs = ctx.analysisTransactions || transactions();
   const senaryolar = [];
   for (const key of available) {
     // TÜFE bir yatırım aracı değildir; getiri karşılaştırmasında alım gücü

@@ -1,11 +1,11 @@
-/* Dağılım: Midas canlı pozisyonları veya işlem geçmişinden türetilen dağılım. */
+/* Dağılım: Midas canlı pozisyonları veya manuel işlem kayıtlarından türetilir. */
 
 import { h, tl, tlSigned, pct, pctSigned, colorAt, isNum, units as fmtUnits } from '../util.js';
 import { DB } from '../data.js';
 import { donutWithLegend, barChart, stackedAreaChart } from '../charts.js';
 import { weightHistory, attribution } from '../insights.js';
 import { transactions, getMidasAccountSnapshot } from '../store.js';
-import { currentMidasPositions, addSiteMarketMetrics, groupAssetRows, assetType } from '../asset-groups.js';
+import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType } from '../asset-groups.js';
 import { sectionCard, emptyState } from './common.js';
 
 const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
@@ -21,19 +21,25 @@ function signedCurrency(value, currency = 'TRY') {
 export function renderDagilim(ctx) {
   const { analysis, navigate } = ctx;
   const { open, totals } = analysis;
-  const liveRaw = currentMidasPositions();
-  const usingMidas = liveRaw !== null;
-  const liveCodes = new Set((liveRaw || []).map((row) => row.code));
-  const live = addSiteMarketMetrics(liveRaw || []);
-  const midasTotal = getMidasAccountSnapshot()?.summary?.totalValue;
+  const snapshot = getMidasAccountSnapshot();
+  const usingMidas = snapshot?.positionsCaptured === true || snapshot?.cryptoPositionsCaptured === true;
+  const liveRaw = [
+    ...(currentMidasPositions() || []),
+    ...(currentMidasCryptoPositions() || []),
+  ];
+  const measuredLive = addSiteMarketMetrics(liveRaw || []);
+  const stockTotal = Number(snapshot?.summary?.totalValue) > 0 ? Number(snapshot.summary.totalValue)
+    : measuredLive.filter((row) => !row.midasCryptoSnapshot).reduce((sum, row) => sum + (row.marketValueTRY || 0), 0);
+  const cryptoTotal = measuredLive.filter((row) => row.midasCryptoSnapshot)
+    .reduce((sum, row) => sum + (row.marketValueTRY || 0), 0);
+  const midasTotal = stockTotal + cryptoTotal;
+  const live = measuredLive.map((row) => row.midasCryptoSnapshot && midasTotal > 0 && isNum(row.marketValueTRY)
+    ? { ...row, allocationPct: row.marketValueTRY / midasTotal * 100 }
+    : row);
   const liveValueTotal = live.reduce((sum, row) => sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0);
   const liveValuesReconcile = !usingMidas || live.every((row) => isNum(row.marketValueTRY))
-    && (!Number.isFinite(midasTotal) || liveValueTotal <= midasTotal * 1.1);
-  const localCrypto = usingMidas ? open.filter((row) => assetType(row.code) === 'Kripto' && !liveCodes.has(row.code)).map((row) => ({
-    ...row, kind: 'CRYPTO', currency: 'TRY', allocationPct: null,
-    dailyPLTRY: row.dayPL, totalPLTRY: row.totalPL, localRecord: true,
-  })) : [];
-  const positions = usingMidas ? [...live, ...localCrypto] : open;
+    && (!Number(snapshot?.summary?.totalValue) || liveValueTotal <= midasTotal * 1.1);
+  const positions = usingMidas ? live : open;
 
   if (!positions.length) {
     return emptyState('Dağılım için açık pozisyon gerekiyor',
@@ -46,8 +52,6 @@ export function renderDagilim(ctx) {
     const priced = [
       ...live.filter((row) => row.marketValueTRY > 0)
         .map((row) => ({ ...row, pieValue: row.marketValueTRY })),
-      ...localCrypto.filter((row) => row.value > 0)
-        .map((row) => ({ ...row, pieValue: row.value })),
     ];
     const byTypeMap = new Map();
     for (const row of priced) {
@@ -56,8 +60,7 @@ export function renderDagilim(ctx) {
       const type = baseType === 'Hisse' && row.currency !== 'USD' ? 'BIST Hisse' : baseType;
       byTypeMap.set(type, (byTypeMap.get(type) || 0) + row.pieValue);
     }
-    const securitiesValue = priced.filter((row) => !row.localRecord)
-      .reduce((sum, row) => sum + row.pieValue, 0);
+    const securitiesValue = priced.reduce((sum, row) => sum + row.pieValue, 0);
     const missingPositionValue = live.filter((row) => !(row.units > 0) || !isNum(row.marketValueTRY));
     const valuesReconcile = liveValuesReconcile && !missingPositionValue.length
       && (!Number.isFinite(midasTotal) || securitiesValue <= midasTotal * 1.1);
@@ -76,7 +79,7 @@ export function renderDagilim(ctx) {
     if (valuesReconcile) root.append(h('div', { class: 'grid grid-2' },
       sectionCard('Portföy Dağılımı', 'ETF · Fon · BIST hissesi · yabancı hisse · Nakit', donutWithLegend(byType, {
         centerTop: tl(Number.isFinite(midasTotal)
-          ? midasTotal + localCrypto.reduce((sum, row) => sum + (row.value || 0), 0)
+          ? midasTotal
           : priced.reduce((sum, row) => sum + (row.pieValue || 0), 0), { compact: true }),
         centerBottom: 'Midas toplamı',
       })),
@@ -89,7 +92,7 @@ export function renderDagilim(ctx) {
         ? `Dağılım grafiği bekletiliyor: Midas adedi/fiyatı okunamayan varlıklar: ${missingPositionValue.map((row) => row.code).join(', ')}. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`
         : `Dağılım grafiği bekletiliyor: pozisyon fiyatlarından hesaplanan ${tl(securitiesValue)} değeri Midas hesap toplamı ${tl(midasTotal)} ile uyuşmuyor. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`));
     root.append(h('div', { class: 'notice' },
-      `Portföy değeri kayıtlı adet × sitenin son fiyatı × güncel kur ile hesaplanır; ${live.filter((row) => row.marketValueTRY > 0).length}/${live.length} açık varlığın değeri doğrulandı. Günlük değişim de sitenin her varlık için son iki fiyat noktasından hesaplanır; THF ve TP2 %0 kabul edilir.`));
+      `Hisse/fon ve kripto açık adetleri Midas Pozisyonlar tablolarından alınır; emir geçmişinden açık pozisyon türetilmez. ${live.filter((row) => row.marketValueTRY > 0).length}/${live.length} açık varlığın değeri doğrulandı.`));
     const sortedGroups = groupAssetRows(positions).map((group) => ({
       ...group,
       groupValue: group.rows.reduce((sum, row) => sum + (row.marketValueTRY || 0), 0),
@@ -111,7 +114,7 @@ export function renderDagilim(ctx) {
           h('td', { class: cls2(row.totalPLTRY) }, liveValuesReconcile && isNum(row.totalPLNative) ? `${signedCurrency(row.totalPLNative, row.currency)}${isNum(row.totalPct) ? ` · ${pctSigned(row.totalPct)}` : ''}` : '—'),
           h('td', { class: cls2(row.dailyPLNative) }, liveValuesReconcile && isNum(row.dailyPLNative) ? `${signedCurrency(row.dailyPLNative, row.currency)}${isNum(row.dailyPct) ? ` · ${pctSigned(row.dailyPct)}` : ''}` : '—'))))));
       root.append(sectionCard(localOnly ? 'Kripto' : group.label,
-        localOnly ? 'Bitcoin elle manuel eklenmelidir.'
+        localOnly ? 'Açık miktar Midas Kripto Pozisyonlar tablosundan alınır.'
           : 'Portföy değeri = Midas adedi × güncel fiyat × güncel kur', table));
     }
   } else {
@@ -130,8 +133,7 @@ export function renderDagilim(ctx) {
       }))));
   }
 
-  /* Use current Midas P/L only when the holdings were actually read. If not,
-     derive contribution from open transaction positions, excluding closed assets. */
+  /* Midas pozisyonları okunduysa yalnızca canlı tabloyu göster. */
   if (usingMidas && live.length) {
     for (const group of groupAssetRows(live)) {
       if (!['Fon', 'Hisse'].includes(group.label)) continue;
@@ -156,14 +158,6 @@ export function renderDagilim(ctx) {
       }
 
     }
-    if (localCrypto.length) {
-      const rows = localCrypto.filter((row) => isNum(row.totalPLTRY));
-      if (rows.length) {
-        const box = h('div');
-        root.append(sectionCard('Kripto · Kâr/Zarar Katkısı', 'Yerel işlem ve fiyat kayıtlarından; Midas yatırım toplamına dahil değil', box));
-        barChart(box, { items: rows.map((row) => ({ label: row.code, value: row.totalPLTRY })), format: tlSigned });
-      }
-    }
   } else {
     const katkilar = attribution(analysis.holdings.filter((holding) => !holding.closed), totals.netInvested);
     if (katkilar.length) {
@@ -185,7 +179,7 @@ export function renderDagilim(ctx) {
   }
 
   if (!usingMidas && analysis.series.dates.length > 20) {
-    const drift = weightHistory(transactions(), analysis.series.start, analysis.series.dates);
+    const drift = weightHistory(ctx.analysisTransactions || transactions(), analysis.series.start, analysis.series.dates);
     if (drift.codes.length > 1) {
       const box = h('div');
       root.append(sectionCard('Ağırlık Kayması', 'İşlem geçmişinden modellenmiştir', box));

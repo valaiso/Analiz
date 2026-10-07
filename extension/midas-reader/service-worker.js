@@ -28,16 +28,19 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         return;
       }
       const known = new Set((message.knownCodes || []).map((code) => String(code).toUpperCase()));
-      const positionCodes = new Set((result.positions || [])
+      const currentPositions = cryptoOnly ? (result.cryptoPositions || []) : (result.positions || []);
+      const positionCodes = new Set(currentPositions
         .map((position) => String(position.code || '').toUpperCase()).filter(Boolean));
       const positionsRead = positionCodes.size > 0;
       const cycleStarts = activePurchaseStarts(result.rows || []);
       const missingRows = (result.rows || [])
         .filter((row) => !row.missing?.length && row.code && !known.has(String(row.code).toUpperCase())
+          && !(cryptoOnly && ['USDT', 'USDC'].includes(String(row.code).toUpperCase()))
           && (cryptoOnly || cycleStarts[String(row.code).toUpperCase()]
             || (positionsRead && positionCodes.has(String(row.code).toUpperCase()))));
-      const missingPositionCodes = (cryptoOnly ? [] : (result.positions || []))
+      const missingPositionCodes = currentPositions
         .filter((position) => position.code && !known.has(String(position.code).toUpperCase()))
+        .filter((position) => !['USDT', 'USDC'].includes(String(position.code).toUpperCase()))
         .map((position) => String(position.code).toUpperCase());
       const missingCodes = [...new Set([
         ...missingRows.map((row) => String(row.code).toUpperCase()),

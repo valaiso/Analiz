@@ -488,9 +488,21 @@ async function render({ preserveScroll = false } = {}) {
     }
     if (view.needsAnalysis) {
       const txs = transactions();
-      if (txs.length) app.replaceChildren(h('div', { class: 'loading' },
+      const accountSnapshot = getMidasAccountSnapshot();
+      const verifiedMidasCodes = new Set([
+        ...(accountSnapshot?.positionsCaptured === true ? accountSnapshot.positions || [] : []),
+        ...(accountSnapshot?.cryptoPositionsCaptured === true ? accountSnapshot.cryptoPositions || [] : []),
+      ].map((position) => String(position.code || '').toUpperCase()).filter(Boolean));
+      // The stock/fund and Crypto live Positions tables are authoritative.
+      // Closed or otherwise absent symbols in order history must not reappear as holdings.
+      const analysisTransactions = txs.filter((tx) => {
+        if (tx.source !== 'midas') return true;
+        return verifiedMidasCodes.has(String(tx.code || '').toUpperCase());
+      });
+      ctx.analysisTransactions = analysisTransactions;
+      if (analysisTransactions.length) app.replaceChildren(h('div', { class: 'loading' },
         h('div', { class: 'spinner' }), h('p', {}, 'Hesaplanıyor…')));
-      ctx.analysis = await analyze(txs);
+      ctx.analysis = await analyze(analysisTransactions);
     }
     const node = view.render(ctx);
     const warning = stalenessNotice();

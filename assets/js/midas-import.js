@@ -20,6 +20,10 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
         error.accountSummary = data.response?.accountSummary || null;
         error.positions = data.response?.positions || [];
         error.positionsCaptured = data.response?.positionsCaptured === true;
+        error.positionsDiagnostic = data.response?.positionsDiagnostic || null;
+        error.cryptoPositions = data.response?.cryptoPositions || [];
+        error.cryptoPositionsCaptured = data.response?.cryptoPositionsCaptured === true;
+        error.cryptoPositionsDiagnostic = data.response?.cryptoPositionsDiagnostic || null;
         error.duplicateOrdersRemoved = Number(data.response?.duplicateOrdersRemoved) || 0;
         reject(error);
       } else resolve({
@@ -29,6 +33,10 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
         accountSummary: data.response.accountSummary || null,
         positions: data.response.positions || [],
         positionsCaptured: data.response.positionsCaptured === true,
+        positionsDiagnostic: data.response.positionsDiagnostic || null,
+        cryptoPositions: data.response.cryptoPositions || [],
+        cryptoPositionsCaptured: data.response.cryptoPositionsCaptured === true,
+        cryptoPositionsDiagnostic: data.response.cryptoPositionsDiagnostic || null,
         duplicateOrdersRemoved: Number(data.response.duplicateOrdersRemoved) || 0,
         marketData: data.response.marketData || {},
         marketErrors: data.response.marketErrors || {},

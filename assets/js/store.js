@@ -68,11 +68,29 @@ export const getMidasAccountSnapshot = () => midasSnapshot;
 
 export function saveMidasAccountSnapshot(snapshot) {
   if (!snapshot || typeof snapshot !== 'object') return;
+  const hasStockUpdate = ['summary', 'positions', 'positionsCaptured']
+    .some((key) => Object.prototype.hasOwnProperty.call(snapshot, key));
+  const hasCryptoUpdate = ['cryptoSummary', 'cryptoPositions', 'cryptoPositionsCaptured']
+    .some((key) => Object.prototype.hasOwnProperty.call(snapshot, key));
+  const stockCaptured = snapshot.positionsCaptured === true
+    || (Array.isArray(snapshot.positions) && snapshot.positions.length > 0);
+  const cryptoCaptured = snapshot.cryptoPositionsCaptured === true
+    || (Array.isArray(snapshot.cryptoPositions) && snapshot.cryptoPositions.length > 0);
   midasSnapshot = {
+    ...(midasSnapshot || {}),
     capturedAt: snapshot.capturedAt || new Date().toISOString(),
-    summary: snapshot.summary || null,
-    positions: Array.isArray(snapshot.positions) ? snapshot.positions : [],
-    positionsCaptured: snapshot.positionsCaptured === true || (Array.isArray(snapshot.positions) && snapshot.positions.length > 0),
+    ...(hasStockUpdate ? {
+      summary: snapshot.summary || null,
+      positions: stockCaptured && Array.isArray(snapshot.positions) ? snapshot.positions : [],
+      positionsCaptured: stockCaptured,
+      stockCapturedAt: snapshot.capturedAt || new Date().toISOString(),
+    } : {}),
+    ...(hasCryptoUpdate ? {
+      cryptoSummary: snapshot.cryptoSummary || null,
+      cryptoPositions: cryptoCaptured && Array.isArray(snapshot.cryptoPositions) ? snapshot.cryptoPositions : [],
+      cryptoPositionsCaptured: cryptoCaptured,
+      cryptoCapturedAt: snapshot.capturedAt || new Date().toISOString(),
+    } : {}),
   };
   try {
     localStorage.setItem(MIDAS_SNAPSHOT_KEY, JSON.stringify(midasSnapshot));

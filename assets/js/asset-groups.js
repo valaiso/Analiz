@@ -30,8 +30,7 @@ export function groupAssetRows(rows) {
 
 export function currentMidasPositions() {
   const snapshot = getMidasAccountSnapshot();
-  if (!snapshot?.summary?.totalValue || !Array.isArray(snapshot.positions)
-    || (!snapshot.positions.length && !snapshot.positionsCaptured)) return null;
+  if (snapshot?.positionsCaptured !== true || !Array.isArray(snapshot.positions)) return null;
   return snapshot.positions.map((row) => {
     const meta = DB.byCode.get(row.code) || {};
     const currency = row.currency || meta.currency || (meta.kind === 'US_ETF' || meta.kind === 'CRYPTO' ? 'USD' : 'TRY');
@@ -50,6 +49,34 @@ export function currentMidasPositions() {
   });
 }
 
+/** Current crypto holdings come from Midas's separate Crypto Positions table. */
+export function currentMidasCryptoPositions() {
+  const snapshot = getMidasAccountSnapshot();
+  if (snapshot?.cryptoPositionsCaptured !== true || !Array.isArray(snapshot.cryptoPositions)) return null;
+  const latestIndex = Math.max(0, lastIndex());
+  return snapshot.cryptoPositions.map((row) => {
+    const meta = DB.byCode.get(row.code) || {};
+    const currency = row.currency || 'TRY';
+    const marketValueTRY = Number.isFinite(row.marketValue)
+      ? currency === 'USD' ? row.marketValue * fxToTRY(row.code, latestIndex) : row.marketValue
+      : Number.isFinite(row.units) && Number.isFinite(row.price)
+        ? row.units * row.price * (currency === 'USD' ? fxToTRY(row.code, latestIndex) : 1) : null;
+    return {
+      ...row,
+      name: meta.name || row.code,
+      kind: 'CRYPTO',
+      category: meta.cat || meta.category || 'Kripto',
+      currency,
+      marketValueTRY,
+      allocationPct: null,
+      value: Number.isFinite(marketValueTRY) ? marketValueTRY : 0,
+      weight: null,
+      midasCryptoSnapshot: true,
+      closed: false,
+    };
+  });
+}
+
 /** Midas'ın açık sembollerini site fiyat geçmişi ve yerel işlem adetleriyle birleştir. */
 export function addSiteMarketMetrics(positions) {
   const liveQuotes = getMidasAccountSnapshot()?.liveQuotes || {};
@@ -57,6 +84,34 @@ export function addSiteMarketMetrics(positions) {
     // Midas canlı pozisyonlarında adet yalnızca Midas tablosundan gelmeli.
     // Eski işlem kayıtları açık adetle uyuşmayabilir ve günlük katkıyı büyütür.
     const units = Number.isFinite(position.units) && position.units > 0 ? position.units : null;
+    if (position.midasCryptoSnapshot) {
+      const price = Number.isFinite(position.price) && position.price > 0 ? position.price : null;
+      const avgCost = Number.isFinite(position.avgCost) && position.avgCost > 0 ? position.avgCost : null;
+      const totalPLNative = units && price && avgCost ? units * (price - avgCost)
+        : Number.isFinite(position.totalPL) ? position.totalPL : null;
+      const fx = position.currency === 'USD' ? fxToTRY(position.code, Math.max(0, lastIndex())) : 1;
+      return {
+        ...position,
+        units,
+        price,
+        avgCost,
+        dailyPLTRY: null,
+        dailyPLNative: null,
+        dailyPct: null,
+        totalPLNative,
+        totalPLTRY: Number.isFinite(totalPLNative) && Number.isFinite(fx) ? totalPLNative * fx : null,
+        totalPct: avgCost && price ? ((price / avgCost) - 1) * 100 : null,
+        marketValueTRY: Number.isFinite(position.marketValueTRY) ? position.marketValueTRY
+          : units && price && Number.isFinite(fx) ? units * price * fx : null,
+        marketValuePrevTRY: null,
+        siteDataAvailable: Boolean(units && price),
+        quoteSource: 'Midas Crypto Pozisyonlar',
+        quoteMissing: false,
+        quoteMissingReason: '',
+        quoteStale: false,
+        quoteAgeMinutes: null,
+      };
+    }
     if (!(units > 0)) return {
       ...position, units: null,
       dailyPLTRY: NO_DAILY_CHANGE_CODES.has(position.code) ? 0 : null,

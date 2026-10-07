@@ -66,6 +66,11 @@ function logMidasAccount(summary) {
   if (Number.isFinite(summary.trySettlement)) logMidas(`Midas TL takas bekleyen bakiye: ${fmt(summary.trySettlement)}.`);
 }
 
+function positionDiagnosticText(diagnostic) {
+  if (!diagnostic) return '';
+  return `Tanı: Pozisyonlar başlığı ${diagnostic.headingFound ? 'var' : 'yok'}, uygun sütun başlığı ${diagnostic.headerFound ? 'var' : 'yok'}, ${diagnostic.rowCandidates || 0} satır adayı, ${diagnostic.validRows || 0} geçerli açık varlık.`;
+}
+
 async function copyMidasLog(field) {
   const text = field.value.trim();
   if (!text) { toast('Kopyalanacak aktarım mesajı yok'); return; }
@@ -201,7 +206,7 @@ async function readMidas(ctx, button) {
         if (position.domCells?.length) logMidas(`${position.code} sütun tanısı: ${position.domCells.map((cell) => `${cell.header}=[${cell.raw}]`).join(' | ')}.`);
       }
     } else {
-      logMidas('Midas toplam hesabı okundu; ancak Pozisyonlar tablosundaki açık varlıklar okunamadı. Panelde eski işlem kayıtlarından türetilmiş pozisyonlar kullanılmayacak.');
+      logMidas(`Midas Pozisyonlar tablosundaki açık varlıklar okunamadı. Emir geçmişinden pozisyon türetilmeyecek. ${positionDiagnosticText(result.positionsDiagnostic)}`);
     }
     logMidas(`${result.scannedPages} sayfa tarandı; ${rows.length} satır okundu, ${valid.length} satır aktarılabilir, ${rows.length - valid.length} satır eksik bilgi içeriyor.`);
     if (result.duplicateOrdersRemoved) logMidas(`Aynı emirlerin ${result.duplicateOrdersRemoved} yinelenen satırı elendi.`);
@@ -272,14 +277,17 @@ async function readMidas(ctx, button) {
       pruned: pruneLocalMarketAssets(activeCycleStarts, closedCodes),
     }));
   } catch (error) {
-    if (error.accountSummary) {
+    if (error.accountSummary || Object.prototype.hasOwnProperty.call(error, 'positionsCaptured') || error.positions?.length) {
       if (!accountLogged) logMidasAccount(error.accountSummary);
+      saveMidasAccountSnapshot({
+        capturedAt: new Date().toISOString(), summary: error.accountSummary,
+        positions: error.positions, positionsCaptured: error.positionsCaptured,
+      });
       if (error.positionsCaptured || error.positions?.length) {
-        saveMidasAccountSnapshot({
-          capturedAt: new Date().toISOString(), summary: error.accountSummary,
-          positions: error.positions, positionsCaptured: error.positionsCaptured,
-        });
-        logMidas(`Emir satırları okunamasa da güncel Midas pozisyonları eşitlendi (${error.positions.length} varlık).`);
+        logMidas(`Emir satırları okunamasa da güncel Midas pozisyonları eşitlendi (${error.positions?.length || 0} varlık).`);
+        ctx.refresh();
+      } else {
+        logMidas(`Midas Pozisyonlar tablosu bu taramada doğrulanamadı; geçmiş işlemler açık pozisyon sayılmayacak. ${positionDiagnosticText(error.positionsDiagnostic)}`);
         ctx.refresh();
       }
     }
@@ -300,12 +308,37 @@ async function readMidasCrypto(ctx, button) {
       && fund.kind === 'CRYPTO' && !['USDT', 'USDC'].includes(String(fund.code).toUpperCase()))
       .map((fund) => ({ code: fund.code, source: fund.catSrc, kind: fund.kind, startDate: fund.startDate })),
     [], 600_000, { cryptoOnly: true });
-    if (!result.rows.length) throw new Error('Midas Kripto ekranında Emir geçmişi tablosunu açıp tekrar dene.');
+    const cryptoPositionValue = (result.cryptoPositions || []).reduce((sum, position) => {
+      const nativeValue = Number.isFinite(position.marketValue) ? position.marketValue
+        : Number(position.units) * Number(position.price);
+      if (!(nativeValue > 0)) return sum;
+      const fx = position.currency === 'USD'
+        ? usdTryAtIndex(Math.max(0, indexForDate(new Date().toISOString().slice(0, 10)))) : 1;
+      return sum + nativeValue * (Number.isFinite(fx) ? fx : 1);
+    }, 0);
+    saveMidasAccountSnapshot({
+      capturedAt: new Date().toISOString(),
+      cryptoSummary: result.cryptoPositionsCaptured ? { totalValue: cryptoPositionValue } : null,
+      cryptoPositions: result.cryptoPositions || [],
+      cryptoPositionsCaptured: result.cryptoPositionsCaptured,
+    });
+    if (result.cryptoPositionsCaptured) {
+      logMidas(`Midas Kripto Pozisyonlar tablosundan ${(result.cryptoPositions || []).length} açık varlık okundu; güncel değer ${tl(cryptoPositionValue)}.`);
+      ctx.refresh();
+    } else {
+      logMidas(`Midas Crypto Pozisyonlar tablosu bu taramada okunamadı; emir geçmişinden açık kripto pozisyonu türetilmeyecek. ${positionDiagnosticText(result.cryptoPositionsDiagnostic)}`);
+    }
+    if (!result.rows.length) {
+      logMidas('Kripto emir geçmişinde tamamlanmış satır bulunamadı; mevcut pozisyon tablosu eşitlendi.');
+      toast('Kripto pozisyonları eşitlendi; aktarılacak tamamlanmış emir bulunamadı.');
+      return;
+    }
     const assets = Object.values(result.marketData || {}).map((asset) => ({
       ...asset, kind: 'CRYPTO', category: 'Kripto',
     }));
     const assetByCode = new Map(assets.map((asset) => [asset.code, asset]));
     for (const row of result.rows) {
+      if (['USDT', 'USDC'].includes(String(row.code || '').toUpperCase())) continue;
       if (!row.code || !row.date || !(row.price > 0) || assetByCode.has(row.code)) continue;
       assetByCode.set(row.code, {
         code: row.code, name: row.code, kind: 'CRYPTO', category: 'Kripto',
@@ -331,6 +364,20 @@ async function readMidasCrypto(ctx, button) {
     showMidasPreview(result.rows, result, ctx, result.marketErrors || {});
     if (stored) ctx.refresh();
   } catch (error) {
+    if (Object.prototype.hasOwnProperty.call(error, 'cryptoPositionsCaptured')) {
+      const positions = error.cryptoPositions || [];
+      const totalValue = positions.reduce((sum, position) => sum
+        + (Number(position.marketValue) || (Number(position.units) * Number(position.price) || 0)), 0);
+      saveMidasAccountSnapshot({
+        capturedAt: new Date().toISOString(),
+        cryptoSummary: error.cryptoPositionsCaptured ? { totalValue } : null,
+        cryptoPositions: positions, cryptoPositionsCaptured: error.cryptoPositionsCaptured,
+      });
+      logMidas(error.cryptoPositionsCaptured
+        ? `Emir satırları okunamasa da güncel kripto pozisyonları eşitlendi (${positions.length} varlık).`
+        : `Kripto Pozisyonlar tablosu bu taramada doğrulanamadı; geçmiş işlemler açık pozisyon sayılmayacak. ${positionDiagnosticText(error.cryptoPositionsDiagnostic)}`);
+      ctx.refresh();
+    }
     logMidas(`Kripto aktarım hatası: ${error.message}`);
     toast(error.message);
   } finally {
