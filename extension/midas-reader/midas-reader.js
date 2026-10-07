@@ -329,7 +329,7 @@ function isCryptoHistoryHeading(heading) {
   return /kripto|crypto/i.test(location.href);
 }
 
-function candidateElements(root, scanStats) {
+function candidateElements(root, scanStats, cryptoOnly = false) {
   const headerCandidates = [...root.querySelectorAll('tr, [role="row"], [class*="row" i], div')]
     .filter((element) => isVisible(element) && isOrderHeader(element))
     .sort((a, b) => textOf(a).length - textOf(b).length);
@@ -343,16 +343,16 @@ function candidateElements(root, scanStats) {
     code: index(/varlık/), status: index(/durum/), side: index(/alış\s*\/\s*satış/),
     units: index(/adet/), price: index(/^fiyat$/), date: index(/emir tarihi/),
   };
-  if (columns.code < 0 && !cryptoOnly) return [];
   if (columns.status < 0 || columns.side < 0 || columns.units < 0 || columns.price < 0 || columns.date < 0) return [];
   if (scanStats) scanStats.headers = headers;
-  if ([columns.code, columns.status, columns.side, columns.units, columns.price, columns.date].some((column) => column < 0)) return [];
+  if ([columns.status, columns.side, columns.units, columns.price, columns.date].some((column) => column < 0)) return [];
+  if (columns.code < 0 && !cryptoOnly) return [];
 
   // Midas görsel tablosunda satır, semantic table/role=row kullanmadan iç içe
   // div'lerle çizilebiliyor. Bu yüzden başlık satırının kardeşlerini varsaymak
   // yerine, Emir geçmişi panelinde işlem yönü ve tarih taşıyan en küçük satır
   // kapsayıcılarını bulup değer hücrelerini başlıkların x konumlarıyla eşle.
-  const nodes = [...root.querySelectorAll('tr, [role="row"], [class*="row" i], li, div')]
+  const nodes = [...root.querySelectorAll('tr, [role="row"], [class*="row" i], [class*="order" i], [class*="item" i], li, article, a, button, div')]
     .filter((element) => element !== headerRow && isVisible(element))
     .map((element) => ({ element, text: textOf(element) }))
     .filter(({ text }) => text.length > 0 && text.length < 360
@@ -431,9 +431,9 @@ function candidateElements(root, scanStats) {
     const row = {
       text, headers, cells,
       sourceId: element.getAttribute('data-order-id') || element.getAttribute('data-id') || '',
-      assetCode: assetCodeAtRow(root,
+      assetCode: columns.code >= 0 ? assetCodeAtRow(root,
         matchedContainer && matchedContainer.getBoundingClientRect().height <= 80 ? matchedContainer : element,
-        headerItems[columns.code]),
+        headerItems[columns.code]) : '',
       codeHints: assetHintsFor(element, root),
     };
     const key = row.sourceId || text.replace(/\s+/g, ' ').trim();
@@ -573,7 +573,7 @@ async function collectCompletedHistory(cryptoOnly = false) {
   // Midas bazı hesaplarda yüzlerce emri 5'li sayfalarda gösteriyor. Yalnızca
   // emir tablosunun sayfa okunu kullanarak ilerle; alım/satım kontrollerine dokunma.
   while (pageCount < 300) {
-    for (const row of candidateElements(root, scanStats)) {
+    for (const row of candidateElements(root, scanStats, cryptoOnly)) {
       const key = row.sourceId || row.text.replace(/\s+/g, ' ').trim();
       if (key) collected.set(key, row);
     }

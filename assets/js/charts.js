@@ -537,7 +537,10 @@ export function scatterChart(container, cfg) {
 }
 
 function renderScatter(container, cfg) {
-  const { points = [], height = 340, xLabel = '', yLabel = '', onPick, robust = false } = cfg;
+  const {
+    points = [], height = 340, xLabel = '', yLabel = '', onPick, robust = false,
+    xQuantiles = [.01, .99], yQuantiles = [.01, .99],
+  } = cfg;
   container.replaceChildren();
   const veri = points.filter((p) => isNum(p.x) && isNum(p.y));
   if (!veri.length) {
@@ -555,10 +558,10 @@ function renderScatter(container, cfg) {
     const sorted = [...values].sort((a, b) => a - b);
     return sorted[Math.floor((sorted.length - 1) * q)];
   };
-  let xMin = robust ? quantile(xs, .01) : Math.min(...xs);
-  let xMax = robust ? quantile(xs, .99) : Math.max(...xs);
-  let yMin = robust ? quantile(ys, .01) : Math.min(...ys);
-  let yMax = robust ? quantile(ys, .99) : Math.max(...ys);
+  let xMin = robust ? quantile(xs, xQuantiles[0]) : Math.min(...xs);
+  let xMax = robust ? quantile(xs, xQuantiles[1]) : Math.max(...xs);
+  let yMin = robust ? quantile(ys, yQuantiles[0]) : Math.min(...ys);
+  let yMax = robust ? quantile(ys, yQuantiles[1]) : Math.max(...ys);
   const clippedCount = veri.filter((point) => point.x < xMin || point.x > xMax
     || point.y < yMin || point.y > yMax).length;
   const xPad = (xMax - xMin) * 0.05 || 1, yPad = (yMax - yMin) * 0.05 || 1;

@@ -311,6 +311,9 @@ export function renderFonlar(ctx) {
       + (mine.size ? ' · vurgulu noktalar senin fonların' : '');
     scatterChart(scatterBox, {
       points: noktalar,
+      height: 500,
+      yQuantiles: [0.03, 0.97],
+      xQuantiles: [0.01, 0.99],
       xLabel: 'Yıllık oynaklık',
       yLabel: '1 yıllık getiri',
       robust: true,
@@ -322,9 +325,9 @@ export function renderFonlar(ctx) {
     h('div', { class: 'card-head' },
       h('div', {}, h('h2', {}, 'Risk-Getiri Haritası'), scatterBilgi)),
     h('p', { class: 'dim', style: 'margin:0 0 10px;font-size:.85rem' },
-      'Sağa gidildikçe risk (oynaklık), yukarı çıkıldıkça getiri artar. Sol üst bölge '
-      + 'aynı riskle daha çok kazandıran fonları gösterir. Aşağıdaki kategori ve tip '
-      + 'filtreleri bu haritayı da daraltır; bir noktaya tıklayınca fon detayı açılır.'),
+      'Sağa gidildikçe risk, yukarı çıkıldıkça getiri artar. Yoğun bölgeyi okunur tutmak için '
+      + 'eksenler uç değerlerden arındırılmıştır; kenardaki noktaların gerçek değerini üzerine '
+      + 'gelerek görebilirsin. Filtreler haritayı daraltır; bir noktaya tıklayınca fon detayı açılır.'),
     scatterBox));
 
   /* ------------------------------------------------------------------- tablo */
