@@ -10,6 +10,7 @@ import {
   allTransactions, daysSinceBackup,
 } from '../store.js';
 import { sectionCard } from './common.js';
+import { pushStatus, enablePush, disablePush, testNotification } from '../push.js';
 
 /**
  * Sayıyı hem Türkçe hem İngilizce yazımdan okur.
@@ -160,6 +161,40 @@ export function renderAyarlar(ctx) {
         class: 'btn', type: 'button',
         onclick: ctx.changeAccount,
       }, 'Çıkış yap / Hesap değiştir'))));
+
+  /* ------------------------------------------------------------- bildirim */
+
+  const pushText = h('p', { class: 'dim', style: 'margin:0' }, 'Durum kontrol ediliyor…');
+  const pushButtons = h('div', { class: 'btn-row' });
+  const showPush = async () => {
+    const status = await pushStatus().catch(() => 'unsupported');
+    pushButtons.replaceChildren();
+    const button = (label, primary, action) => h('button', {
+      class: `btn${primary ? ' btn-primary' : ''}`, type: 'button',
+      onclick: async (event) => {
+        event.currentTarget.disabled = true;
+        try { await action(); } catch (error) { toast(error.message || 'Bildirim ayarlanamadı'); }
+        await showPush();
+      },
+    }, label);
+    pushText.textContent = {
+      'needs-home-screen': 'iPhone’da bildirim için siteyi Safari’de Paylaş → Ana Ekrana Ekle ile ekleyip ana ekrandaki simgeden aç.',
+      unsupported: 'Bu tarayıcı bildirimleri desteklemiyor.',
+      denied: 'Bildirim izni reddedilmiş. iPhone Ayarlar → Bildirimler → Analiz’den izni aç.',
+      on: 'Açık · her işlem günü (Pzt–Cum) 18:00’de “Portföy bugün 🟢 +%… / 🔴 −%…” bildirimi gelir.',
+      off: 'Kapalı · aç dersen telefon izin ister.',
+    }[status];
+    if (status === 'off') pushButtons.append(button('Bildirimleri aç', true, async () => {
+      await enablePush();
+      toast('Günlük bildirim açıldı');
+    }));
+    if (status === 'on') pushButtons.append(
+      button('Deneme bildirimi gönder', true, testNotification),
+      button('Bildirimleri kapat', false, async () => { await disablePush(); toast('Bildirim kapatıldı'); }));
+  };
+  root.append(sectionCard('Günlük Bildirim (18:00)',
+    'Telefonuna her işlem günü portföyün günlük değişimi gelir', pushText, pushButtons));
+  void showPush();
 
   /* ------------------------------------------------------------------ profiller */
 

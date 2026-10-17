@@ -1,0 +1,35 @@
+name: Günlük portföy bildirimi
+
+# Her işlem günü 18:00 (TR) portföyün günlük değişimini telefona gönderir.
+# GitHub zamanlayıcısı gecikebildiği için 17:45'te başlar; betik 18:00'i bekler.
+on:
+  schedule:
+    - cron: '45 14 * * 1-5'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Hemen gönder (hafta sonu / saat beklemeden deneme)'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+jobs:
+  bildirim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install requests pywebpush
+      - name: Bildirimi gönder
+        env:
+          SUPABASE_URL: https://jqmfvinbzgqyitqquzdc.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          FORCE_SEND: ${{ github.event.inputs.force || 'false' }}
+          PYTHONIOENCODING: utf-8
+        run: python scripts/daily_push.py

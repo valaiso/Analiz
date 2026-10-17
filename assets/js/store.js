@@ -56,6 +56,7 @@ function migrate(raw) {
 let state = load();
 let midasTx = loadMidasTransactions();
 let midasSnapshot = loadMidasSnapshot();
+if (midasSnapshot && !state.midasPositionsCloud) syncMidasPositionsToCloud();
 
 function loadMidasTransactions() {
   try {
@@ -173,6 +174,25 @@ export function saveMidasAccountSnapshot(snapshot) {
   } catch (err) {
     console.error('Midas pozisyon özeti bu tarayıcıya kaydedilemedi', err);
   }
+  syncMidasPositionsToCloud();
+  persist();
+}
+
+/**
+ * Günlük bildirimi gönderen sunucu tarafı adetleri bilmeli: son Midas
+ * pozisyonlarının sade kopyası hesaba eşitlenen duruma yazılır.
+ */
+function syncMidasPositionsToCloud() {
+  if (!midasSnapshot) return;
+  const slim = (rows) => (Array.isArray(rows) ? rows : [])
+    .filter((row) => row?.code && row.units > 0)
+    .map((row) => ({ code: row.code, units: row.units, price: row.price ?? null, currency: row.currency || '' }));
+  state.midasPositionsCloud = {
+    positions: midasSnapshot.positionsSource === 'midas-visible-v1' ? slim(midasSnapshot.positions) : [],
+    cryptoPositions: midasSnapshot.cryptoPositionsSource === 'midas-visible-v1' ? slim(midasSnapshot.cryptoPositions) : [],
+    stockCapturedAt: midasSnapshot.stockCapturedAt || null,
+    cryptoCapturedAt: midasSnapshot.cryptoCapturedAt || null,
+  };
 }
 
 /** Store recent market quotes separately from the last Midas account snapshot. */
@@ -647,6 +667,7 @@ export function importJSON(text, mode = 'replace') {
   }
 
   state = migrate(parsed);
+  if (midasSnapshot && !state.midasPositionsCloud) syncMidasPositionsToCloud();
   if (Array.isArray(parsed.midasTx)) midasTx = parsed.midasTx;
   persist();
   if (Array.isArray(parsed.midasTx)) persistMidasTransactions();

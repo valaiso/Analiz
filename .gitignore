@@ -15,3 +15,6 @@ venv/
 .idea/
 .DS_Store
 Thumbs.db
+
+# Web Push gizli anahtarı (GitHub secret olarak saklanır, depoya girmez)
+vapid-private-key.pem
