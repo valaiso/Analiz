@@ -37,6 +37,13 @@ function migrate(raw) {
   if (!state.valueHistory || typeof state.valueHistory !== 'object' || Array.isArray(state.valueHistory)) {
     state.valueHistory = {};
   }
+  // 3acb84d sürümü geçmiş günleri işlem kayıtlarından tahminle doldurmuştu.
+  // Gerçek kayıt 2026-10-17'de başladı; tahmini günleri sil.
+  if (state.valueHistorySeeded) {
+    state.valueHistory = Object.fromEntries(Object.entries(state.valueHistory)
+      .filter(([date]) => date >= '2026-10-17'));
+    delete state.valueHistorySeeded;
+  }
   // Silinmiş profile bağlı işlemleri ilk profile taşı.
   const ids = new Set(state.profiles.map((p) => p.id));
   for (const t of state.tx) if (!ids.has(t.profile)) t.profile = state.profiles[0].id;
@@ -259,22 +266,6 @@ export function recordPortfolioValue(date, value) {
   state.valueHistoryUpdatedAt = new Date().toISOString();
   persist();
   return true;
-}
-
-/** Geçmiş günleri yalnızca bir kez doldurur; kayıtlı günlerin üzerine yazmaz. */
-export function seedPortfolioValueHistory(entries) {
-  const history = { ...(state.valueHistory || {}) };
-  let added = 0;
-  for (const [date, value] of entries || []) {
-    if (history[date] !== undefined || !(Number.isFinite(value) && value > 0)) continue;
-    history[date] = Math.round(value * 100) / 100;
-    added += 1;
-  }
-  if (!added && state.valueHistorySeeded) return 0;
-  state.valueHistory = history;
-  state.valueHistorySeeded = true;
-  persist();
-  return added;
 }
 
 /* ------------------------------------------------------------------ profiller */

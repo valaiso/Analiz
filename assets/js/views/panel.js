@@ -8,7 +8,7 @@ import { sliceLastDays } from '../portfolio.js';
 import { cashflowCalendar } from '../insights.js';
 import {
   transactions, daysSinceBackup, getMidasAccountSnapshot,
-  valueHistory, recordPortfolioValue, seedPortfolioValueHistory,
+  valueHistory, recordPortfolioValue,
 } from '../store.js';
 import {
   currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics,
@@ -306,55 +306,38 @@ export function renderPanel(ctx) {
 
   /* ------------------------------------------------------ portföy değeri grafiği */
 
-  let rangeKey = '6a';
+  let rangeKey = 'all';
   const chartBox = h('div', { class: 'chart' });
-  const snapshotDate = hasMidasTotal && snapshotAt
-    ? new Date(snapshotAt).toISOString().slice(0, 10) : null;
-  const chartEndDate = [series.dates.at(-1), snapshotDate].filter(Boolean).sort().at(-1) || null;
-  const chartAccountValueAvailable = hasMidasTotal || series.dates.length > 0;
   const untrackedPrincipal = hasMidasTotal
     ? Math.max(0, midasPortfolioTotal - (series.value.at(-1) || 0)) : 0;
-  // Unknown Midas principal is held flat across available history, so longer
-  // windows can still show a distinct range even when transaction history is short.
-  const chartStartDate = series.dates[0] || snapshotDate;
-  // Keep older calendar dates in the selected range so 6A/1Y/3Y zoom the
-  // requested period. Portfolio values remain blank before the chosen start.
-  const chartCalendar = chartEndDate
-    ? DB.calendar.filter((date) => date <= chartEndDate) : [];
-  const baseChartDates = chartCalendar.length
-    ? [...chartCalendar, ...(chartEndDate > chartCalendar.at(-1) ? [chartEndDate] : [])]
-    : (chartEndDate ? [chartEndDate] : []);
-  const seriesIndexes = new Map(series.dates.map((date, index) => [date, index]));
-  const modeledValue = (date) => {
-    if (!chartAccountValueAvailable) return null;
-    if (date < chartStartDate) return null;
-    const index = seriesIndexes.get(date);
-    return index === undefined
-      ? (hasMidasTotal ? untrackedPrincipal : null)
-      : series.value[index] + untrackedPrincipal;
+  // Son işlem-günü değerini tarih sırasıyla bul (hafta sonu da önceki günü alır).
+  const seriesAt = (values, date) => {
+    let low = 0, high = series.dates.length;
+    while (low < high) {
+      const mid = (low + high) >>> 1;
+      if (series.dates[mid] <= date) low = mid + 1; else high = mid;
+    }
+    return low > 0 ? values[low - 1] : null;
   };
 
-  // Toplam değer geçmişi hesapta saklanır. İlk açılışta işlem kayıtlarından
-  // modellenen geçmiş günler bir kez kaydedilir; sonrasında her gün Midas
-  // toplamı yazılır ve grafik bu kayıtlı değerleri kullanır.
-  const today = todayInIstanbul();
-  if (hasMidasTotal) {
-    seedPortfolioValueHistory(baseChartDates.filter((date) => date < today)
-      .map((date) => [date, modeledValue(date)]));
-    if (midasSnapshotComplete) recordPortfolioValue(today, midasPortfolioTotal);
-  }
+  // Midas hesabında grafik yalnızca hesaba kaydedilen günlük toplamlardan
+  // çizilir: kayıt ilk Midas toplamının alındığı günden başlar ve her gün eklenir.
+  // Midas yoksa işlem kayıtlarından modellenen geçmiş kullanılır.
+  if (hasMidasTotal && midasSnapshotComplete) recordPortfolioValue(todayInIstanbul(), midasPortfolioTotal);
   const storedValues = valueHistory();
-  const chartDates = [...new Set([...baseChartDates, ...Object.keys(storedValues)])].sort();
-  const chartValues = chartDates.map((date) => (isNum(storedValues[date])
-    ? storedValues[date] : modeledValue(date)));
+  const chartDates = hasMidasTotal
+    ? Object.keys(storedValues).filter((date) => isNum(storedValues[date])).sort()
+    : [...series.dates];
+  const chartValues = hasMidasTotal
+    ? chartDates.map((date) => storedValues[date])
+    : [...series.value];
   const investedValues = chartDates.map((date) => {
-    if (!chartAccountValueAvailable) return null;
-    if (date < chartStartDate) return null;
-    const index = seriesIndexes.get(date);
-    return index === undefined
-      ? (hasMidasTotal ? untrackedPrincipal : null)
-      : series.invested[index] + untrackedPrincipal;
+    const invested = seriesAt(series.invested, date);
+    return isNum(invested) ? invested + untrackedPrincipal
+      : hasMidasTotal ? untrackedPrincipal || null : null;
   });
+  const chartStartDate = chartDates[0];
+  const chartEndDate = chartDates.at(-1);
 
   const drawChart = () => {
     const range = { '1a': 30, '3a': 90, '6a': 180, '1y': 365, '3y': 1095, all: 0 }[rangeKey];
@@ -383,7 +366,7 @@ export function renderPanel(ctx) {
     h('div', {},
       h('h2', {}, 'Portföy Değeri ve Yatırılan Para'),
       h('span', { class: 'sub' }, hasMidasTotal
-        ? `Midas ${midasTotalPartial ? 'doğrulanmış kısmi toplamı' : 'toplamı'} temel alınır${untrackedPrincipal > 0 ? ` · işlem kaydı olmayan ${tl(untrackedPrincipal)} bakiye geçmişte sabit varsayılır` : ''}${missingCryptoSnapshot ? ' · kripto hariç' : ''}`
+        ? `Toplam değer ${chartStartDate ? fmtDate(chartStartDate) : 'bugün'} tarihinden itibaren her gün hesaba kaydedilir${missingCryptoSnapshot ? ' · kripto hariç' : ''}`
         : 'Geçmiş alım/satım kayıtlarına göre modellenir.')),
     rangeSelector(rangeKey, (r) => {
       rangeKey = r.key;
