@@ -9,7 +9,7 @@ import {
 import {
   transactions, addTransaction, updateTransaction, removeTransaction,
   activeProfileId, profiles, allTransactions, addMidasTransactions, saveMidasAccountSnapshot, getMidasAccountSnapshot,
-  pruneMidasHistory,
+  pruneMidasHistory, dividends, addDividend, removeDividend,
 } from '../store.js';
 import { currentMidasPositions } from '../asset-groups.js';
 import { sectionCard, fundPicker } from './common.js';
@@ -638,6 +638,55 @@ function transactionForm({ existing, onDone, prefillCode }) {
   return form;
 }
 
+/** Temettü geliri: girilen tutar getiri sayılır, ana paraya eklenmez. */
+function dividendSection(ctx) {
+  const dateInput = h('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
+  const codeInput = h('input', { type: 'text', placeholder: 'Örn. SPY', maxlength: 12, style: 'text-transform:uppercase' });
+  const amountInput = h('input', { type: 'number', step: 'any', min: '0', placeholder: '0,00' });
+  const error = h('div', { class: 'hint', style: 'color:var(--down)' });
+  const field = (label, control, hint) => h('div', { class: 'field' },
+    h('label', { text: label }), control, hint ? h('div', { class: 'hint', text: hint }) : null);
+  const submit = () => {
+    const record = addDividend({ date: dateInput.value, code: codeInput.value, amount: amountInput.value });
+    if (!record) { error.textContent = 'Tarih ve 0’dan büyük bir tutar gir.'; return; }
+    toast(record.adjustments.length
+      ? `${tl(record.amount)} temettü kaydedildi; aynı dönemdeki para girişinden düşüldü`
+      : `${tl(record.amount)} temettü kaydedildi`);
+    ctx.refresh();
+  };
+  const list = dividends().slice().reverse();
+  const total = list.reduce((sum, item) => sum + item.amount, 0);
+  const year = new Date().getFullYear();
+  const thisYear = list.filter((item) => item.date.startsWith(String(year))).reduce((sum, item) => sum + item.amount, 0);
+  const table = list.length ? h('div', { class: 'table-wrap' }, h('table', {},
+    h('thead', {}, h('tr', {}, h('th', {}, 'Tarih'), h('th', {}, 'Varlık'), h('th', {}, 'Net tutar'), h('th', {}, ''))),
+    h('tbody', {}, list.map((item) => h('tr', {},
+      h('td', {}, fmtDate(item.date)),
+      h('td', {}, item.code ? h('span', { class: 'code-chip' }, item.code) : '—'),
+      h('td', {}, tl(item.amount)),
+      h('td', {}, h('button', {
+        class: 'btn btn-sm', type: 'button',
+        onclick: async () => {
+          if (await confirmDialog('Temettüyü sil', `${fmtDate(item.date)} ${item.code || ''} ${tl(item.amount)} temettü kaydı silinsin mi?`)) {
+            removeDividend(item.id);
+            ctx.refresh();
+          }
+        },
+      }, 'Sil'))))))) : null;
+  return sectionCard('Temettü Geliri',
+    'Hesabına geçen net tutarı gir. Temettü getiri sayılır, ana paraya eklenmez; Midas taramasının “para eklendi” tespitinden otomatik düşülür.',
+    h('div', { class: 'form-grid' },
+      field('Tarih', dateInput),
+      field('Varlık kodu', codeInput, 'İsteğe bağlı'),
+      field('Net tutar (₺)', amountInput, 'Vergi kesintisi sonrası hesaba geçen')),
+    error,
+    h('div', { class: 'btn-row', style: 'justify-content:flex-end' },
+      h('button', { class: 'btn btn-primary', type: 'button', onclick: submit }, 'Temettüyü Ekle')),
+    list.length ? h('p', { class: 'dim', style: 'margin:0' },
+      `Toplam ${tl(total)} · ${year} yılı ${tl(thisYear)}`) : null,
+    table);
+}
+
 export function renderIslemler(ctx) {
   const root = h('div', { class: 'stack' });
   const list = transactions();
@@ -664,6 +713,8 @@ export function renderIslemler(ctx) {
     h('div', { class: 'btn-row' }, midasButton, cryptoMidasButton, copyLogButton),
     h('label', { style: 'display:block;margin-top:12px;font-weight:600' }, 'Aktarım yanıt geçmişi'),
     midasLogField));
+
+  root.append(dividendSection(ctx));
 
   /* --------------------------------------------------------------- ekleme formu */
 

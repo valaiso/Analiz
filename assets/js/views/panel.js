@@ -9,7 +9,7 @@ import { cashflowCalendar, realReturn } from '../insights.js';
 import {
   transactions, daysSinceBackup, getMidasAccountSnapshot,
   valueHistory, recordPortfolioValue, cashflows, midasBaselineState, pendingCashflow,
-  updateMidasBaseline, confirmPendingCashflow, rejectPendingCashflow, removeCashflow,
+  updateMidasBaseline, confirmPendingCashflow, rejectPendingCashflow, removeCashflow, dividends, dividendsBetween,
 } from '../store.js';
 import {
   currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics,
@@ -224,8 +224,14 @@ export function renderPanel(ctx) {
   if (currentBaseline && previousBaseline?.key !== currentBaseline.key) {
     // Kripto hesabı ilk kez okunduysa eklenen değer para girişi değildir.
     const cryptoNewlyCaptured = !previousBaseline?.key?.split('|')[1] && currentBaseline.key.split('|')[1];
-    const change = previousBaseline && !cryptoNewlyCaptured
+    const rawChange = previousBaseline && !cryptoNewlyCaptured
       ? unexplainedChange(previousBaseline, currentBaseline) : null;
+    // Bu aralıkta girilmiş temettüler para girişi değildir; tespitten düşülür.
+    const change = rawChange ? (() => {
+      const amount = rawChange.amount - dividendsBetween(String(previousBaseline.at || '').slice(0, 10),
+        String(currentBaseline.at || '').slice(0, 10));
+      return { ...rawChange, amount, significant: Math.abs(amount) >= Math.max(1000, Math.abs(previousBaseline.total) * 0.01) };
+    })() : null;
     updateMidasBaseline(currentBaseline, change?.significant ? change : null);
   }
   const pending = pendingCashflow();
@@ -234,7 +240,8 @@ export function renderPanel(ctx) {
     root.append(h('div', { class: 'notice warn' },
       h('strong', {}, deposit ? `Hesaba ${tl(pending.amount)} para eklendi mi?` : `Hesaptan ${tl(-pending.amount)} para çekildi mi?`),
       ` Son iki Midas taraması arasında (${pending.from ? fmtDate(pending.from.slice(0, 10)) : '—'} → ${fmtDate(pending.date)}) toplam değer, hisse/fon/ETF/kripto fiyat hareketiyle açıklanamayacak kadar ${deposit ? 'arttı' : 'azaldı'}. `
-      + 'Evet dersen yatırılan para olarak kaydedilir ve gerçek getiri hesabında getiri sayılmaz. ',
+      + 'Evet dersen yatırılan para olarak kaydedilir ve gerçek getiri hesabında getiri sayılmaz. '
+      + 'Bu tutarın içinde temettü varsa İşlemler → Temettü Geliri’ne gir; temettü kadarı otomatik olarak getiriye geçer. ',
       h('button', {
         class: 'btn btn-sm btn-primary', type: 'button', style: 'margin-left:6px',
         onclick: () => { confirmPendingCashflow(); ctx.refresh(); },
@@ -245,6 +252,8 @@ export function renderPanel(ctx) {
       }, 'Hayır, Midas’ı yeniden eşitle')));
   }
   const real = hasMidasTotal ? realReturn(valueHistory(), cashflows()) : null;
+  const realDividends = real ? dividends().filter((item) => item.date > real.startDate)
+    .reduce((sum, item) => sum + item.amount, 0) : 0;
 
   const txs = ctx.analysisTransactions || transactions();
   const taxableFundPL = new Map(analysis.holdings
@@ -347,7 +356,7 @@ export function renderPanel(ctx) {
       formatPct: pctSigned,
       hint: real.twr === null
         ? `Kayıt ${fmtDate(real.startDate)} tarihinde başladı; ikinci günden itibaren hesaplanır`
-        : `${fmtDate(real.startDate)}’den beri · para giriş/çıkışı (${tlSigned(real.netFlows)}) hariç`,
+        : `${fmtDate(real.startDate)}’den beri · para giriş/çıkışı (${tlSigned(real.netFlows)}) hariç${realDividends > 0 ? ` · ${tl(realDividends)} temettü dahil` : ''}`,
     })] : []),
     kpiCard({
       label: 'Stopaj Kesintileri',

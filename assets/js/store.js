@@ -302,6 +302,7 @@ export function confirmPendingCashflow() {
   if (!pending) return false;
   state.cashflows = [...cashflows(), {
     id: uid(), date: pending.date, amount: pending.amount, source: 'midas-tespit',
+    from: pending.from ? String(pending.from).slice(0, 10) : null, to: pending.date,
   }].sort((a, b) => a.date.localeCompare(b.date));
   state.pendingCashflow = null;
   state.rejectedBaselineKey = null;
@@ -326,6 +327,58 @@ export function rejectPendingCashflow() {
 export function removeCashflow(id) {
   state.cashflows = cashflows().filter((flow) => flow.id !== id);
   persist();
+}
+
+/* --------------------------------------------------------------- temettüler */
+
+// Temettü getiridir, ana para değildir. Midas taraması temettüyü "para
+// eklendi" gibi görür; girilen temettü o tespitten düşülür.
+export const dividends = () => (Array.isArray(state.dividends) ? state.dividends : []);
+
+const inWindow = (date, from, to) => (!from || date > from) && (!to || date <= to);
+
+/** Temettüyü kaydeder; aynı dönemi kapsayan para girişi varsa temettü kadar azaltır. */
+export function addDividend({ date, code, amount }) {
+  const value = Math.round(Number(amount) * 100) / 100;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date)) || !(value > 0)) return null;
+  const record = { id: uid(), date, code: String(code || '').trim().toLocaleUpperCase('tr'), amount: value, adjustments: [] };
+  let remaining = value;
+  const pending = state.pendingCashflow;
+  if (pending && pending.amount > 0 && inWindow(date, pending.from && String(pending.from).slice(0, 10), pending.date)) {
+    const used = Math.min(remaining, pending.amount);
+    state.pendingCashflow = { ...pending, amount: Math.round((pending.amount - used) * 100) / 100 };
+    if (state.pendingCashflow.amount < 1) state.pendingCashflow = null;
+    remaining -= used;
+  }
+  state.cashflows = cashflows().map((flow) => {
+    if (!(remaining > 0) || !(flow.amount > 0) || flow.source !== 'midas-tespit'
+      || !inWindow(date, flow.from, flow.to)) return flow;
+    const used = Math.min(remaining, flow.amount);
+    remaining -= used;
+    record.adjustments.push({ flowId: flow.id, amount: used });
+    return { ...flow, amount: Math.round((flow.amount - used) * 100) / 100 };
+  });
+  state.dividends = [...dividends(), record].sort((a, b) => a.date.localeCompare(b.date));
+  persist();
+  return record;
+}
+
+/** Temettüyü siler; para girişinden düşülen tutarı geri ekler. */
+export function removeDividend(id) {
+  const record = dividends().find((item) => item.id === id);
+  if (!record) return false;
+  const back = new Map((record.adjustments || []).map((item) => [item.flowId, item.amount]));
+  state.cashflows = cashflows().map((flow) => (back.has(flow.id)
+    ? { ...flow, amount: Math.round((flow.amount + back.get(flow.id)) * 100) / 100 } : flow));
+  state.dividends = dividends().filter((item) => item.id !== id);
+  persist();
+  return true;
+}
+
+/** İki tarama arasında girilmiş temettü toplamı (tespit tutarından düşülür). */
+export function dividendsBetween(from, to) {
+  return dividends().filter((item) => inWindow(item.date, from, to))
+    .reduce((sum, item) => sum + item.amount, 0);
 }
 
 /* ------------------------------------------------------------------ profiller */
