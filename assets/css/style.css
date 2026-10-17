@@ -458,3 +458,11 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
   .sidebar, .topbar, .footer, .btn, .seg { display: none !important; }
   .card { break-inside: avoid; box-shadow: none; }
 }
+
+/* Alt alta duran pozisyon tablolarında sütunlar aynı hizada */
+.aligned-cols table { table-layout: fixed; min-width: 860px; }
+.aligned-cols th, .aligned-cols td { overflow: hidden; text-overflow: ellipsis; }
+.aligned-cols th:nth-child(1), .aligned-cols td:nth-child(1) { width: 26%; text-align: left; white-space: normal; }
+.aligned-cols th:nth-child(n+2), .aligned-cols td:nth-child(n+2) { width: 10%; }
+.aligned-cols th:nth-child(6), .aligned-cols td:nth-child(6),
+.aligned-cols th:nth-child(7), .aligned-cols td:nth-child(7) { width: 12%; white-space: normal; }

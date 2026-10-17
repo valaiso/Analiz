@@ -119,6 +119,44 @@ export function fundTypeLabel(code) {
   return 'Diğer Fon';
 }
 
+// ETF'in neyi takip ettiği ve kısaca ne anlama geldiği.
+const ETF_LABELS = {
+  SPY: 'S&P 500 (ABD’nin en büyük 500 şirketi)',
+  VOO: 'S&P 500 (ABD’nin en büyük 500 şirketi)',
+  IVV: 'S&P 500 (ABD’nin en büyük 500 şirketi)',
+  SPLG: 'S&P 500 (ABD’nin en büyük 500 şirketi)',
+  QQQ: 'Nasdaq 100 (Nasdaq’ın en büyük 100 teknoloji ağırlıklı şirketi)',
+  QQQM: 'Nasdaq 100 (Nasdaq’ın en büyük 100 teknoloji ağırlıklı şirketi)',
+  SCHD: 'ABD Temettü (düzenli ve yüksek temettü ödeyen 100 şirket)',
+  VIG: 'Temettü Büyümesi (en az 10 yıldır temettüsünü artıran şirketler)',
+  MGV: 'ABD Mega Değer (çok büyük ve ucuz değerlenen şirketler)',
+  VTI: 'Tüm ABD Borsası (ABD’deki neredeyse tüm halka açık şirketler)',
+  VT: 'Tüm Dünya Borsası (dünyadaki büyük ve orta ölçekli şirketler)',
+  DIA: 'Dow Jones (ABD’nin 30 büyük sanayi şirketi)',
+  IWM: 'Russell 2000 (ABD’nin 2000 küçük ölçekli şirketi)',
+  VGT: 'ABD Teknoloji (ABD teknoloji sektörü şirketleri)',
+  XLK: 'ABD Teknoloji (S&P 500 içindeki teknoloji şirketleri)',
+  SMH: 'Yarı İletken (çip üreten en büyük şirketler)',
+  GLD: 'Altın (ons altın fiyatını takip eder)',
+  IAU: 'Altın (ons altın fiyatını takip eder)',
+  TLT: 'ABD Uzun Vadeli Tahvil (20 yıldan uzun vadeli ABD devlet tahvili)',
+  BND: 'ABD Tahvil Piyasası (ABD devlet ve şirket tahvilleri)',
+  VNQ: 'ABD Gayrimenkul (gayrimenkul yatırım ortaklıkları)',
+  VXUS: 'ABD Dışı Dünya (ABD hariç dünya şirketleri)',
+  EEM: 'Gelişmekte Olan Piyasalar (Çin, Hindistan, Brezilya vb. şirketler)',
+};
+
+/** ETF'in takip ettiği endeks ve açıklaması; bilinmiyorsa boş. */
+export function etfLabel(code) {
+  const key = String(code || '').toLocaleUpperCase('en-US');
+  // Kayıt henüz fiyat havuzunda yoksa (ör. yeni alınan ETF) yine de açıklanır.
+  if (DB.byCode.has(key) && assetType(key) !== 'ETF') return '';
+  return ETF_LABELS[key] || '';
+}
+
+/** Kodun yanındaki kısa açıklama: fon türü veya ETF kapsamı. */
+export const assetLabel = (code) => fundTypeLabel(code) || etfLabel(code);
+
 /** Fon satırlarını türüne göre gruplar; en büyük toplam değerli tür önce gelir. */
 export function groupFundsByType(rows) {
   const groups = new Map();

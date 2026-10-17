@@ -12,7 +12,7 @@ import {
 } from '../store.js';
 import {
   currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics,
-  applyDailyMarketTransactions, groupAssetRows, assetType, midasStockAccountValue, fundTypeLabel, groupFundsByType,
+  applyDailyMarketTransactions, groupAssetRows, assetType, midasStockAccountValue, assetLabel, groupFundsByType,
 } from '../asset-groups.js';
 import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
@@ -388,11 +388,18 @@ export function renderPanel(ctx) {
         style: 'currency', currency: currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2,
       }).format(value);
     };
-    const positionsTable = (rows) => sortableTable({
+    // Tüm pozisyon tablolarında sütun genişlikleri sabit; alt alta tablolarda
+    // başlıklar ve değerler aynı hizada kalır.
+    const positionsTable = (rows) => {
+      const table = basePositionsTable(rows);
+      table.element.classList.add('aligned-cols');
+      return table;
+    };
+    const basePositionsTable = (rows) => sortableTable({
       initialSort: { key: 'allocationPct', dir: 'desc' },
       columns: [
         { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', {}, h('span', { class: 'code-chip' }, r.code),
-          fundTypeLabel(r.code) ? h('span', { class: 'pill', style: 'margin-left:6px' }, fundTypeLabel(r.code)) : null) },
+          assetLabel(r.code) ? h('span', { class: 'pill', style: 'margin-left:6px' }, assetLabel(r.code)) : null) },
         { key: 'units', label: 'Adet', render: (r) => fmtUnits(r.units) },
         { key: 'price', label: 'Güncel Fiyat', render: (r) => moneyByCurrency(r.price, r.currency) },
         { key: 'marketValueTRY', label: 'Portföy Değeri', render: (r) => positionSnapshotConsistent && isNum(r.marketValueTRY) ? tl(r.marketValueTRY) : '—' },
