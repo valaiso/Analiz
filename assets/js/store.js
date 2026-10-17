@@ -268,6 +268,66 @@ export function recordPortfolioValue(date, value) {
   return true;
 }
 
+/* ------------------------------------------------------ para giriş / çıkışı */
+
+// Onaylanan para yatırma (+) / çekme (−) kayıtları ve son Midas tarama
+// fotoğrafı hesapla eşitlenir; gerçek getiri bu kayıtlarla hesaplanır.
+export const cashflows = () => (Array.isArray(state.cashflows) ? state.cashflows : []);
+export const midasBaselineState = () => state.midasBaseline || null;
+export const pendingCashflow = () => state.pendingCashflow || null;
+
+/** Yeni tarama geldiyse karşılaştırma için önceki fotoğrafı saklayıp günceller. */
+export function updateMidasBaseline(baseline, detected) {
+  if (!baseline || state.midasBaseline?.key === baseline.key) return false;
+  // Reddedilen tarama yeniden eşitlenene kadar tekrar sorulmaz.
+  if (state.rejectedBaselineKey === baseline.key) return false;
+  const previous = state.midasBaseline || null;
+  state.midasBaseline = baseline;
+  if (detected) {
+    state.pendingCashflow = {
+      amount: Math.round(detected.amount * 100) / 100,
+      from: previous?.at || null,
+      to: baseline.at,
+      date: String(baseline.at || '').slice(0, 10),
+      previousBaseline: previous,
+    };
+  }
+  persist();
+  return true;
+}
+
+/** Kullanıcı "Evet" dedi: tespit edilen tutar para hareketi olarak kaydedilir. */
+export function confirmPendingCashflow() {
+  const pending = state.pendingCashflow;
+  if (!pending) return false;
+  state.cashflows = [...cashflows(), {
+    id: uid(), date: pending.date, amount: pending.amount, source: 'midas-tespit',
+  }].sort((a, b) => a.date.localeCompare(b.date));
+  state.pendingCashflow = null;
+  state.rejectedBaselineKey = null;
+  persist();
+  return true;
+}
+
+/**
+ * Kullanıcı "Hayır" dedi: tarama şüphelidir. Önceki fotoğraf geri yüklenir ki
+ * yeniden eşitlemeden sonraki tarama yine ona göre karşılaştırılsın.
+ */
+export function rejectPendingCashflow() {
+  const pending = state.pendingCashflow;
+  if (!pending) return false;
+  state.rejectedBaselineKey = state.midasBaseline?.key || null;
+  state.midasBaseline = pending.previousBaseline || null;
+  state.pendingCashflow = null;
+  persist();
+  return true;
+}
+
+export function removeCashflow(id) {
+  state.cashflows = cashflows().filter((flow) => flow.id !== id);
+  persist();
+}
+
 /* ------------------------------------------------------------------ profiller */
 
 export const profiles = () => state.profiles;

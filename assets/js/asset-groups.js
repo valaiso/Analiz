@@ -143,6 +143,69 @@ export function fundStopajRate(code, holdingStartDate = '', today = new Date().t
   return { rate: 0.175, reason: '%17,5' };
 }
 
+/**
+ * Son Midas taramasının hesap fotoğrafı: Midas'ın gösterdiği toplam (nakit
+ * dahil) ve her varlığın adet × birim fiyatı (₺, tarama günündeki kurla).
+ * Para giriş/çıkışını tespit etmek için iki tarama karşılaştırılır.
+ */
+export function midasBaseline() {
+  const snapshot = getMidasAccountSnapshot();
+  if (snapshot?.summarySource !== 'midas-visible-v1' || snapshot.positionsSource !== 'midas-visible-v1'
+    || snapshot.positionsCaptured !== true || !Number.isFinite(snapshot.summary?.totalValue)) return null;
+  const units = {};
+  const unitTRY = {};
+  const fxAt = (currency, at) => currencyFxToTRY('', currency, indexForDate(String(at || '').slice(0, 10)));
+  const stockFx = fxAt('USD', snapshot.stockCapturedAt);
+  for (const row of snapshot.positions || []) {
+    if (!(row.units > 0) || !(row.price > 0)) continue;
+    const meta = DB.byCode.get(row.code) || {};
+    const currency = row.currency || meta.currency || (meta.kind === 'US_ETF' ? 'USD' : 'TRY');
+    const fx = currency === 'USD' ? stockFx : 1;
+    if (!Number.isFinite(fx)) return null;
+    units[row.code] = row.units;
+    unitTRY[row.code] = row.price * fx;
+  }
+  let cryptoTotal = 0;
+  const cryptoCaptured = snapshot.cryptoPositionsSource === 'midas-visible-v1' && snapshot.cryptoPositionsCaptured === true;
+  if (cryptoCaptured) {
+    const cryptoFx = fxAt('USD', snapshot.cryptoCapturedAt);
+    for (const row of snapshot.cryptoPositions || []) {
+      if (!(row.units > 0) || !(row.price > 0)) continue;
+      const fx = row.currency === 'USD' ? cryptoFx : 1;
+      if (!Number.isFinite(fx)) return null;
+      const key = `KRIPTO:${row.code}`;
+      units[key] = row.units;
+      unitTRY[key] = row.price * fx;
+      cryptoTotal += row.units * row.price * fx;
+    }
+  }
+  return {
+    key: `${snapshot.stockCapturedAt || ''}|${cryptoCaptured ? snapshot.cryptoCapturedAt || '' : ''}`,
+    at: [snapshot.stockCapturedAt, cryptoCaptured ? snapshot.cryptoCapturedAt : null].filter(Boolean).sort().at(-1),
+    total: snapshot.summary.totalValue + cryptoTotal,
+    units,
+    unitTRY,
+  };
+}
+
+/**
+ * İki tarama arasında fiyat hareketiyle açıklanamayan değişim. Alım/satım
+ * nakit ile varlık arasında yer değiştirdiği için toplamı değiştirmez; geriye
+ * kalan fark para yatırma/çekme (veya temettü) olarak yorumlanır.
+ */
+export function unexplainedChange(previous, current) {
+  if (!previous || !current) return null;
+  let market = 0;
+  for (const [code, oldUnits] of Object.entries(previous.units)) {
+    const before = previous.unitTRY[code];
+    const after = current.unitTRY[code];
+    if (Number.isFinite(before) && Number.isFinite(after)) market += oldUnits * (after - before);
+  }
+  const amount = current.total - previous.total - market;
+  const threshold = Math.max(1000, Math.abs(previous.total) * 0.01);
+  return { amount, market, significant: Math.abs(amount) >= threshold };
+}
+
 // ETF'in neyi takip ettiği ve kısaca ne anlama geldiği.
 const ETF_LABELS = {
   SPY: 'S&P 500 (ABD’nin en büyük 500 şirketi)',

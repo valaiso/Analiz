@@ -398,3 +398,38 @@ export function consistencyChecks(txs) {
   }
   return uyarilar;
 }
+
+/**
+ * Kayıtlı günlük toplamlardan gerçek getiri. Para giriş/çıkışları getiriden
+ * ayrılır (zaman ağırlıklı getiri): her gün r = (V_t − F_t) / V_{t−1} − 1.
+ * history: { 'YYYY-AA-GG': ₺ }, flows: [{ date, amount }] (+ yatırma, − çekme)
+ */
+export function realReturn(history, flows) {
+  const dates = Object.keys(history || {}).filter((date) => Number(history[date]) > 0).sort();
+  if (!dates.length) return null;
+  const flowsBetween = (after, upTo) => (flows || [])
+    .filter((flow) => flow.date > after && flow.date <= upTo)
+    .reduce((sum, flow) => sum + (Number(flow.amount) || 0), 0);
+  let growth = 1;
+  let netFlows = 0;
+  const invested = [history[dates[0]]];
+  for (let i = 1; i < dates.length; i += 1) {
+    const flow = flowsBetween(dates[i - 1], dates[i]);
+    netFlows += flow;
+    const previous = history[dates[i - 1]];
+    if (previous > 0) growth *= (history[dates[i]] - flow) / previous;
+    invested.push(history[dates[0]] + netFlows);
+  }
+  const startValue = history[dates[0]];
+  const endValue = history[dates.at(-1)];
+  return {
+    dates,
+    invested,
+    startDate: dates[0],
+    startValue,
+    endValue,
+    netFlows,
+    profit: endValue - startValue - netFlows,
+    twr: dates.length > 1 ? (growth - 1) * 100 : null,
+  };
+}

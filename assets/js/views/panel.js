@@ -5,14 +5,16 @@ import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, money, cls, isNum, 
 import { DB } from '../data.js';
 import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
-import { cashflowCalendar } from '../insights.js';
+import { cashflowCalendar, realReturn } from '../insights.js';
 import {
   transactions, daysSinceBackup, getMidasAccountSnapshot,
-  valueHistory, recordPortfolioValue,
+  valueHistory, recordPortfolioValue, cashflows, midasBaselineState, pendingCashflow,
+  updateMidasBaseline, confirmPendingCashflow, rejectPendingCashflow, removeCashflow,
 } from '../store.js';
 import {
   currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics,
   applyDailyMarketTransactions, groupAssetRows, assetType, midasStockAccountValue, assetLabel, groupFundsByType, fundStopajRate,
+  midasBaseline, unexplainedChange,
 } from '../asset-groups.js';
 import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
@@ -211,6 +213,39 @@ export function renderPanel(ctx) {
         onclick: () => navigate('islemler'),
       }, 'Midas’tan yeniden oku')));
   }
+  if (hasMidasTotal && midasSnapshotComplete) recordPortfolioValue(todayInIstanbul(), midasPortfolioTotal);
+
+  /* ------------------------------------------------- para giriş/çıkış tespiti */
+
+  // Yeni Midas taraması geldiyse önceki taramayla karşılaştır: fiyat
+  // hareketiyle açıklanamayan fark para yatırma/çekme olabilir; kullanıcıya sor.
+  const currentBaseline = midasBaseline();
+  const previousBaseline = midasBaselineState();
+  if (currentBaseline && previousBaseline?.key !== currentBaseline.key) {
+    // Kripto hesabı ilk kez okunduysa eklenen değer para girişi değildir.
+    const cryptoNewlyCaptured = !previousBaseline?.key?.split('|')[1] && currentBaseline.key.split('|')[1];
+    const change = previousBaseline && !cryptoNewlyCaptured
+      ? unexplainedChange(previousBaseline, currentBaseline) : null;
+    updateMidasBaseline(currentBaseline, change?.significant ? change : null);
+  }
+  const pending = pendingCashflow();
+  if (pending) {
+    const deposit = pending.amount > 0;
+    root.append(h('div', { class: 'notice warn' },
+      h('strong', {}, deposit ? `Hesaba ${tl(pending.amount)} para eklendi mi?` : `Hesaptan ${tl(-pending.amount)} para çekildi mi?`),
+      ` Son iki Midas taraması arasında (${pending.from ? fmtDate(pending.from.slice(0, 10)) : '—'} → ${fmtDate(pending.date)}) toplam değer, hisse/fon/ETF/kripto fiyat hareketiyle açıklanamayacak kadar ${deposit ? 'arttı' : 'azaldı'}. `
+      + 'Evet dersen yatırılan para olarak kaydedilir ve gerçek getiri hesabında getiri sayılmaz. ',
+      h('button', {
+        class: 'btn btn-sm btn-primary', type: 'button', style: 'margin-left:6px',
+        onclick: () => { confirmPendingCashflow(); ctx.refresh(); },
+      }, deposit ? 'Evet, para ekledim' : 'Evet, para çektim'),
+      h('button', {
+        class: 'btn btn-sm', type: 'button', style: 'margin-left:6px',
+        onclick: () => { rejectPendingCashflow(); navigate('islemler'); },
+      }, 'Hayır, Midas’ı yeniden eşitle')));
+  }
+  const real = hasMidasTotal ? realReturn(valueHistory(), cashflows()) : null;
+
   const txs = ctx.analysisTransactions || transactions();
   const taxableFundPL = new Map(analysis.holdings
     .filter((holding) => !holding.closed && assetType(holding.code, holding.kind, holding.cat) === 'Fon'
@@ -303,6 +338,17 @@ export function renderPanel(ctx) {
         ? 'Kayıtlı geçmiş 90 günden kısa; yıllıklandırma yanıltıcı olabileceği için gösterilmiyor'
         : !isNum(analysis.xirr) ? 'Nakit akışlarından XIRR hesaplanamadı' : null,
     }),
+    ...(real ? [plCard({
+      label: 'Gerçek Getiri',
+      tone: 'teal',
+      amount: real.twr === null ? null : real.profit,
+      pct: real.twr,
+      formatMoney: tlSigned,
+      formatPct: pctSigned,
+      hint: real.twr === null
+        ? `Kayıt ${fmtDate(real.startDate)} tarihinde başladı; ikinci günden itibaren hesaplanır`
+        : `${fmtDate(real.startDate)}’den beri · para giriş/çıkışı (${tlSigned(real.netFlows)}) hariç`,
+    })] : []),
     kpiCard({
       label: 'Stopaj Kesintileri',
       tone: 'purple',
@@ -369,7 +415,11 @@ export function renderPanel(ctx) {
   const chartValues = hasMidasTotal
     ? chartDates.map((date) => storedValues[date])
     : [...series.value];
+  // Midas hesabında yatırılan para = kayıt başlangıcındaki değer + onaylanan
+  // para giriş/çıkışları. Midas yoksa işlem kayıtlarından modellenir.
+  const realInvested = real ? new Map(real.dates.map((date, index) => [date, real.invested[index]])) : null;
   const investedValues = chartDates.map((date) => {
+    if (realInvested) return realInvested.get(date) ?? null;
     const invested = seriesAt(series.invested, date);
     return isNum(invested) ? invested + untrackedPrincipal
       : hasMidasTotal ? untrackedPrincipal || null : null;
@@ -404,7 +454,7 @@ export function renderPanel(ctx) {
     h('div', {},
       h('h2', {}, 'Portföy Değeri ve Yatırılan Para'),
       h('span', { class: 'sub' }, hasMidasTotal
-        ? `Toplam değer ${chartStartDate ? fmtDate(chartStartDate) : 'bugün'} tarihinden itibaren her gün hesaba kaydedilir${missingCryptoSnapshot ? ' · kripto hariç' : ''}`
+        ? `Toplam değer ${chartStartDate ? fmtDate(chartStartDate) : 'bugün'} tarihinden itibaren her gün kaydedilir · yatırılan para = başlangıç değeri + onayladığın para giriş/çıkışları${missingCryptoSnapshot ? ' · kripto hariç' : ''}`
         : 'Geçmiş alım/satım kayıtlarına göre modellenir.')),
     rangeSelector(rangeKey, (r) => {
       rangeKey = r.key;
