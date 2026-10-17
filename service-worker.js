@@ -357,7 +357,12 @@ async function tefasLatest(code) {
 }
 
 async function fetchAssetHistory(code, isFund, range = '3y', purchaseDate = '') {
-  if (isFund) return range === '3y' ? tefasHistory(code, purchaseDate) : tefasLatest(code);
+  // Midas bazı ABD ETF emirlerini (ör. SPY) "Fon alış" diye yazıyor; TEFAS'ta
+  // bulunamayan "fon" için borsa kaynağına da bakılır.
+  if (isFund) {
+    const fund = await (range === '3y' ? tefasHistory(code, purchaseDate) : tefasLatest(code));
+    if (fund) return fund;
+  }
   // Midas symbols are normally Turkish tickers; then try a direct US symbol.
   for (const ticker of [`${code}.IS`, code]) {
     try {
@@ -367,5 +372,6 @@ async function fetchAssetHistory(code, isFund, range = '3y', purchaseDate = '') 
       // Try the next market/source; do not interrupt importing other codes.
     }
   }
+  if (isFund) return null;
   return range === '3y' ? tefasHistory(code, purchaseDate) : tefasLatest(code);
 }
