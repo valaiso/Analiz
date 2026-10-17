@@ -59,7 +59,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         .map((row) => String(row.code).toUpperCase())]);
       const marketData = {};
       const marketErrors = {};
-      for (const code of missingCodes) {
+      // Semboller birbirinden bağımsız; aynı anda en fazla 4 istek gönderilir.
+      await runPool(missingCodes, 4, async (code) => {
         try {
           const asset = cryptoOnly
             ? await cryptoHistory(code, cycleStarts[code] || '')
@@ -69,15 +70,15 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         } catch (error) {
           marketErrors[code] = error.message || 'Fiyat geçmişi alınamadı.';
         }
-      }
-      for (const localAsset of message.localAssets || []) {
+      });
+      await runPool(message.localAssets || [], 4, async (localAsset) => {
         const code = String(localAsset.code || '').toUpperCase();
-        if (!code || marketData[code]) continue;
-        if (cryptoOnly && localAsset.kind !== 'CRYPTO') continue;
+        if (!code || marketData[code]) return;
+        if (cryptoOnly && localAsset.kind !== 'CRYPTO') return;
         // USDT/USDC işlem karşıt para birimidir; Yahoo'da portföy kriptosu gibi
         // sorgulanmamalı. Önceden kaydedilmiş yerel veriye dokunmuyoruz.
-        if (['USDT', 'USDC'].includes(code)) continue;
-        if (!cryptoOnly && historyCodes.has(code) && !cycleStarts[code] && !positionCodes.has(code)) continue;
+        if (['USDT', 'USDC'].includes(code)) return;
+        if (!cryptoOnly && historyCodes.has(code) && !cycleStarts[code] && !positionCodes.has(code)) return;
         try {
           const asset = cryptoOnly
             ? await cryptoHistory(code, localAsset.startDate || '')
@@ -87,7 +88,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         } catch (error) {
           marketErrors[code] = `Güncel fiyat yenilenemedi; önceki geçmiş korunuyor. ${error.message || ''}`.trim();
         }
-      }
+      });
       sendResponse({ ...result, marketData, marketErrors,
         extensionVersion: chrome.runtime.getManifest().version });
     } catch {
@@ -103,6 +104,14 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
 });
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+async function runPool(items, limit, worker) {
+  let next = 0;
+  const runners = Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (next < items.length) await worker(items[next++]);
+  });
+  await Promise.all(runners);
+}
 
 async function yahooIntradayQuote(code) {
   for (const ticker of [`${code}.IS`, code]) {
@@ -224,7 +233,8 @@ function activePurchaseStarts(rows) {
 async function yahooHistory(code, ticker, range = '3y', startDate = '') {
   const params = new URLSearchParams({ interval: '1d', events: 'history' });
   if (/^\d{4}-\d{2}-\d{2}$/.test(startDate)) {
-    params.set('period1', String(Math.floor(new Date(`${startDate}T00:00:00Z`).getTime() / 1000)));
+    // Alış günü hafta sonu/tatil ya da bugünse seri boş dönmesin diye 7 gün öncesinden istenir.
+    params.set('period1', String(Math.floor(new Date(`${startDate}T00:00:00Z`).getTime() / 1000) - 7 * 86400));
     params.set('period2', String(Math.floor(Date.now() / 1000) + 86400));
   } else params.set('range', range);
   const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?${params}`;
