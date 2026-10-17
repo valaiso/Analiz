@@ -34,6 +34,9 @@ function migrate(raw) {
   if (!Array.isArray(state.profiles) || !state.profiles.length) state.profiles = base.profiles;
   if (!Array.isArray(state.tx)) state.tx = [];
   if (!Array.isArray(state.marketAssets)) state.marketAssets = [];
+  if (!state.valueHistory || typeof state.valueHistory !== 'object' || Array.isArray(state.valueHistory)) {
+    state.valueHistory = {};
+  }
   // Silinmiş profile bağlı işlemleri ilk profile taşı.
   const ids = new Set(state.profiles.map((p) => p.id));
   for (const t of state.tx) if (!ids.has(t.profile)) t.profile = state.profiles[0].id;
@@ -233,6 +236,45 @@ export function pruneMidasHistory(activeCycleStarts = {}, closedCodes = [], sync
   const removed = before - midasTx.length;
   if (removed) persistMidasTransactions();
   return removed;
+}
+
+/* ------------------------------------------------------- toplam değer geçmişi */
+
+// Günlük toplam portföy değeri { 'YYYY-AA-GG': ₺ } olarak hesaba eşitlenen
+// durumda saklanır; grafik her açılışta geçmişi yeniden hesaplamaz.
+const VALUE_RECORD_INTERVAL_MS = 30 * 60_000;
+
+export const valueHistory = () => state.valueHistory || {};
+
+/** Bugünün toplamını yazar; aynı gün içinde en fazla 30 dakikada bir buluta gider. */
+export function recordPortfolioValue(date, value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date)) || !(Number.isFinite(value) && value > 0)) return false;
+  const history = { ...(state.valueHistory || {}) };
+  const rounded = Math.round(value * 100) / 100;
+  const lastAt = Date.parse(state.valueHistoryUpdatedAt || '') || 0;
+  if (history[date] === rounded) return false;
+  if (history[date] !== undefined && Date.now() - lastAt < VALUE_RECORD_INTERVAL_MS) return false;
+  history[date] = rounded;
+  state.valueHistory = history;
+  state.valueHistoryUpdatedAt = new Date().toISOString();
+  persist();
+  return true;
+}
+
+/** Geçmiş günleri yalnızca bir kez doldurur; kayıtlı günlerin üzerine yazmaz. */
+export function seedPortfolioValueHistory(entries) {
+  const history = { ...(state.valueHistory || {}) };
+  let added = 0;
+  for (const [date, value] of entries || []) {
+    if (history[date] !== undefined || !(Number.isFinite(value) && value > 0)) continue;
+    history[date] = Math.round(value * 100) / 100;
+    added += 1;
+  }
+  if (!added && state.valueHistorySeeded) return 0;
+  state.valueHistory = history;
+  state.valueHistorySeeded = true;
+  persist();
+  return added;
 }
 
 /* ------------------------------------------------------------------ profiller */

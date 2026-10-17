@@ -93,6 +93,17 @@ export function assetType(code, suppliedKind = '', suppliedCategory = '') {
   return 'Diğer';
 }
 
+/** Fonun kısa türü: Dağılım ve Panel tablolarında kodun yanında gösterilir. */
+export function fundTypeLabel(code) {
+  const meta = DB.byCode.get(String(code || '').toLocaleUpperCase('tr')) || {};
+  const name = String(meta.name || '').toLocaleUpperCase('tr');
+  const category = String(meta.cat || meta.category || '').toLocaleLowerCase('tr');
+  if (category === 'para piyasası' || name.includes('PARA PİYASASI')) return 'PPF';
+  if (name.includes('EUROBOND') || name.includes('DIŞ BORÇLANMA')) return 'Eurobond Fonu';
+  if (name.includes('YABANCI') && name.includes('TEKNOLOJ')) return 'Yabancı Teknoloji Fonu';
+  return '';
+}
+
 export function groupAssetRows(rows) {
   const groups = new Map(GROUP_ORDER.map((label) => [label, []]));
   for (const row of rows || []) groups.get(assetType(row.code, row.kind, row.category))?.push(row);
@@ -113,6 +124,9 @@ export function currentMidasPositions() {
       category: meta.cat || meta.category || '',
       currency,
       allocationPct: Number.isFinite(row.allocationPct) ? row.allocationPct : null,
+      // Midas'ın tarama anındaki fiyatı; addSiteMarketMetrics `price` alanını
+      // güncel fiyatla değiştirdiği için nakit hesabında bu değer kullanılır.
+      midasPrice: Number.isFinite(row.price) && row.price > 0 ? row.price : null,
       value: Number.isFinite(row.allocationPct) ? row.allocationPct : 0,
       weight: Number.isFinite(row.allocationPct) ? row.allocationPct : 0,
       // Midas'ın anlık pozisyon fiyatı ve getiri alanları eşitleme anında gelir.
@@ -262,6 +276,36 @@ export function currentMidasCryptoPositions() {
   });
 }
 
+/**
+ * Midas yatırım hesabının güncel değeri = pozisyonlar (güncel fiyatla) + nakit.
+ * Midas'ın "Yatırım hesabı" toplamı nakit/takas bakiyesini de içerir; pozisyon
+ * tablosunda nakit satırı yoktur. Nakit, aynı taramada okunan hesap toplamından
+ * pozisyonların Midas fiyatıyla değeri çıkarılarak bulunur. Güncel fiyatı
+ * bulunamayan pozisyon toplamdan düşmez, Midas'taki değeriyle sayılır.
+ */
+export function midasStockAccountValue(measuredStockRows) {
+  const snapshot = getMidasAccountSnapshot();
+  const latestIndex = Math.max(0, lastIndex());
+  let positions = 0;
+  let capturedPositions = 0;
+  let capturedComplete = true;
+  for (const row of measuredStockRows || []) {
+    const fx = currencyFxToTRY(row.code, row.currency, latestIndex);
+    const capturedValue = row.units > 0 && row.midasPrice > 0 && Number.isFinite(fx)
+      ? row.units * row.midasPrice * fx : null;
+    if (capturedValue === null) capturedComplete = false;
+    else capturedPositions += capturedValue;
+    positions += Number.isFinite(row.marketValueTRY) ? row.marketValueTRY : capturedValue ?? 0;
+  }
+  const summary = snapshot?.summarySource === 'midas-visible-v1' ? snapshot.summary : null;
+  const summaryTotal = Number.isFinite(summary?.totalValue) && summary.totalValue >= 0
+    ? summary.totalValue : null;
+  const cash = summaryTotal !== null && capturedComplete
+    ? Math.max(0, summaryTotal - capturedPositions)
+    : Number.isFinite(summary?.tryCash) && summary.tryCash > 0 ? summary.tryCash : 0;
+  return { positions, cash, total: positions + cash, summaryTotal };
+}
+
 /** Midas'ın açık sembollerini site fiyat geçmişi ve yerel işlem adetleriyle birleştir. */
 export function addSiteMarketMetrics(positions) {
   const liveQuotes = getMidasAccountSnapshot()?.liveQuotes || {};
@@ -403,16 +447,37 @@ export function addSiteMarketMetrics(positions) {
         || snapshotPriceIsToday && quoteIndex >= 0)
       && Number.isFinite(dailyReferencePrice) && dailyReferencePrice > 0
       && Number.isFinite(previousFx);
-    const dailyQuoteUnavailable = !hasSitePrice || !hasPreviousPrice;
+    // Bugün piyasa hareketi yoksa (hafta sonu, tatil, seans öncesi, TEFAS
+    // fiyatı henüz yayımlanmadı) son işlem gününün kapanış hareketi gösterilir.
+    // Seans açıkken bugünün kotasyonu gelmediyse eski hareket kullanılmaz.
+    const lastClose = hasLiveQuote ? liveQuote.price : priceFromHistory;
+    const lastPrevClose = hasLiveQuote ? liveQuote.previousClose : previousPrice;
+    const lastSessionFx = currencyFxToTRY(position.code, currency, quoteIndex >= 0 ? quoteIndex : latestIndex);
+    const lastSessionPrevFx = currencyFxToTRY(position.code, currency,
+      hasLiveQuote ? Math.max(0, quoteIndex - 1) : previousIndex);
+    // Midas'ın bugünkü fiyatı son kapanışla aynıysa bugün hareket olmamıştır.
+    const noMoveToday = hasPreviousPrice && !useIntradayChange && !historyPriceIsToday
+      && snapshotPriceIsToday && Math.abs(price - dailyReferencePrice) <= 1e-9 * Math.max(1, price);
+    const useToday = hasPreviousPrice && !noMoveToday;
+    const useLastSession = !noDailyChange && hasSitePrice && !useToday
+      && !(exchangeTraded && marketSessionOpenNow)
+      && Number.isFinite(lastClose) && lastClose > 0
+      && Number.isFinite(lastPrevClose) && lastPrevClose > 0
+      && Number.isFinite(lastSessionFx) && Number.isFinite(lastSessionPrevFx);
+    const lastSessionDate = hasLiveQuote ? liveQuote.date : quoteDate;
+    const dailyQuoteUnavailable = !hasSitePrice || (!useToday && !useLastSession);
     const calculatedDailyPLNative = noDailyChange ? 0
       : dailyQuoteUnavailable ? null
-        : hasPreviousPrice ? units * (price - dailyReferencePrice) : firstTrackedPoint ? 0 : null;
+        : useToday ? units * (price - dailyReferencePrice)
+          : units * (lastClose - lastPrevClose);
     const calculatedDailyPLTRY = noDailyChange ? 0
       : dailyQuoteUnavailable ? null
-        : hasPreviousPrice ? units * (price * fx - dailyReferencePrice * previousFx) : firstTrackedPoint ? 0 : null;
+        : useToday ? units * (price * fx - dailyReferencePrice * previousFx)
+          : units * (lastClose * lastSessionFx - lastPrevClose * lastSessionPrevFx);
     const calculatedDailyPct = noDailyChange ? 0
       : dailyQuoteUnavailable ? null
-        : hasPreviousPrice ? (price / dailyReferencePrice - 1) * 100 : firstTrackedPoint ? 0 : null;
+        : useToday ? (price / dailyReferencePrice - 1) * 100
+          : (lastClose / lastPrevClose - 1) * 100;
     const dailyPLNative = calculatedDailyPLNative;
     const dailyPLTRY = calculatedDailyPLTRY;
     const dailyPct = calculatedDailyPct;
@@ -428,8 +493,9 @@ export function addSiteMarketMetrics(positions) {
           : null;
     const dailyUnitPriceNowTRY = hasSitePrice ? price * fx : null;
     const dailyUnitPricePrevTRY = noDailyChange ? dailyUnitPriceNowTRY
-      : hasPreviousPrice ? dailyReferencePrice * previousFx
-        : firstTrackedPoint ? price * fx : null;
+      : useToday ? dailyReferencePrice * previousFx
+        : useLastSession ? dailyUnitPriceNowTRY - (lastClose * lastSessionFx - lastPrevClose * lastSessionPrevFx)
+          : firstTrackedPoint ? price * fx : null;
     const marketValuePrevTRY = Number.isFinite(dailyUnitPricePrevTRY)
       ? noDailyChange ? units * dailyUnitPriceNowTRY : units * dailyUnitPricePrevTRY : null;
     return {
@@ -455,6 +521,7 @@ export function addSiteMarketMetrics(positions) {
       quoteStale,
       quoteAgeMinutes,
       noDailyChange,
+      dailyFromLastSession: useLastSession ? lastSessionDate || true : null,
     };
   });
 }

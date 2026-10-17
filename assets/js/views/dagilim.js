@@ -5,7 +5,7 @@ import { DB } from '../data.js';
 import { donutWithLegend, barChart, stackedAreaChart } from '../charts.js';
 import { weightHistory, attribution } from '../insights.js';
 import { transactions, getMidasAccountSnapshot } from '../store.js';
-import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType } from '../asset-groups.js';
+import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType, fundTypeLabel, midasStockAccountValue } from '../asset-groups.js';
 import { sectionCard, emptyState } from './common.js';
 
 const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
@@ -36,11 +36,10 @@ export function renderDagilim(ctx) {
     ...(currentMidasCryptoPositions() || []),
   ];
   const measuredLive = addSiteMarketMetrics(liveRaw || []);
-  const stockPositionTotal = measuredLive.filter((row) => !row.midasCryptoSnapshot)
-    .reduce((sum, row) => sum + (row.marketValueTRY || 0), 0);
+  const stockAccount = midasStockAccountValue(measuredLive.filter((row) => !row.midasCryptoSnapshot));
   const stockSummaryTotal = snapshot?.summarySource === 'midas-visible-v1'
     ? Number(snapshot.summary?.totalValue) || 0 : 0;
-  const stockTotal = Math.max(stockPositionTotal, stockSummaryTotal);
+  const stockTotal = stockPositionsCaptured ? stockAccount.total : stockSummaryTotal;
   const cryptoTotal = measuredLive.filter((row) => row.midasCryptoSnapshot)
     .reduce((sum, row) => sum + (row.marketValueTRY || 0), 0);
   const midasTotal = stockTotal + cryptoTotal;
@@ -124,7 +123,8 @@ export function renderDagilim(ctx) {
           h('th', {}, 'Adet'), h('th', {}, 'Portföy Değeri'), h('th', {}, 'Ort. Maliyet'), h('th', {}, 'Dağılım'),
           h('th', {}, 'Toplam K/Z'), h('th', {}, 'Günlük'))),
         h('tbody', {}, rows.map((row) => h('tr', {},
-          h('td', {}, h('span', { class: 'code-chip' }, row.code)),
+          h('td', {}, h('span', { class: 'code-chip' }, row.code),
+            fundTypeLabel(row.code) ? h('span', { class: 'pill', style: 'margin-left:6px' }, fundTypeLabel(row.code)) : null),
           h('td', {}, fmtUnits(row.units)),
           h('td', {}, liveValuesReconcile && isNum(row.marketValueTRY) ? tl(row.marketValueTRY) : '—'),
           h('td', {}, `${row.avgCost == null ? '—' : new Intl.NumberFormat('tr-TR', { style: 'currency', currency: row.currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2 }).format(row.avgCost)}`),

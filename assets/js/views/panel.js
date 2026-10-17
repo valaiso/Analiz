@@ -6,10 +6,13 @@ import { DB } from '../data.js';
 import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
 import { cashflowCalendar } from '../insights.js';
-import { transactions, daysSinceBackup, getMidasAccountSnapshot } from '../store.js';
+import {
+  transactions, daysSinceBackup, getMidasAccountSnapshot,
+  valueHistory, recordPortfolioValue, seedPortfolioValueHistory,
+} from '../store.js';
 import {
   currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics,
-  applyDailyMarketTransactions, groupAssetRows, assetType,
+  applyDailyMarketTransactions, groupAssetRows, assetType, midasStockAccountValue, fundTypeLabel,
 } from '../asset-groups.js';
 import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
@@ -57,10 +60,10 @@ export function renderPanel(ctx) {
     ...(currentMidasCryptoPositions() || []),
   ];
   const measuredSnapshotPositions = addSiteMarketMetrics(rawSnapshotPositions);
-  const stockPositionValue = measuredSnapshotPositions.filter((row) => !row.midasCryptoSnapshot)
-    .reduce((sum, row) => sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0);
-  const stockMidasTotal = Math.max(stockSummaryCaptured ? midasSummary.totalValue : 0,
-    stockPositionsCaptured ? stockPositionValue : 0);
+  const stockAccount = midasStockAccountValue(measuredSnapshotPositions
+    .filter((row) => !row.midasCryptoSnapshot));
+  const stockMidasTotal = stockPositionsCaptured ? stockAccount.total
+    : stockSummaryCaptured ? midasSummary.totalValue : 0;
   const cryptoRows = measuredSnapshotPositions.filter((row) => row.midasCryptoSnapshot);
   const measuredCryptoValue = cryptoRows.reduce((sum, row) =>
     sum + (isNum(row.marketValueTRY) ? row.marketValueTRY : 0), 0);
@@ -134,10 +137,17 @@ export function renderPanel(ctx) {
   ].filter(Boolean))].join(', ');
   const dailyCryptoScope = cryptoPositionsCaptured ? 'kripto dahil'
     : missingCryptoSnapshot ? 'kripto hariç' : '';
-  const siteDailyChange = dailyIncompleteHint ? null : dailyMarket.total;
+  // Hesaplanabilen pozisyonların toplamı her zaman gösterilir; eksik kalanlar
+  // ipucunda listelenir. Kart hiçbir zaman tümüyle boş kalmamalı.
+  const siteDailyChange = dailyMarket.total;
   const siteDailyBase = dailyMarket.base;
-  const siteDailyPct = !dailyIncompleteHint && siteDailyBase > 0 && isNum(siteDailyChange)
+  const siteDailyPct = siteDailyBase > 0 && isNum(siteDailyChange)
     ? siteDailyChange / siteDailyBase * 100 : null;
+  const lastSessionDates = [...new Set(dailyRows.map((row) => row.dailyFromLastSession)
+    .filter((value) => typeof value === 'string'))].sort();
+  const dailyLastSessionNote = dailyRows.some((row) => row.dailyFromLastSession)
+    ? `bugün piyasa hareketi yok; son işlem günü${lastSessionDates.length ? ` (${lastSessionDates.map(fmtDate).join(', ')})` : ''} kapanışına göre`
+    : '';
   const snapshotAt = [
     stockPositionsCaptured ? midasSnapshot.stockCapturedAt : null,
     stockSummaryCaptured ? midasSnapshot.summaryCapturedAt : null,
@@ -214,7 +224,7 @@ export function renderPanel(ctx) {
       tone: 'blue',
       value: hasMidasTotal ? tl(midasPortfolioTotal) : hasMidasImportState ? '—' : tl(totals.value),
       sub: hasMidasTotal
-        ? `${accountLabel}${snapshotTime ? ` · ${snapshotTime}` : ''}${midasTotalPartial ? ' · kısmi toplam' : ''}`
+        ? `Hisse/Fon/ETF ${tl(stockMidasTotal)}${stockAccount.cash > 0.5 && stockPositionsCaptured ? ` (${tl(stockAccount.cash)} nakit dahil)` : ''} + Kripto ${tl(cryptoTotal)}${snapshotTime ? ` · ${snapshotTime}` : ''}${midasTotalPartial ? ' · kısmi toplam' : ''}`
         : hasMidasImportState
           ? 'Midas’ın açık pozisyonları doğrulanana kadar hesaplanmıyor'
           : `${totals.fundCount} varlık · ${fmtDate(totals.lastDate)}`,
@@ -230,7 +240,7 @@ export function renderPanel(ctx) {
       formatPct: pctSigned,
       hint: hasMidasTotal
         ? (isNum(siteDailyChange)
-          ? `Piyasa fiyatlarından hesaplandı${dailyCryptoScope ? ` · ${dailyCryptoScope}` : ''}${dailyIncompleteHint ? ` · kısmi: ${dailyIncompleteHint}` : ''}`
+          ? `Piyasa fiyatlarından hesaplandı${dailyLastSessionNote ? ` · ${dailyLastSessionNote}` : ''}${dailyCryptoScope ? ` · ${dailyCryptoScope}` : ''}${dailyIncompleteHint ? ` · kısmi: ${dailyIncompleteHint}` : ''}`
           : `Günlük fiyat hareketi hesaplanamadı; eksik: ${dailyIncompleteHint || 'açık pozisyon fiyatı bulunamadı'}`)
         : hasMidasImportState
           ? 'Midas pozisyonları doğrulanana kadar günlük değişim hesaplanmıyor'
@@ -311,18 +321,32 @@ export function renderPanel(ctx) {
   // requested period. Portfolio values remain blank before the chosen start.
   const chartCalendar = chartEndDate
     ? DB.calendar.filter((date) => date <= chartEndDate) : [];
-  const chartDates = chartCalendar.length
+  const baseChartDates = chartCalendar.length
     ? [...chartCalendar, ...(chartEndDate > chartCalendar.at(-1) ? [chartEndDate] : [])]
     : (chartEndDate ? [chartEndDate] : []);
   const seriesIndexes = new Map(series.dates.map((date, index) => [date, index]));
-  const chartValues = chartDates.map((date) => {
+  const modeledValue = (date) => {
     if (!chartAccountValueAvailable) return null;
     if (date < chartStartDate) return null;
     const index = seriesIndexes.get(date);
     return index === undefined
       ? (hasMidasTotal ? untrackedPrincipal : null)
       : series.value[index] + untrackedPrincipal;
-  });
+  };
+
+  // Toplam değer geçmişi hesapta saklanır. İlk açılışta işlem kayıtlarından
+  // modellenen geçmiş günler bir kez kaydedilir; sonrasında her gün Midas
+  // toplamı yazılır ve grafik bu kayıtlı değerleri kullanır.
+  const today = todayInIstanbul();
+  if (hasMidasTotal) {
+    seedPortfolioValueHistory(baseChartDates.filter((date) => date < today)
+      .map((date) => [date, modeledValue(date)]));
+    if (midasSnapshotComplete) recordPortfolioValue(today, midasPortfolioTotal);
+  }
+  const storedValues = valueHistory();
+  const chartDates = [...new Set([...baseChartDates, ...Object.keys(storedValues)])].sort();
+  const chartValues = chartDates.map((date) => (isNum(storedValues[date])
+    ? storedValues[date] : modeledValue(date)));
   const investedValues = chartDates.map((date) => {
     if (!chartAccountValueAvailable) return null;
     if (date < chartStartDate) return null;
@@ -384,7 +408,8 @@ export function renderPanel(ctx) {
     const positionsTable = (rows) => sortableTable({
       initialSort: { key: 'allocationPct', dir: 'desc' },
       columns: [
-        { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', { class: 'code-chip' }, r.code) },
+        { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', {}, h('span', { class: 'code-chip' }, r.code),
+          fundTypeLabel(r.code) ? h('span', { class: 'pill', style: 'margin-left:6px' }, fundTypeLabel(r.code)) : null) },
         { key: 'units', label: 'Adet', render: (r) => fmtUnits(r.units) },
         { key: 'price', label: 'Güncel Fiyat', render: (r) => moneyByCurrency(r.price, r.currency) },
         { key: 'marketValueTRY', label: 'Portföy Değeri', render: (r) => positionSnapshotConsistent && isNum(r.marketValueTRY) ? tl(r.marketValueTRY) : '—' },
