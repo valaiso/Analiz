@@ -298,6 +298,31 @@ export function renderPanel(ctx) {
 
   /* ------------------------------------------------------------------ KPI'lar */
 
+  // İşlem kayıtlarından modellenen K/Z ve XIRR. Midas hesabında Gerçek Getiri
+  // kartı esas alınır; bu iki kart sayfanın altındaki katlanır bölüme iner.
+  const legacyCards = [
+    plCard({
+      label: 'İşlem Kayıtlarına Göre K/Z',
+      tone: 'green',
+      amount: totals.totalPL,
+      pct: totals.totalPct,
+      formatMoney: tlSigned,
+      formatPct: pctSigned,
+      hint: totals.realized !== 0
+        ? `${tlSigned(totals.unrealized)} açık · ${tlSigned(totals.realized)} gerçekleşmiş`
+        : 'Geçmiş alış/satış kayıtlarından hesaplanır',
+    }),
+    kpiCard({
+      label: 'İşlem Kayıtlarına Göre XIRR',
+      tone: 'burgundy',
+      value: isNum(analysis.xirr) && historySpanDays >= 90 ? pctSigned(analysis.xirr, 1) : '—',
+      valueClass: cls(isNum(analysis.xirr) && historySpanDays >= 90 ? analysis.xirr : null),
+      sub: 'Para ağırlıklı yıllık bileşik getiri',
+      hint: historySpanDays < 90
+        ? 'Kayıtlı geçmiş 90 günden kısa; yıllıklandırma yanıltıcı olabileceği için gösterilmiyor'
+        : !isNum(analysis.xirr) ? 'Nakit akışlarından XIRR hesaplanamadı' : null,
+    }),
+  ];
   root.append(h('div', { class: 'grid grid-kpi' },
     kpiCard({
       label: 'Toplam Değer',
@@ -326,27 +351,7 @@ export function renderPanel(ctx) {
           ? 'Midas pozisyonları doğrulanana kadar günlük değişim hesaplanmıyor'
           : `${fmtDate(totals.prevDate)} kapanışına göre`,
     }),
-    plCard({
-      label: 'İşlem Kayıtlarına Göre K/Z',
-      tone: 'green',
-      amount: totals.totalPL,
-      pct: totals.totalPct,
-      formatMoney: tlSigned,
-      formatPct: pctSigned,
-      hint: totals.realized !== 0
-        ? `${tlSigned(totals.unrealized)} açık · ${tlSigned(totals.realized)} gerçekleşmiş`
-        : 'Geçmiş alış/satış kayıtlarından hesaplanır',
-    }),
-    kpiCard({
-      label: 'İşlem Kayıtlarına Göre XIRR',
-      tone: 'burgundy',
-      value: isNum(analysis.xirr) && historySpanDays >= 90 ? pctSigned(analysis.xirr, 1) : '—',
-      valueClass: cls(isNum(analysis.xirr) && historySpanDays >= 90 ? analysis.xirr : null),
-      sub: 'Para ağırlıklı yıllık bileşik getiri',
-      hint: historySpanDays < 90
-        ? 'Kayıtlı geçmiş 90 günden kısa; yıllıklandırma yanıltıcı olabileceği için gösterilmiyor'
-        : !isNum(analysis.xirr) ? 'Nakit akışlarından XIRR hesaplanamadı' : null,
-    }),
+    ...(real ? [] : legacyCards),
     ...(real ? [plCard({
       label: 'Gerçek Getiri',
       tone: 'teal',
@@ -629,6 +634,14 @@ export function renderPanel(ctx) {
     root.append(h('div', { class: 'notice warn' },
       `Dikkat: ${oversold.map((x) => x.code).join(', ')} satış adetleri kayıtlı alışları aşıyor. `
       + 'Eşleşmeyen fazla adetlerin kâr/zararı hesaplanmadı; eksik alış kaydını veya satış miktarını İşlemler sekmesinden kontrol et.'));
+  }
+
+  if (real) {
+    root.append(h('details', { class: 'card' },
+      h('summary', { style: 'cursor:pointer;font-weight:600' }, 'İşlem kayıtlarına göre hesaplar (eski model)'),
+      h('p', { class: 'dim', style: 'margin:8px 0' },
+        'Bu iki değer geçmiş alış/satış kayıtlarından modellenir; Midas’taki gerçek hesapla farklı olabilir. Asıl getiri için yukarıdaki Gerçek Getiri kartına bak.'),
+      h('div', { class: 'grid grid-kpi' }, ...legacyCards)));
   }
 
   return root;
