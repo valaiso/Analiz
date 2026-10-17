@@ -119,6 +119,30 @@ export function fundTypeLabel(code) {
   return 'Diğer Fon';
 }
 
+/**
+ * Bireysel yatırımcı için fon kazancı stopaj oranı (11107 sayılı CK, 27.03.2026):
+ * TEFAS'taki hisse senedi yoğun fonlar %0; portföyünün en az %51'i BIST hissesi
+ * olan fonlar 1 yıldan uzun tutulursa %0; diğer fonlar %17,5.
+ */
+export function fundStopajRate(code, holdingStartDate = '', today = new Date().toISOString().slice(0, 10)) {
+  const meta = DB.byCode.get(String(code || '').toLocaleUpperCase('tr')) || {};
+  const name = String(meta.name || '').toLocaleUpperCase('tr');
+  const bistEquityPct = Number(meta.alloc?.['Hisse Senedi']) || 0;
+  if (name.includes('HİSSE SENEDİ YOĞUN') || bistEquityPct >= 80) {
+    return { rate: 0, reason: 'Hisse senedi yoğun fon · %0' };
+  }
+  if (bistEquityPct >= 51) {
+    const start = /^\d{4}-\d{2}-\d{2}$/.test(holdingStartDate) ? holdingStartDate : '';
+    const oneYear = start ? `${Number(start.slice(0, 4)) + 1}${start.slice(4)}` : '';
+    if (oneYear && today > oneYear) return { rate: 0, reason: 'BIST hissesi ≥%51 ve 1 yıldan uzun tutuldu · %0' };
+    return {
+      rate: 0.175,
+      reason: oneYear ? `BIST hissesi ≥%51 · ${oneYear} sonrası satışta %0` : 'BIST hissesi ≥%51 · alış tarihi bilinmiyor, 1 yıl dolunca %0',
+    };
+  }
+  return { rate: 0.175, reason: '%17,5' };
+}
+
 // ETF'in neyi takip ettiği ve kısaca ne anlama geldiği.
 const ETF_LABELS = {
   SPY: 'S&P 500 (ABD’nin en büyük 500 şirketi)',
@@ -702,7 +726,7 @@ export function applyDailyMarketTransactions(positions, transactions, date, { po
       });
     }
   } else {
-    missingCodes.push(...byCode.keys().map((code) => `${code} (pozisyon görüntüsü eksik)`));
+    missingCodes.push(...[...byCode.keys()].map((code) => `${code} (pozisyon görüntüsü eksik)`));
   }
 
   const allRows = [...adjustedRows, ...closedRows];

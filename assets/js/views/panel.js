@@ -12,7 +12,7 @@ import {
 } from '../store.js';
 import {
   currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics,
-  applyDailyMarketTransactions, groupAssetRows, assetType, midasStockAccountValue, assetLabel, groupFundsByType,
+  applyDailyMarketTransactions, groupAssetRows, assetType, midasStockAccountValue, assetLabel, groupFundsByType, fundStopajRate,
 } from '../asset-groups.js';
 import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
@@ -194,6 +194,23 @@ export function renderPanel(ctx) {
     root.append(h('div', { class: 'notice warn' },
       'Son Midas taraması Pozisyonlar tablosunu doğrulayamadı. Önceki doğrulanmış anlık görüntü korunuyor; yeniden aktarım yapana kadar bu veriler güncel kabul edilmemeli.'));
   }
+  // Adet, maliyet ve nakit yalnızca Midas taramasında güncellenir; fiyatlar
+  // kendiliğinden yenilense de eski tarama alım/satım/temettüyü kaçırır.
+  const MIDAS_STALE_DAYS = 3;
+  const midasScanAges = [
+    stockPositionsCaptured ? midasSnapshot.stockCapturedAt : null,
+    cryptoPositionsCaptured ? midasSnapshot.cryptoCapturedAt : null,
+  ].filter(Boolean).map((at) => (Date.now() - Date.parse(at)) / 86400000).filter(Number.isFinite);
+  const oldestScanDays = midasScanAges.length ? Math.floor(Math.max(...midasScanAges)) : 0;
+  if (oldestScanDays >= MIDAS_STALE_DAYS) {
+    root.append(h('div', { class: 'notice warn' },
+      `Son Midas taraması ${oldestScanDays} gün önce yapıldı. Fiyatlar güncel ama adet, ortalama maliyet ve nakit o günkü haliyle duruyor; `
+      + 'bu sürede alım/satım, temettü ya da para yatırma olduysa toplam değer yanlış olabilir. ',
+      h('button', {
+        class: 'btn btn-sm', type: 'button', style: 'margin-left:6px',
+        onclick: () => navigate('islemler'),
+      }, 'Midas’tan yeniden oku')));
+  }
   const txs = ctx.analysisTransactions || transactions();
   const taxableFundPL = new Map(analysis.holdings
     .filter((holding) => !holding.closed && assetType(holding.code, holding.kind, holding.cat) === 'Fon'
@@ -210,9 +227,28 @@ export function renderPanel(ctx) {
         : Number.isFinite(position.totalPL) ? position.totalPL + transactionRealized : taxableFundPL.get(position.code);
     if (Number.isFinite(profit)) taxableFundPL.set(position.code, profit);
   }
+  // Açık dönemin ilk alış tarihi (pozisyon sıfırlanınca yeni dönem başlar).
+  const holdingStart = new Map();
+  const openUnits = new Map();
+  for (const tx of txs) {
+    const code = String(tx.code || '').toLocaleUpperCase('tr');
+    const units = Number(tx.units) || 0;
+    const before = openUnits.get(code) || 0;
+    if (tx.type === 'AL') {
+      if (before <= 1e-8) holdingStart.set(code, String(tx.date || '').slice(0, 10));
+      openUnits.set(code, before + units);
+    } else if (tx.type === 'SAT') {
+      const after = Math.max(0, before - units);
+      openUnits.set(code, after);
+      if (after <= 1e-8) holdingStart.delete(code);
+    }
+  }
   const stopajRows = [...taxableFundPL.entries()]
     .filter(([, profit]) => profit > 0)
-    .map(([code, profit]) => ({ code, profit, amount: profit * 0.175 }))
+    .map(([code, profit]) => {
+      const { rate, reason } = fundStopajRate(code, holdingStart.get(code), todayInIstanbul());
+      return { code, profit, rate, reason, amount: profit * rate };
+    })
     .sort((a, b) => b.amount - a.amount);
   const stopajEstimate = stopajRows.reduce((sum, row) => sum + row.amount, 0);
 
@@ -271,28 +307,30 @@ export function renderPanel(ctx) {
       label: 'Stopaj Kesintileri',
       tone: 'purple',
       value: tl(stopajEstimate),
-      sub: 'Vergili fon kârının %17,5’i',
-      hint: 'Otomatik hesaplanır; ana portföy değerini etkilemez.',
+      sub: 'Fon türüne göre %0 veya %17,5',
+      hint: 'Hisse senedi yoğun fonlar %0; diğer fonlar %17,5. Ana portföy değerini etkilemez.',
     })));
 
   const stopajTable = h('table', {},
     h('thead', {}, h('tr', {},
       h('th', { style: 'text-align:left' }, 'Varlık'),
       h('th', {}, 'Fon kârı'),
+      h('th', {}, 'Oran'),
       h('th', {}, 'Tahmini stopaj'))),
     h('tbody', {}, stopajRows.map((row) => h('tr', {},
       h('td', { style: 'text-align:left' }, h('span', { class: 'code-chip' }, row.code)),
       h('td', {}, tl(row.profit)),
-      h('td', {}, tl(row.amount))))));
+      h('td', { title: row.reason }, pct(row.rate * 100, 1)),
+      h('td', { title: row.reason }, tl(row.amount))))));
   const stopajContent = stopajRows.length
     ? h('div', { class: 'stack' },
-      h('div', { class: 'table-wrap', style: 'max-width:460px' }, stopajTable),
+      h('div', { class: 'table-wrap', style: 'max-width:560px' }, stopajTable),
       h('p', { class: 'dim', style: 'margin:0' },
-        `Tahmini toplam: ${tl(stopajEstimate)} · kârın %17,5’i`))
+        `Tahmini toplam: ${tl(stopajEstimate)} · oranın nedenini görmek için üzerine gel`))
     : h('p', { class: 'dim', style: 'margin:0' },
       'Vergili fonlarda kâr oluştuğunda tahmini stopaj burada gösterilir.');
   const stopajSection = sectionCard('Stopaj Kesintileri',
-    'Vergili fon kârının %17,5’i olarak hesaplanır · portföy değerini etkilemez', stopajContent);
+    'Hisse senedi yoğun fonlar %0, ≥%51 BIST hisseli fonlar 1 yıl sonra %0, diğerleri %17,5 · portföy değerini etkilemez', stopajContent);
 
   if (txs.length >= 5 && daysSinceBackup() === null) {
     root.append(h('div', { class: 'notice' },
