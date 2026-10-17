@@ -5,7 +5,7 @@ import { DB } from '../data.js';
 import { donutWithLegend, barChart, stackedAreaChart } from '../charts.js';
 import { weightHistory, attribution } from '../insights.js';
 import { transactions, getMidasAccountSnapshot } from '../store.js';
-import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType, fundTypeLabel, assetLabel, midasStockAccountValue, groupFundsByType } from '../asset-groups.js';
+import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType, fundTypeLabel, assetLabel, midasStockAccountValue, groupFundsByType, lookThroughExposure } from '../asset-groups.js';
 import { sectionCard, emptyState } from './common.js';
 
 const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
@@ -109,6 +109,29 @@ export function renderDagilim(ctx) {
       missingPositionValue.length
         ? `Dağılım grafiği bekletiliyor: Midas adedi/fiyatı okunamayan varlıklar: ${missingPositionValue.map((row) => row.code).join(', ')}. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`
         : `Dağılım grafiği bekletiliyor: pozisyon fiyatlarından hesaplanan ${tl(securitiesValue)} değeri Midas hesap toplamı ${tl(midasTotal)} ile uyuşmuyor. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`));
+    if (valuesReconcile) {
+      const exposure = lookThroughExposure(priced.map((row) => ({
+        code: row.code, value: row.pieValue, currency: row.currency, kind: row.kind, category: row.category,
+      })));
+      const exposureTotal = [...exposure.assetClasses.values()].reduce((sum, value) => sum + value, 0);
+      const toSlices = (map) => [...map.entries()].sort((a, b) => b[1] - a[1])
+        .map(([label, value], index) => ({ label, value, color: colorAt(index) }));
+      const currencySlices = toSlices(exposure.currencies);
+      const tlShare = (exposure.currencies.get('TL') || 0) / (exposureTotal || 1) * 100;
+      root.append(h('div', { class: 'grid grid-2' },
+        sectionCard('Gerçek Varlık Dağılımı',
+          'Fonların içi açılarak hesaplanır: fonun içindeki hisse, tahvil, altın, mevduat ayrı sayılır',
+          donutWithLegend(toSlices(exposure.assetClasses), {
+            centerTop: tl(exposureTotal, { compact: true }), centerBottom: 'varlık sınıfı',
+          }),
+          exposure.unknown.length ? h('p', { class: 'dim', style: 'margin:8px 0 0;font-size:.8rem' },
+            `İçerik bilgisi olmayan: ${[...new Set(exposure.unknown)].join(', ')}`) : null),
+        sectionCard('Döviz / TL Dağılımı',
+          'Yabancı hisse, ETF ve Eurobond döviz; altın ayrı; geri kalan TL',
+          donutWithLegend(currencySlices, {
+            centerTop: `%${Math.round(100 - tlShare)}`, centerBottom: 'TL dışı',
+          }))));
+    }
     root.append(h('div', { class: 'notice' },
       `Hisse/fon ve kripto açık adetleri Midas Pozisyonlar tablolarından alınır; emir geçmişinden açık pozisyon türetilmez. ${live.filter((row) => row.marketValueTRY > 0).length}/${live.length} açık varlığın değeri doğrulandı.`));
     const sortedGroups = groupAssetRows(positions).map((group) => ({
