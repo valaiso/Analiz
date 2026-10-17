@@ -45,7 +45,8 @@ def _write_json(path: Path, value, *, indent=None) -> None:
 
 EKSTRA_ENSTRUMANLAR = {
     # ABD ETF'leri
-    "QQQ":   {"symbol": "QQQ",      "title": "Invesco QQQ Trust (Nasdaq 100)", "type": "US_ETF", "cat": "Yabancı ETF"},
+    "SPY":   {"symbol": "SPY",      "title": "SPDR S&P 500 ETF Trust", "type": "US_ETF", "cat": "Yabancı ETF"},
+    "QQQ":   {"symbol": "QQQ",     "title": "Invesco QQQ Trust (Nasdaq 100)", "type": "US_ETF", "cat": "Yabancı ETF"},
     "SCHD":  {"symbol": "SCHD",     "title": "Schwab U.S. Dividend Equity ETF", "type": "US_ETF", "cat": "Yabancı ETF"},
     "VIG":   {"symbol": "VIG",      "title": "Vanguard Dividend Appreciation ETF", "type": "US_ETF", "cat": "Yabancı ETF"},
     "MGV":   {"symbol": "MGV",      "title": "Vanguard Mega Cap Value ETF", "type": "US_ETF", "cat": "Yabancı ETF"},
