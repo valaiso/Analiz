@@ -114,12 +114,14 @@ function renderLine(container, cfg) {
   }
 
   // x etiketleri
-  const labelCount = Math.max(2, Math.min(6, Math.floor(plotW / 90)));
-  for (let k = 0; k < labelCount; k++) {
-    const i = Math.round((k / (labelCount - 1)) * (n - 1));
+  // Az noktalı seride aynı tarih birden çok kez yazılıp üst üste binmesin.
+  const labelCount = Math.min(n, Math.max(2, Math.min(6, Math.floor(plotW / 90))));
+  const labelIndexes = labelCount === 1 ? [0]
+    : [...new Set(Array.from({ length: labelCount }, (_, k) => Math.round((k / (labelCount - 1)) * (n - 1))))];
+  for (const [k, i] of labelIndexes.entries()) {
     const t = svgEl('text', {
       x: x(i), y: height - 7,
-      'text-anchor': k === 0 ? 'start' : k === labelCount - 1 ? 'end' : 'middle',
+      'text-anchor': n === 1 ? 'middle' : k === 0 ? 'start' : k === labelIndexes.length - 1 ? 'end' : 'middle',
       fill: 'var(--text-dim)', 'font-size': 11,
     });
     t.textContent = xFormat(dates[i]);

@@ -129,6 +129,8 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
   const ready = candidates.filter((row) => !row.missing.length);
   const unmatched = candidates.filter((row) => row.missing.length);
   const unknownCodes = [...new Set(ready.filter((row) => !DB.byCode.has(row.code)).map((row) => row.code))];
+  // Fiyat geçmişi eksik semboller beklenmeden atlanır; diğer işlemler aktarılır.
+  const importable = ready.filter((row) => DB.byCode.has(row.code));
   const line = (row) => h('tr', {},
     h('td', {}, row.date || '—'),
     h('td', {}, row.code || '—'),
@@ -173,13 +175,13 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
     h('button', { class: 'btn', type: 'button', onclick: () => close() }, 'Vazgeç'),
     h('button', {
       class: 'btn btn-primary', type: 'button',
-      disabled: (!ready.length && !applyLifecycle) || unknownCodes.length > 0,
+      disabled: !importable.length && !applyLifecycle,
       onclick: () => {
         const lifecycleResult = applyLifecycle?.();
         if (lifecycleResult && (lifecycleResult.removedTransactions || lifecycleResult.pruned.removed || lifecycleResult.pruned.trimmed)) {
           logMidas(`Kapalı dönem temizliği: ${lifecycleResult.removedTransactions} Midas işlem kaydı, ${lifecycleResult.pruned.removed} fiyat geçmişi silindi; ${lifecycleResult.pruned.trimmed} açık varlığın geçmişi alış tarihinden başlatıldı.`);
         }
-        const result = addMidasTransactions(ready);
+        const result = addMidasTransactions(importable);
         logMidas(`${result.added} yeni işlem eklendi, ${result.updated} mevcut Midas işlemi güncellendi, ${result.skipped} kayıt atlandı.`);
         close();
         toast(result.added || result.updated
@@ -187,7 +189,9 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
           : 'Bu işlemler zaten kayıtlı');
         ctx.refresh();
       },
-    }, unknownCodes.length ? 'Fiyat geçmişi tamamlanınca aktar' : `${ready.length} işlemi içe aktar`));
+    }, unknownCodes.length
+      ? `${importable.length} işlemi içe aktar (${unknownCodes.join(', ')} hariç)`
+      : `${ready.length} işlemi içe aktar`));
 
   const body = h('div', { class: 'stack' },
     h('p', { class: 'dim' },

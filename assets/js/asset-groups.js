@@ -98,10 +98,40 @@ export function fundTypeLabel(code) {
   const meta = DB.byCode.get(String(code || '').toLocaleUpperCase('tr')) || {};
   const name = String(meta.name || '').toLocaleUpperCase('tr');
   const category = String(meta.cat || meta.category || '').toLocaleLowerCase('tr');
+  if (assetType(String(code || '').toLocaleUpperCase('tr')) !== 'Fon') return '';
   if (category === 'para piyasası' || name.includes('PARA PİYASASI')) return 'PPF';
   if (name.includes('EUROBOND') || name.includes('DIŞ BORÇLANMA')) return 'Eurobond Fonu';
   if (name.includes('YABANCI') && name.includes('TEKNOLOJ')) return 'Yabancı Teknoloji Fonu';
-  return '';
+  if (name.includes('TEKNOLOJ')) return 'Teknoloji Fonu';
+  if (name.includes('HİSSE SENEDİ YOĞUN')) return 'Hisse Senedi Yoğun Fon';
+  if (name.includes('YABANCI') && name.includes('HİSSE')) return 'Yabancı Hisse Fonu';
+  if (category === 'hisse senedi') return 'Hisse Senedi Fonu';
+  if (name.includes('ALTIN')) return 'Altın Fonu';
+  if (name.includes('GÜMÜŞ') || category === 'kıymetli madenler') return 'Kıymetli Maden Fonu';
+  if (name.includes('KİRA SERTİFİKA')) return 'Kira Sertifikası Fonu';
+  const byCategory = {
+    'borçlanma araçları': 'Borçlanma Araçları Fonu', 'katılım': 'Katılım Fonu',
+    'değişken': 'Değişken Fon', 'karma': 'Karma Fon', 'fon sepeti': 'Fon Sepeti Fonu',
+    'serbest': 'Serbest Fon', 'endeks': 'Endeks Fonu',
+  };
+  if (byCategory[category]) return byCategory[category];
+  if (meta.kind === 'EMK') return 'Emeklilik Fonu';
+  return 'Diğer Fon';
+}
+
+/** Fon satırlarını türüne göre gruplar; en büyük toplam değerli tür önce gelir. */
+export function groupFundsByType(rows) {
+  const groups = new Map();
+  for (const row of rows || []) {
+    const type = fundTypeLabel(row.code) || 'Diğer Fon';
+    if (!groups.has(type)) groups.set(type, []);
+    groups.get(type).push(row);
+  }
+  return [...groups.entries()].map(([type, items]) => ({
+    type,
+    rows: items.sort((a, b) => (b.marketValueTRY || 0) - (a.marketValueTRY || 0)),
+    value: items.reduce((sum, row) => sum + (Number.isFinite(row.marketValueTRY) ? row.marketValueTRY : 0), 0),
+  })).sort((a, b) => b.value - a.value);
 }
 
 export function groupAssetRows(rows) {

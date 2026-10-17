@@ -12,7 +12,7 @@ import {
 } from '../store.js';
 import {
   currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics,
-  applyDailyMarketTransactions, groupAssetRows, assetType, midasStockAccountValue, fundTypeLabel,
+  applyDailyMarketTransactions, groupAssetRows, assetType, midasStockAccountValue, fundTypeLabel, groupFundsByType,
 } from '../asset-groups.js';
 import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
@@ -410,6 +410,15 @@ export function renderPanel(ctx) {
       groupValue: group.rows.reduce((sum, row) => sum + (row.marketValueTRY || 0), 0),
     })).sort((a, b) => b.groupValue - a.groupValue);
     for (const group of positionGroups) {
+      if (group.label === 'Fon') {
+        // Aynı türdeki fonlar (ör. iki PPF) alt alta, tür toplamıyla birlikte.
+        const typeBlocks = groupFundsByType(group.rows).map((fundGroup) => h('div', { class: 'stack', style: 'gap:6px' },
+          h('h3', { style: 'margin:8px 0 0;font-size:.95rem' },
+            `${fundGroup.type} · ${tl(fundGroup.value)}${midasPortfolioTotal > 0 ? ` · ${pct(fundGroup.value / midasPortfolioTotal * 100, 1)}` : ''}`),
+          positionsTable(fundGroup.rows).element));
+        root.append(sectionCard(groupTitles.Fon, 'Türe göre gruplanmıştır · portföy değeri = Midas adedi × güncel fiyat', ...typeBlocks));
+        continue;
+      }
       root.append(sectionCard(groupTitles[group.label] || group.label,
         'Portföy değeri = Midas adedi × güncel fiyat × güncel kur', positionsTable(group.rows).element));
     }

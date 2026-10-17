@@ -5,7 +5,7 @@ import { DB } from '../data.js';
 import { donutWithLegend, barChart, stackedAreaChart } from '../charts.js';
 import { weightHistory, attribution } from '../insights.js';
 import { transactions, getMidasAccountSnapshot } from '../store.js';
-import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType, fundTypeLabel, midasStockAccountValue } from '../asset-groups.js';
+import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType, fundTypeLabel, midasStockAccountValue, groupFundsByType } from '../asset-groups.js';
 import { sectionCard, emptyState } from './common.js';
 
 const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
@@ -73,7 +73,8 @@ export function renderDagilim(ctx) {
     for (const row of priced) {
       if (!(row.pieValue > 0)) continue;
       const baseType = assetType(row.code, row.kind, row.category);
-      const type = baseType === 'Hisse' && row.currency !== 'USD' ? 'BIST Hisse' : baseType;
+      const type = baseType === 'Hisse' && row.currency !== 'USD' ? 'BIST Hisse'
+        : baseType === 'Fon' ? `Fon · ${fundTypeLabel(row.code) || 'Diğer Fon'}` : baseType;
       byTypeMap.set(type, (byTypeMap.get(type) || 0) + row.pieValue);
     }
     const securitiesValue = priced.reduce((sum, row) => sum + row.pieValue, 0);
@@ -93,7 +94,7 @@ export function renderDagilim(ctx) {
       .sort((a, b) => b.pieValue - a.pieValue)
       .map((row, index) => ({ label: row.code, value: row.pieValue, color: colorAt(index) }));
     if (valuesReconcile) root.append(h('div', { class: 'grid grid-2' },
-      sectionCard('Portföy Dağılımı', 'ETF · Fon · BIST hissesi · yabancı hisse · Nakit', donutWithLegend(byType, {
+      sectionCard('Portföy Dağılımı', 'ETF · Fon türleri · BIST hissesi · yabancı hisse · Kripto · Nakit', donutWithLegend(byType, {
         centerTop: tl(Number.isFinite(midasTotal)
           ? midasTotal
           : priced.reduce((sum, row) => sum + (row.pieValue || 0), 0), { compact: true }),
@@ -116,13 +117,19 @@ export function renderDagilim(ctx) {
     })).sort((a, b) => b.groupValue - a.groupValue);
     for (const group of sortedGroups) {
       const localOnly = group.label === 'Kripto';
-      const rows = [...group.rows].sort((a, b) => (b.allocationPct ?? -1) - (a.allocationPct ?? -1));
+      const isFundGroup = group.label === 'Fon';
+      const rows = isFundGroup
+        ? groupFundsByType(group.rows).flatMap((fundGroup) => [{ typeHeader: fundGroup }, ...fundGroup.rows])
+        : [...group.rows].sort((a, b) => (b.allocationPct ?? -1) - (a.allocationPct ?? -1));
+      const typeHeaderRow = (fundGroup) => h('tr', {},
+        h('td', { colspan: 7, style: 'text-align:left;font-weight:600;background:var(--surface-2, transparent)' },
+          `${fundGroup.type} · ${tl(fundGroup.value)}${midasTotal > 0 ? ` · ${pct(fundGroup.value / midasTotal * 100, 1)}` : ''}`));
       const table = h('div', { class: 'table-wrap' }, h('table', {},
         h('thead', {}, h('tr', {},
           h('th', { style: 'text-align:left' }, 'Varlık'),
           h('th', {}, 'Adet'), h('th', {}, 'Portföy Değeri'), h('th', {}, 'Ort. Maliyet'), h('th', {}, 'Dağılım'),
           h('th', {}, 'Toplam K/Z'), h('th', {}, 'Günlük'))),
-        h('tbody', {}, rows.map((row) => h('tr', {},
+        h('tbody', {}, rows.map((row) => row.typeHeader ? typeHeaderRow(row.typeHeader) : h('tr', {},
           h('td', {}, h('span', { class: 'code-chip' }, row.code),
             fundTypeLabel(row.code) ? h('span', { class: 'pill', style: 'margin-left:6px' }, fundTypeLabel(row.code)) : null),
           h('td', {}, fmtUnits(row.units)),
@@ -165,7 +172,7 @@ export function renderDagilim(ctx) {
           h('thead', {}, h('tr', {},
             h('th', { style: 'text-align:left' }, 'Varlık'),
             h('th', {}, `Toplam K/Z (${currency})`), h('th', {}, 'Getiri'))),
-          h('tbody', {}, rows.map((row) => h('tr', {},
+          h('tbody', {}, rows.map((row) => row.typeHeader ? typeHeaderRow(row.typeHeader) : h('tr', {},
             h('td', {}, h('span', { class: 'code-chip' }, row.code)),
             h('td', { class: cls2(row.totalPLNative) }, signedCurrency(row.totalPLNative, currency)),
             h('td', { class: cls2(row.totalPct) }, isNum(row.totalPct) ? pctSigned(row.totalPct, 2) : '—'))))));
