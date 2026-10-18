@@ -573,7 +573,12 @@ export function addSiteMarketMetrics(positions) {
     const marketTimezone = liveQuote?.exchangeTimezoneName || defaultTimezone;
     const marketToday = exchangeTraded
       ? marketDateInTimezone(marketTimezone) : marketDateInTimezone('Europe/Istanbul');
-    const snapshotPriceIsToday = position.midasStockSnapshot
+    // Hafta sonu piyasa kapalı: o gün yapılan Midas taramasındaki fiyat ile
+    // son kapanış arasındaki küçük farklar "bugünkü hareket" sayılmaz. Bu fark
+    // yalnızca taramayı yapan cihazda oluştuğu için PC ve telefon farklı
+    // günlük kazanç gösteriyordu; hafta sonu her cihaz son işlem gününü gösterir.
+    const weekendToday = [0, 6].includes(new Date(`${marketToday}T12:00:00Z`).getUTCDay());
+    const snapshotPriceIsToday = position.midasStockSnapshot && !weekendToday
       && dateInTimezone(position.midasSnapshotCapturedAt, marketTimezone) === marketToday;
     const historyPriceIsToday = quoteIndex >= 0 && quoteDate === marketToday;
     // TEFAS bir fonun fiyatını yayımlamayı bıraktıysa (ör. THF 24.09'dan beri
