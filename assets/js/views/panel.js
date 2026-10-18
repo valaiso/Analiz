@@ -535,7 +535,7 @@ export function renderPanel(ctx) {
   };
 
   if (chartDates.length || hasMidasTotal) {
-    root.append(h('section', { class: 'card' }, head, chartBox, hasMidasTotal ? historyEditor() : null));
+    root.append(h('section', { class: 'card sec-lite sec-blue' }, head, chartBox, hasMidasTotal ? historyEditor() : null));
     drawChart();
   }
 
@@ -552,7 +552,7 @@ export function renderPanel(ctx) {
     // başlıklar ve değerler aynı hizada kalır.
     const positionsTable = (rows) => {
       const table = basePositionsTable(rows);
-      table.element.classList.add('aligned-cols');
+      table.element.classList.add('aligned-cols', 'pos-table');
       return table;
     };
     const basePositionsTable = (rows) => sortableTable({
@@ -561,12 +561,12 @@ export function renderPanel(ctx) {
         { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', {}, h('span', { class: 'code-chip' }, r.code),
           assetLabel(r.code) ? h('span', { class: 'pill', style: 'margin-left:6px' }, assetLabel(r.code)) : null) },
         { key: 'units', label: 'Adet', render: (r) => fmtUnits(r.units) },
-        { key: 'price', label: 'Güncel Fiyat', render: (r) => moneyByCurrency(r.price, r.currency) },
-        { key: 'marketValueTRY', label: 'Portföy Değeri', render: (r) => positionSnapshotConsistent && isNum(r.marketValueTRY) ? tl(r.marketValueTRY) : '—' },
-        { key: 'avgCost', label: 'Ort. Maliyet', render: (r) => moneyByCurrency(r.avgCost, r.currency) },
-        { key: 'dailyPLTRY', label: 'Günlük', render: (r) => r.frozen ? '—' : h('span', { class: cls(r.dailyPLTRY) }, `${r.noDailyChange || isNum(r.dailyPLNative) ? signedCurrency(r.dailyPLNative, r.currency) : '—'}${(r.noDailyChange || isNum(r.dailyPct)) && isNum(r.dailyPct) ? ` · ${pctSigned(r.dailyPct)}` : ''}`) },
-        { key: 'totalPLTRY', label: 'Toplam K/Z', render: (r) => r.frozen ? '—' : h('span', { class: cls(r.totalPLTRY) }, `${r.noDailyChange || positionSnapshotConsistent ? signedCurrency(r.totalPLNative, r.currency) : '—'}${(r.noDailyChange || positionSnapshotConsistent) && isNum(r.totalPct) ? ` · ${pctSigned(r.totalPct)}` : ''}`) },
-        { key: 'allocationPct', label: 'Dağılım', render: (r) => isNum(r.allocationPct) ? pct(r.allocationPct, 2) : '—' },
+        { key: 'price', label: 'Güncel Fiyat', className: 'col-m-hide', render: (r) => moneyByCurrency(r.price, r.currency) },
+        { key: 'marketValueTRY', label: 'Portföy Değeri', className: 'col-m-hide', render: (r) => positionSnapshotConsistent && isNum(r.marketValueTRY) ? tl(r.marketValueTRY) : '—' },
+        { key: 'avgCost', label: 'Ort. Maliyet', className: 'col-m-hide', render: (r) => moneyByCurrency(r.avgCost, r.currency) },
+        { key: 'dailyPLTRY', label: 'Günlük', className: 'col-daily', render: (r) => r.frozen ? '—' : h('span', { class: cls(r.dailyPLTRY) }, `${r.noDailyChange || isNum(r.dailyPLNative) ? signedCurrency(r.dailyPLNative, r.currency) : '—'}${(r.noDailyChange || isNum(r.dailyPct)) && isNum(r.dailyPct) ? ` · ${pctSigned(r.dailyPct)}` : ''}`) },
+        { key: 'totalPLTRY', label: 'Toplam K/Z', className: 'col-total', render: (r) => r.frozen ? '—' : h('span', { class: cls(r.totalPLTRY) }, `${r.noDailyChange || positionSnapshotConsistent ? signedCurrency(r.totalPLNative, r.currency) : '—'}${(r.noDailyChange || positionSnapshotConsistent) && isNum(r.totalPct) ? ` · ${pctSigned(r.totalPct)}` : ''}`) },
+        { key: 'allocationPct', label: 'Dağılım', className: 'col-m-hide', render: (r) => isNum(r.allocationPct) ? pct(r.allocationPct, 2) : '—' },
       ],
       rows,
     });

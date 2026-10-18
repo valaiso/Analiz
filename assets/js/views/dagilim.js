@@ -124,20 +124,20 @@ export function renderDagilim(ctx) {
       const typeHeaderRow = (fundGroup) => h('tr', {},
         h('td', { colspan: 7, class: 'sec-row-head' },
           `${fundGroup.type} · ${tl(fundGroup.value)}${midasTotal > 0 ? ` · ${pct(fundGroup.value / midasTotal * 100, 1)}` : ''}`));
-      const table = h('div', { class: 'table-wrap' }, h('table', {},
+      const table = h('div', { class: 'table-wrap pos-table' }, h('table', {},
         h('thead', {}, h('tr', {},
           h('th', { style: 'text-align:left' }, 'Varlık'),
-          h('th', {}, 'Adet'), h('th', {}, 'Portföy Değeri'), h('th', {}, 'Ort. Maliyet'), h('th', {}, 'Dağılım'),
-          h('th', {}, 'Toplam K/Z'), h('th', {}, 'Günlük'))),
+          h('th', {}, 'Adet'), h('th', { class: 'col-m-hide' }, 'Portföy Değeri'), h('th', { class: 'col-m-hide' }, 'Ort. Maliyet'),
+          h('th', { class: 'col-m-hide' }, 'Dağılım'), h('th', { class: 'col-total' }, 'Toplam K/Z'), h('th', { class: 'col-daily' }, 'Günlük'))),
         h('tbody', {}, rows.map((row) => row.typeHeader ? typeHeaderRow(row.typeHeader) : h('tr', {},
           h('td', {}, h('span', { class: 'code-chip' }, row.code),
             assetLabel(row.code) ? h('span', { class: 'pill', style: 'margin-left:6px' }, assetLabel(row.code)) : null),
           h('td', {}, fmtUnits(row.units)),
-          h('td', {}, liveValuesReconcile && isNum(row.marketValueTRY) ? tl(row.marketValueTRY) : '—'),
-          h('td', {}, `${row.avgCost == null ? '—' : new Intl.NumberFormat('tr-TR', { style: 'currency', currency: row.currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2 }).format(row.avgCost)}`),
-          h('td', {}, row.localRecord || !isNum(row.allocationPct) ? '—' : pct(row.allocationPct, 2)),
-          h('td', { class: cls2(row.totalPLTRY) }, liveValuesReconcile && isNum(row.totalPLNative) ? `${signedCurrency(row.totalPLNative, row.currency)}${isNum(row.totalPct) ? ` · ${pctSigned(row.totalPct)}` : ''}` : '—'),
-          h('td', { class: cls2(row.dailyPLNative) }, !row.frozen && liveValuesReconcile && isNum(row.dailyPLNative) ? `${signedCurrency(row.dailyPLNative, row.currency)}${isNum(row.dailyPct) ? ` · ${pctSigned(row.dailyPct)}` : ''}` : '—'))))));
+          h('td', { class: 'col-m-hide' }, liveValuesReconcile && isNum(row.marketValueTRY) ? tl(row.marketValueTRY) : '—'),
+          h('td', { class: 'col-m-hide' }, `${row.avgCost == null ? '—' : new Intl.NumberFormat('tr-TR', { style: 'currency', currency: row.currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2 }).format(row.avgCost)}`),
+          h('td', { class: 'col-m-hide' }, row.localRecord || !isNum(row.allocationPct) ? '—' : pct(row.allocationPct, 2)),
+          h('td', { class: `col-total ${cls2(row.totalPLTRY)}` }, liveValuesReconcile && isNum(row.totalPLNative) ? `${signedCurrency(row.totalPLNative, row.currency)}${isNum(row.totalPct) ? ` · ${pctSigned(row.totalPct)}` : ''}` : '—'),
+          h('td', { class: `col-daily ${cls2(row.dailyPLNative)}` }, !row.frozen && liveValuesReconcile && isNum(row.dailyPLNative) ? `${signedCurrency(row.dailyPLNative, row.currency)}${isNum(row.dailyPct) ? ` · ${pctSigned(row.dailyPct)}` : ''}` : '—'))))));
       root.append(toneCard({
         ...(SECTION_TONES[group.label] || SECTION_TONES.Diğer),
         title: localOnly ? 'Kripto' : group.label,

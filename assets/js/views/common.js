@@ -3,6 +3,21 @@
 import { h, cls, isNum } from '../util.js';
 import { searchFunds } from '../data.js';
 
+/* Telefonda pozisyon tablolarında yalnızca Varlık, Adet ve Günlük görünür.
+   Günlük sütununa dokunmak tüm tablolarda Toplam K/Z'ye geçirir (tekrar dokununca geri).
+   Seçim sayfa yeniden çizilse de korunur; sıralama tıklamasından önce yakalanır. */
+const phoneQuery = typeof matchMedia === 'function' ? matchMedia('(max-width: 640px)') : null;
+if (typeof document !== 'undefined') {
+  document.addEventListener('click', (event) => {
+    if (!phoneQuery?.matches) return;
+    const cell = event.target.closest?.('.pos-table .col-daily, .pos-table .col-total');
+    if (!cell) return;
+    event.preventDefault();
+    event.stopPropagation();
+    document.body.classList.toggle('pos-show-total');
+  }, true);
+}
+
 /** Üstteki büyük sayı kartı. */
 export function kpiCard({ label, value, sub, subClass, valueClass, hint, tone }) {
   return h('div', { class: `card kpi${tone ? ` kpi-${tone}` : ''}` },
@@ -58,6 +73,9 @@ export function toneCard({ tone = 'blue', icon = '•', title, sub, figure, figu
         h('strong', {}, figure), figureSub ? h('span', {}, figureSub) : null) : null),
     h('div', { class: 'sec-body' }, ...children));
 }
+
+/** sectionCard ile aynı imza, renkli başlık bandıyla. */
+export const tonedSection = (tone, icon, title, sub, ...children) => toneCard({ tone, icon, title, sub }, ...children);
 
 /** Alt grup şeridi: renkli işaret, ad, tutar ve portföy payı çubuğu. */
 export function groupStrip({ label, value, share }) {
@@ -175,7 +193,7 @@ export function sortableTable({ columns, rows, initialSort, rowKey, onRowClick }
 
   const renderHead = () => {
     thead.replaceChildren(h('tr', {}, columns.map((c) => h('th', {
-      class: c.sortable === false ? '' : 'sortable',
+      class: [c.sortable === false ? '' : 'sortable', c.className || ''].join(' ').trim() || null,
       style: c.align ? `text-align:${c.align}` : null,
       title: c.title || null,
       onclick: c.sortable === false ? null : () => {
@@ -208,7 +226,7 @@ export function sortableTable({ columns, rows, initialSort, rowKey, onRowClick }
       }, columns.map((c) => {
         const cell = c.render ? c.render(row) : row[c.key];
         return h('td', {
-          class: c.cellClass ? c.cellClass(row) : null,
+          class: [c.cellClass ? c.cellClass(row) : '', c.className || ''].join(' ').trim() || null,
           style: c.align ? `text-align:${c.align}` : null,
         }, cell instanceof Node ? cell : String(cell ?? '—'));
       }));

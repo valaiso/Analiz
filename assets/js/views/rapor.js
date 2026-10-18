@@ -5,7 +5,7 @@ import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, cls, isNum, fmtDate
 import { lineChart } from '../charts.js';
 import { valueHistory, cashflows, dividends, monthlySnapshots, transactions } from '../store.js';
 import { buildMonthlyReport, reportMonths, monthLabel, FIRST_REPORT_MONTH } from '../report.js';
-import { sectionCard } from './common.js';
+import { sectionCard, tonedSection } from './common.js';
 
 const LINE_COLORS = {
   PORTFOY: '#1f5fbf', BIST100: 'var(--c2)', SP500TL: 'var(--c3)', GRAMALTIN: 'var(--c7)',
@@ -239,7 +239,7 @@ export function renderRapor() {
     show(months[0]);
   } else {
     const now = currentMonth();
-    const intro = sectionCard('Aylık Rapor',
+    const intro = tonedSection('blue', '▤', 'Aylık Rapor',
       `İlk rapor ${monthLabel(FIRST_REPORT_MONTH)} ayıyla başlar`,
       h('p', { style: 'margin:0' },
         `${monthLabel(FIRST_REPORT_MONTH)} raporu ay boyunca ara rapor olarak, ay bitince tam rapor olarak burada görünür. `

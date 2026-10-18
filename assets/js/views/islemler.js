@@ -12,7 +12,7 @@ import {
   pruneMidasHistory, dividends, addDividend, removeDividend,
 } from '../store.js';
 import { currentMidasPositions } from '../asset-groups.js';
-import { sectionCard, fundPicker } from './common.js';
+import { sectionCard, fundPicker, tonedSection } from './common.js';
 import { requestMidasHistory } from '../midas-import.js';
 
 function transactionCycles(rows) {
@@ -673,7 +673,7 @@ function dividendSection(ctx) {
           }
         },
       }, 'Sil'))))))) : null;
-  return sectionCard('Temettü Geliri',
+  return tonedSection('teal', '₺', 'Temettü Geliri',
     'Hesabına geçen net tutarı gir. Temettü getiri sayılır, ana paraya eklenmez; Midas taramasının “para eklendi” tespitinden otomatik düşülür.',
     h('div', { class: 'form-grid' },
       field('Tarih', dateInput),
@@ -708,7 +708,7 @@ export function renderIslemler(ctx) {
     readonly: true, rows: 5, 'aria-label': 'Midas aktarım yanıt geçmişi',
     style: 'width:100%;resize:vertical;font: .85rem var(--mono);margin-top:10px',
   }, midasActivity.length ? midasActivity.join('\n') : 'Henüz aktarım yapılmadı. Sonuçlar ve hatalar burada görünür.');
-  root.append(sectionCard('Midas Aktarımı',
+  root.append(tonedSection('blue', '⇣', 'Midas Aktarımı',
     'Yatırım veya Kripto ekranında Emir geçmişini açıp ilgili aktarım düğmesine bas. Bekleyen/iptal emirleri atlanır. Emir gönderilmez; işlem kayıtları bu tarayıcıda tutulur.',
     h('div', { class: 'btn-row' }, midasButton, cryptoMidasButton, copyLogButton),
     h('label', { style: 'display:block;margin-top:12px;font-weight:600' }, 'Aktarım yanıt geçmişi'),
@@ -723,7 +723,7 @@ export function renderIslemler(ctx) {
       'Şu an tüm profiller birlikte görüntüleniyor. Yeni işlem eklemek için üstten '
       + 'tek bir profil seç.'));
   } else {
-    root.append(sectionCard('Yeni İşlem', 'Varlık kodu ve tarihi seçince fiyat otomatik gelir',
+    root.append(tonedSection('indigo', '+', 'Yeni İşlem', 'Varlık kodu ve tarihi seçince fiyat otomatik gelir',
       transactionForm({ prefillCode: ctx.prefill, onDone: () => ctx.refresh() })));
   }
 
@@ -795,7 +795,7 @@ export function renderIslemler(ctx) {
       h('tbody', {}, rows)));
   });
 
-  root.append(sectionCard('İşlem Geçmişi',
+  root.append(tonedSection('slate', '≡', 'İşlem Geçmişi',
     `${list.length} kayıt · sayfa başına 10 · en yeniden eskiye`, historyTable));
 
   return root;

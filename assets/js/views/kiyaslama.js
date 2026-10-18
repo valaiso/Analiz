@@ -6,7 +6,7 @@ import { transactions } from '../store.js';
 import { DB } from '../data.js';
 import { lineChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
-import { sectionCard, emptyState, rangeSelector, RANGES } from './common.js';
+import { sectionCard, emptyState, rangeSelector, RANGES, tonedSection } from './common.js';
 
 const BENCH_STYLES = {
   BIST100: { color: 'var(--c2)' },
@@ -118,7 +118,7 @@ export function renderKiyaslama(ctx) {
       draw();
     }));
 
-  root.append(h('section', { class: 'card' }, head, toggles, chartBox));
+  root.append(h('section', { class: 'card sec-lite sec-blue' }, head, toggles, chartBox));
   draw();
 
   /* ------------------------------------------------------------------- tablo */
@@ -144,7 +144,7 @@ export function renderKiyaslama(ctx) {
         row.label),
       row.cells.map((v) => h('td', { class: cls(v) }, pctSigned(v, 1))))))));
 
-  root.append(sectionCard('Dönemsel Getiriler',
+  root.append(tonedSection('blue', '⇄', 'Dönemsel Getiriler',
     'Portföy satırı zaman ağırlıklıdır (para giriş/çıkışından arındırılmış)', table));
 
   /* --------------------------------------------------- karşı-olgusal senaryo */
@@ -171,7 +171,7 @@ export function renderKiyaslama(ctx) {
     const satirlar = [gercek, ...senaryolar.sort((a, b) => b.value - a.value)];
     const enIyi = Math.max(...satirlar.map((x) => x.value));
 
-    root.append(sectionCard('Aynı Parayı Başka Yere Koysaydım',
+    root.append(tonedSection('teal', '↗', 'Aynı Parayı Başka Yere Koysaydım',
       'Senin gerçek yatırım tarihlerin ve tutarlarınla',
       h('p', { class: 'dim', style: 'margin:0 0 12px;font-size:.85rem' },
         'Her satır, tam olarak senin yaptığın tarihlerde ve tutarlarda o varlığı '

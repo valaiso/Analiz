@@ -671,6 +671,29 @@ html[data-theme="dark"] .sec-slate { --sec: #94a3b8; }
   .sec-strip-bar { grid-column: 1 / -1; grid-row: 2; }
 }
 
+/* Telefonda pozisyon tabloları ekrana sığar: Varlık · Adet · Günlük (dokununca Toplam K/Z).
+   Yatay kaydırma olmaz; uzun açıklamalar alt satıra iner. */
+@media (max-width: 640px) {
+  .pos-table { overflow-x: visible; }
+  .pos-table table, .aligned-cols.pos-table table { min-width: 0 !important; width: 100%; table-layout: fixed; }
+  .pos-table th, .pos-table td { width: auto !important; padding: 8px 5px; white-space: normal; overflow-wrap: anywhere; }
+  .pos-table .col-m-hide, .pos-table .col-total { display: none; }
+  body.pos-show-total .pos-table .col-total { display: table-cell; }
+  body.pos-show-total .pos-table .col-daily { display: none; }
+  .pos-table th:first-child, .pos-table td:first-child { width: 46% !important; }
+  .pos-table th:nth-child(2), .pos-table td:nth-child(2) { width: 20% !important; }
+  .pos-table td:first-child .pill { display: block; width: fit-content; max-width: 100%; margin: 4px 0 0 !important;
+    font-size: .68rem; white-space: normal; line-height: 1.25; }
+  .pos-table .col-daily, .pos-table .col-total { cursor: pointer; font-size: .8rem; }
+  .pos-table th.col-daily::after, .pos-table th.col-total::after { content: " ⇄"; color: var(--sec, var(--accent)); }
+  .pos-table td[colspan] { white-space: normal; }
+}
+
+/* Grafik kartları (kendi başlık satırı olan): üst renk çizgisi + başlık işareti */
+.sec-lite { border-top: 3px solid var(--sec); }
+.sec-lite > .card-head h2 { display: flex; align-items: center; gap: 8px; }
+.sec-lite > .card-head h2::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--sec); flex: none; }
+
 /* Yazdırma / PDF: yalnızca rapor sayfaları, her biri bir A4 */
 @media print {
   @page { size: A4; margin: 0; }

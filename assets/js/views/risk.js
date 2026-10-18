@@ -8,7 +8,7 @@ import {
   monthlyReturns, yearlyFromMonthly, drawdownEpisodes, rollingReturns, diversification,
 } from '../insights.js';
 import { settings, setSetting } from '../store.js';
-import { kpiCard, sectionCard, emptyState } from './common.js';
+import { kpiCard, sectionCard, emptyState, tonedSection } from './common.js';
 
 /** Seriden düşüş (drawdown) yüzdeleri üretir. */
 function drawdownSeries(values) {
@@ -121,7 +121,7 @@ export function renderRisk(ctx) {
   /* ----------------------------------------------------------------- düşüş grafiği */
 
   const ddBox = h('div', { class: 'chart' });
-  root.append(sectionCard('Zirveden Düşüş (Drawdown)',
+  root.append(tonedSection('orange', '↘', 'Zirveden Düşüş (Drawdown)',
     'Portföyün en yüksek değerine göre ne kadar geride olduğu', ddBox));
   lineChart(ddBox, {
     dates: series.dates,
@@ -137,7 +137,7 @@ export function renderRisk(ctx) {
 
   const donemler = drawdownEpisodes(series.dates, series.twr, 5);
   if (donemler.length) {
-    root.append(sectionCard('Düşüş Dökümü',
+    root.append(tonedSection('orange', '≡', 'Düşüş Dökümü',
       'En derin geri çekilmeler ve toparlanma süreleri',
       h('p', { class: 'dim', style: 'margin:0 0 12px;font-size:.85rem' },
         'Bir düşüşün ne kadar derin olduğu kadar, kaç ay boyunca zararda '
@@ -164,7 +164,7 @@ export function renderRisk(ctx) {
 
   const aylik = monthlyReturns(series.dates, series.twr);
   if (aylik.length >= 2) {
-    root.append(sectionCard('Aylık Getiriler',
+    root.append(tonedSection('indigo', '▦', 'Aylık Getiriler',
       'Zaman ağırlıklı (TWR) · yeşil kazanç, kırmızı kayıp',
       monthlyReturnTable(aylik, yearlyFromMonthly(aylik))));
   }
@@ -178,7 +178,7 @@ export function renderRisk(ctx) {
     .filter((p) => p.sonuc);
 
   if (pencereler.length) {
-    root.append(sectionCard('Yuvarlanan Getiriler',
+    root.append(tonedSection('teal', '↻', 'Yuvarlanan Getiriler',
       'Geçmişteki tüm dönemler üzerinden - tek bir şanslı dönemi tutarlılıktan ayırır',
       h('div', { class: 'table-wrap' }, h('table', {},
         h('thead', {}, h('tr', {},
@@ -198,7 +198,7 @@ export function renderRisk(ctx) {
 
   const cesit = diversification(open);
   if (cesit && open.length > 1) {
-    root.append(sectionCard('Çeşitlendirme',
+    root.append(tonedSection('violet', '◔', 'Çeşitlendirme',
       'Kaç bağımsız bahis tuttuğun',
       h('div', { class: 'grid grid-3' },
         kpiCard({

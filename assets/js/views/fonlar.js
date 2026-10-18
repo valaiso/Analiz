@@ -10,7 +10,7 @@ import {
 import { lineChart, donutWithLegend, scatterChart, correlationTable } from '../charts.js';
 import { dailyReturns, correlation } from '../portfolio.js';
 import { rollingReturns } from '../insights.js';
-import { sectionCard, sortableTable, RANGES, rangeSelector } from './common.js';
+import { sectionCard, sortableTable, RANGES, rangeSelector, tonedSection } from './common.js';
 
 const PAGE_SIZE = 60;
 const MAX_KARSILASTIRMA = 5;
@@ -77,7 +77,7 @@ export async function showFundDetail(code, ctx) {
       },
     }, r.label))));
 
-  body.append(h('section', { class: 'card' }, head, chartBox));
+  body.append(h('section', { class: 'card sec-lite sec-blue' }, head, chartBox));
 
   const hist = await loadHistory(code);
   const end = lastIndex();
@@ -108,7 +108,7 @@ export async function showFundDetail(code, ctx) {
     h('tbody', {}, h('tr', {}, ['1h', '1a', '3a', '6a', '1y', '3y'].map((k) => h('td', {
       class: cls(fund.ret?.[k]), style: 'text-align:center',
     }, pctSigned(fund.ret?.[k], 1)))))));
-  body.append(sectionCard('Dönemsel Getiriler', null, returnsRow));
+  body.append(tonedSection('blue', '⇄', 'Dönemsel Getiriler', null, returnsRow));
 
   /* Yuvarlanan getiri: tek bir dönemin şansını tutarlılıktan ayırır. */
   const tarihler = [], fiyatlar = [];
@@ -118,7 +118,7 @@ export async function showFundDetail(code, ctx) {
   }
   const yuvarlanan = rollingReturns(tarihler, fiyatlar, 365);
   if (yuvarlanan) {
-    body.append(sectionCard('Yuvarlanan 1 Yıllık Getiri',
+    body.append(tonedSection('teal', '↻', 'Yuvarlanan 1 Yıllık Getiri',
       `${yuvarlanan.count} farklı 1 yıllık dönem üzerinden`,
       h('p', { class: 'dim', style: 'margin:0 0 12px;font-size:.85rem' },
         'Tek bir "1 yıllık getiri" rakamı, hangi güne baktığına göre çok değişir. '
@@ -146,12 +146,12 @@ export async function showFundDetail(code, ctx) {
 
   body.append(h('div', { class: 'grid grid-2' },
     allocItems.length
-      ? sectionCard('Varlık Dağılımı', 'Fonun portföyü', donutWithLegend(allocItems, {
+      ? tonedSection('violet', '◔', 'Varlık Dağılımı', 'Fonun portföyü', donutWithLegend(allocItems, {
         centerTop: `${allocItems.length}`, centerBottom: 'varlık sınıfı',
         format: (v) => `%${v.toFixed(1)}`,
       }))
       : null,
-    sectionCard('Fon Bilgileri', null,
+    tonedSection('slate', 'i', 'Fon Bilgileri', null,
       h('div', { class: 'table-wrap' }, h('table', {}, h('tbody', {},
         h('tr', {}, h('td', {}, 'Kategori'), h('td', {},
           fund.cat,
@@ -201,7 +201,7 @@ async function showComparison(codes, ctx) {
         draw();
       },
     }, r.label))));
-  body.append(h('section', { class: 'card' }, head, chartBox));
+  body.append(h('section', { class: 'card sec-lite sec-blue' }, head, chartBox));
 
   await loadHistories(codes);
   const end = lastIndex();
@@ -245,7 +245,7 @@ async function showComparison(codes, ctx) {
   }
   draw();
 
-  body.append(sectionCard('Metrikler', null,
+  body.append(tonedSection('indigo', '▦', 'Metrikler', null,
     h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {},
         h('th', { style: 'text-align:left' }, 'Fon'),
@@ -279,7 +279,7 @@ async function showComparison(codes, ctx) {
   const matris = fonlar.map((_, i) => fonlar.map((__, j) => (
     i === j ? 1 : correlation(getiriler[i], getiriler[j])
   )));
-  body.append(sectionCard('Aralarındaki Korelasyon',
+  body.append(tonedSection('orange', '⋈', 'Aralarındaki Korelasyon',
     "Son 1 yıl · 1'e yakın = aynı yöne hareket eder",
     correlationTable(fonlar.map((f) => f.code), matris)));
 }
@@ -347,7 +347,7 @@ export function renderFonlar(ctx) {
     });
   };
 
-  root.append(h('section', { class: 'card' },
+  root.append(h('section', { class: 'card sec-lite sec-blue' },
     h('div', { class: 'card-head' },
       h('div', {}, h('h2', {}, 'Risk-Getiri Haritası'), scatterBilgi)),
     h('p', { class: 'dim', style: 'margin:0 0 10px;font-size:.85rem' },
@@ -481,7 +481,7 @@ export function renderFonlar(ctx) {
       || fund.name.toLocaleUpperCase('tr').includes(query));
     if (first) addFundToCompare(first);
   });
-  root.append(h('section', { class: 'card' },
+  root.append(h('section', { class: 'card sec-lite sec-blue' },
     h('div', { class: 'card-head' }, h('div', {},
       h('h2', {}, 'Fon Getiri Karşılaştırması'),
       h('span', { class: 'sub' }, 'Yalnızca yatırım ve emeklilik fonları · aynı tarihte 100’den başlar')),
@@ -645,7 +645,7 @@ export function renderFonlar(ctx) {
     apply();
   });
 
-  root.append(h('section', { class: 'card' },
+  root.append(h('section', { class: 'card sec-lite sec-blue' },
     h('div', { class: 'card-head' },
       h('div', {}, h('h2', {}, 'Tüm Fonlar'), countLabel)),
     h('div', {
