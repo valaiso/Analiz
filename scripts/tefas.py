@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import gzip
+import http.client
 import json
 import time
 import urllib.error
@@ -130,7 +131,9 @@ class Tefas:
                     delay *= 2
                     continue
                 raise
-            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as exc:
+            # RemoteDisconnected / ConnectionResetError: TEFAS bağlantıyı yanıtsız kapatabiliyor.
+            except (urllib.error.URLError, TimeoutError, json.JSONDecodeError,
+                    http.client.HTTPException, ConnectionError) as exc:
                 if attempt < self.max_retry:
                     self._log(f"    Baglanti hatasi ({exc}), {delay:.0f}s sonra tekrar")
                     time.sleep(delay)
