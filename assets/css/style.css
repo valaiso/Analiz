@@ -772,6 +772,29 @@ html[data-theme="dark"] .sec-slate, html[data-theme="dark"] .sec-indigo, html[da
   .pos-tiles .col-daily span::after, .pos-tiles .col-total span::after { content: " ⇄"; color: var(--sec); }
 }
 
+/* Başlıktaki toplam K/Z rozeti */
+.pl-badge { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px; font-size: .74rem; font-weight: 700;
+  font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: 1px; }
+.pl-badge.up { color: var(--up); background: var(--up-soft); }
+.pl-badge.down { color: var(--down); background: var(--down-soft); }
+
+/* Fon türü dağılımı (TEFAS Quant "Not dağılımı" düzeni) */
+.type-dist { display: grid; gap: 12px; }
+.type-dist .dist-bar { display: flex; height: 14px; border-radius: 99px; overflow: hidden; gap: 2px; }
+.type-dist .dist-bar span { min-width: 3px; }
+.type-dist .dist-legend { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+.type-dist .dist-item { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: var(--radius-sm);
+  background: var(--surface-2); font-size: .86rem; min-width: 0; }
+.type-dist .dist-item i { width: 12px; height: 12px; border-radius: 4px; flex: none; }
+.type-dist .dist-item span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+.type-dist .dist-item b { font-variant-numeric: tabular-nums; }
+.type-dist .dist-item em { font-style: normal; color: var(--text-dim); font-size: .76rem; font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .pl-badge { display: table; margin: 4px 0 0; }
+  .type-dist .dist-legend { grid-template-columns: 1fr; gap: 6px; }
+  .type-dist .dist-item em { display: none; }
+}
+
 /* Yazdırma / PDF: yalnızca rapor sayfaları, her biri bir A4 */
 @media print {
   @page { size: A4; margin: 0; }

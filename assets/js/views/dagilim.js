@@ -7,7 +7,7 @@ import { weightHistory, attribution } from '../insights.js';
 import { transactions, getMidasAccountSnapshot } from '../store.js';
 import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType, fundTypeLabel, assetLabel, midasStockAccountValue, groupFundsByType } from '../asset-groups.js';
 import { assetLogo } from '../logos.js';
-import { groupTiles } from './tiles.js';
+import { groupTiles, plBadge } from './tiles.js';
 import { sectionCard, emptyState, toneCard, SECTION_TONES } from './common.js';
 
 const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
@@ -125,6 +125,7 @@ export function renderDagilim(ctx) {
         sub: localOnly ? 'Açık miktar Midas Kripto Pozisyonlar tablosundan alınır.'
           : group.label === 'Fon' ? 'Türe göre gruplanmıştır · değer = Midas adedi × güncel fiyat'
             : 'Değer = Midas adedi × güncel fiyat × güncel kur',
+        badge: liveValuesReconcile ? plBadge(group.rows) : null,
         figure: liveValuesReconcile ? tl(group.groupValue) : null,
         figureSub: liveValuesReconcile && midasTotal > 0 ? `portföyün ${pct(group.groupValue / midasTotal * 100, 1)}` : null,
       }, ...groupTiles({

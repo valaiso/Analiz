@@ -17,7 +17,7 @@ import {
   midasBaseline, unexplainedChange,
 } from '../asset-groups.js';
 import { assetLogo } from '../logos.js';
-import { tile, fundParts, groupTiles } from './tiles.js';
+import { tile, fundParts, groupTiles, plBadge } from './tiles.js';
 import { kpiCard, plCard, sectionCard, toneCard, groupStrip, SECTION_TONES, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
 /**
@@ -509,6 +509,7 @@ export function renderPanel(ctx) {
     const groupCard = (group, sub, ...children) => toneCard({
       ...(SECTION_TONES[group.label] || SECTION_TONES.Diğer),
       title: groupTitles[group.label] || group.label, sub,
+      badge: positionSnapshotConsistent ? plBadge(group.rows) : null,
       figure: tl(group.groupValue),
       figureSub: isNum(share(group.groupValue)) ? `portföyün ${pct(share(group.groupValue), 1)}` : `${group.rows.length} varlık`,
     }, ...children);

@@ -64,11 +64,12 @@ export const SECTION_TONES = {
  * Renkli başlık bantlı bölüm kartı: simge rozeti, başlık/açıklama ve sağda
  * isteğe bağlı özet rakam (ör. grup toplamı ve portföydeki payı).
  */
-export function toneCard({ tone = 'blue', icon = '•', title, sub, figure, figureSub }, ...children) {
+export function toneCard({ tone = 'blue', icon = '•', title, sub, badge, figure, figureSub }, ...children) {
   return h('section', { class: `card sec sec-${tone}` },
     h('div', { class: 'sec-head' },
       h('span', { class: 'sec-icon', 'aria-hidden': 'true' }, icon),
-      h('div', { class: 'sec-title' }, h('h2', { text: title }), sub ? h('span', { class: 'sub', text: sub }) : null),
+      h('div', { class: 'sec-title' }, h('h2', { text: title }),
+        sub || badge ? h('span', { class: 'sub' }, sub || '', badge || null) : null),
       figure != null ? h('div', { class: 'sec-figure' },
         h('strong', {}, figure), figureSub ? h('span', {}, figureSub) : null) : null),
     h('div', { class: 'sec-body' }, ...children));

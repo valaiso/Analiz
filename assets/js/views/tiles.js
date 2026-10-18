@@ -2,11 +2,10 @@
    Panel ve Dağılım aynı kutucukları kullanır: her varlık bir kutucuk,
    fonlar türlerine göre (PPF'ler yan yana) şeritlerle ayrılır. */
 
-import { h, tl, pct, pctSigned, units as fmtUnits, cls, isNum } from '../util.js';
+import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, cls, isNum } from '../util.js';
 import { DB } from '../data.js';
 import { assetLabel, groupFundsByType } from '../asset-groups.js';
 import { assetLogo } from '../logos.js';
-import { groupStrip } from './common.js';
 
 export function moneyByCurrency(value, currency) {
   if (!isNum(value)) return '—';
@@ -34,8 +33,8 @@ const TOP_LABELS = { ETF: 'ETF', Hisse: 'Hisse', Kripto: 'Kripto', Diğer: 'Varl
  * Tek kutucuk. Genel yapı: üstte logo + küçük başlık + pay rozeti, büyük kod,
  * kısa ad, üç rakam ve en altta ayrıntı satırı.
  */
-export function tile({ code, kind, currency, top, name, share, frozen, figs, foot }) {
-  return h('article', { class: `fund-tile${frozen ? ' is-frozen' : ''}` },
+export function tile({ code, kind, currency, top, name, share, frozen, figs, foot, accent }) {
+  return h('article', { class: `fund-tile${frozen ? ' is-frozen' : ''}`, style: accent ? `--sec:${accent}` : null },
     h('div', { class: 'fund-tile-top' },
       assetLogo(code, { kind, currency }),
       h('span', { class: 'fund-tile-type' }, top || ''),
@@ -48,14 +47,14 @@ export function tile({ code, kind, currency, top, name, share, frozen, figs, foo
 }
 
 /** Midas pozisyonu için kutucuk: Değer · Günlük · Toplam K/Z (telefonda Günlük ⇄ Toplam). */
-export function positionTile(r, { type, valuesOk = true } = {}) {
+export function positionTile(r, { type, valuesOk = true, accent } = {}) {
   const fund = type === 'Fon';
   const parts = fund ? fundParts(r.code) : null;
   const label = assetLabel(r.code) || '';
   const daily = r.frozen ? '—' : r.noDailyChange || isNum(r.dailyPLNative) ? signedMoney(r.dailyPLNative, r.currency) : '—';
   const total = r.frozen ? 'temerrüt' : valuesOk && isNum(r.totalPLNative) ? signedMoney(r.totalPLNative, r.currency) : '—';
   return tile({
-    code: r.code, kind: r.kind, currency: r.currency, frozen: r.frozen,
+    code: r.code, kind: r.kind, currency: r.currency, frozen: r.frozen, accent,
     top: fund ? parts.issuer || 'Fon' : `${TOP_LABELS[type] || 'Varlık'}${r.currency === 'USD' ? ' · USD' : ''}`,
     name: fund ? parts.name || label : label.replace(/\s*·.*$/, '') || DB.byCode.get(r.code)?.name || '',
     share: r.localRecord ? null : r.allocationPct,
@@ -71,19 +70,53 @@ export function positionTile(r, { type, valuesOk = true } = {}) {
   });
 }
 
-/**
- * Bir varlık grubunun kutucukları. Fonlar türe göre şeritlenir;
- * `share(value)` portföy payını yüzde olarak döndürür.
- */
+// Fon türü renkleri (TEFAS Quant paleti); dağılım çubuğu ve kutucuk üst çizgisi aynı rengi taşır.
+const TYPE_COLORS = ['#1f5fbf', '#ea580c', '#7c3aed', '#0891b2', '#c58b12', '#0b2a5b', '#be123c', '#15803d'];
+
+/** Grubun toplam kâr/zararı ve maliyete göre yüzdesi (temerrüttekiler hariç). */
+export function groupPL(rows) {
+  let profit = 0;
+  let cost = 0;
+  for (const row of rows || []) {
+    if (row.frozen || !isNum(row.totalPLTRY) || !isNum(row.marketValueTRY)) continue;
+    profit += row.totalPLTRY;
+    cost += row.marketValueTRY - row.totalPLTRY;
+  }
+  return { profit, pct: cost > 0 ? profit / cost * 100 : null };
+}
+
+/** Başlık için yeşil/kırmızı K/Z rozeti. */
+export function plBadge(rows) {
+  const { profit, pct: plPct } = groupPL(rows);
+  if (!isNum(plPct)) return null;
+  return h('span', { class: `pl-badge ${cls(profit)}` },
+    `${profit >= 0 ? '▲' : '▼'} ${tlSigned(profit)} · ${pctSigned(plPct)}`);
+}
+
+/** Quant "Not dağılımı" gibi: türlerin tek çubukta payları ve açıklama satırı. */
+function typeDistribution(types, total) {
+  return h('div', { class: 'type-dist' },
+    h('div', { class: 'dist-bar' }, types.map((t) => h('span', {
+      style: `flex:${Math.max(0.0001, t.value)};background:${t.color}`, title: `${t.type}: ${pct(t.value / total * 100, 1)}`,
+    }))),
+    h('div', { class: 'dist-legend' }, types.map((t) => h('div', { class: 'dist-item' },
+      h('i', { style: `background:${t.color}` }),
+      h('span', {}, t.type),
+      h('b', {}, total > 0 ? pct(t.value / total * 100, 1) : '—'),
+      h('em', {}, tl(t.value))))));
+}
+
+/** Bir varlık grubunun kutucukları; fonlarda üstte tür dağılım çubuğu. */
 export function groupTiles(group, { share = () => null, valuesOk = true } = {}) {
   const grid = (rows) => h('div', { class: 'fund-tiles pos-tiles' },
     rows.map((row) => positionTile(row, { type: group.label, valuesOk })));
   if (group.label !== 'Fon') return [grid(group.rows)];
-  return groupFundsByType(group.rows).map((fundGroup) => h('div', { class: 'sec-group' },
-    groupStrip({
-      label: fundGroup.type,
-      value: `${tl(fundGroup.value)}${isNum(share(fundGroup.value)) ? ` · ${pct(share(fundGroup.value), 1)}` : ''}`,
-      share: share(fundGroup.value),
-    }),
-    grid(fundGroup.rows)));
+  // Fonlar tek ızgarada; aynı türdekiler yan yana, tür rengi kutucuğun üst çizgisinde.
+  const types = groupFundsByType(group.rows).map((fundGroup, index) => ({ ...fundGroup, color: TYPE_COLORS[index % TYPE_COLORS.length] }));
+  const total = types.reduce((sum, t) => sum + t.value, 0);
+  return [
+    typeDistribution(types, total),
+    h('div', { class: 'fund-tiles pos-tiles' }, types.flatMap((t) =>
+      t.rows.map((row) => positionTile(row, { type: 'Fon', valuesOk, accent: t.color })))),
+  ];
 }
