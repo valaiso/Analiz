@@ -73,24 +73,29 @@ export function positionTile(r, { type, valuesOk = true, accent } = {}) {
 // Fon türü renkleri (TEFAS Quant paleti); dağılım çubuğu ve kutucuk üst çizgisi aynı rengi taşır.
 const TYPE_COLORS = ['#1f5fbf', '#ea580c', '#7c3aed', '#0891b2', '#c58b12', '#0b2a5b', '#be123c', '#15803d'];
 
-/** Grubun toplam kâr/zararı ve maliyete göre yüzdesi (temerrüttekiler hariç). */
+/** Grubun günlük ve toplam kâr/zararı ile yüzdeleri (temerrüttekiler hariç). */
 export function groupPL(rows) {
-  let profit = 0;
-  let cost = 0;
+  let daily = 0, dailyBase = 0, total = 0, cost = 0;
   for (const row of rows || []) {
-    if (row.frozen || !isNum(row.totalPLTRY) || !isNum(row.marketValueTRY)) continue;
-    profit += row.totalPLTRY;
-    cost += row.marketValueTRY - row.totalPLTRY;
+    if (row.frozen || !isNum(row.marketValueTRY)) continue;
+    if (isNum(row.dailyPLTRY)) { daily += row.dailyPLTRY; dailyBase += row.marketValueTRY - row.dailyPLTRY; }
+    if (isNum(row.totalPLTRY)) { total += row.totalPLTRY; cost += row.marketValueTRY - row.totalPLTRY; }
   }
-  return { profit, pct: cost > 0 ? profit / cost * 100 : null };
+  return {
+    daily, dailyPct: dailyBase > 0 ? daily / dailyBase * 100 : null,
+    total, totalPct: cost > 0 ? total / cost * 100 : null,
+  };
 }
 
-/** Başlık için yeşil/kırmızı K/Z rozeti. */
+/** Başlık için iki yeşil/kırmızı rozet: Günlük ve Toplam. */
 export function plBadge(rows) {
-  const { profit, pct: plPct } = groupPL(rows);
-  if (!isNum(plPct)) return null;
-  return h('span', { class: `pl-badge ${cls(profit)}` },
-    `${profit >= 0 ? '▲' : '▼'} ${tlSigned(profit)} · ${pctSigned(plPct)}`);
+  const pl = groupPL(rows);
+  const badge = (label, amount, amountPct) => (isNum(amountPct)
+    ? h('span', { class: `pl-badge ${cls(amount)}` },
+      h('small', {}, label), `${amount >= 0 ? '▲' : '▼'} ${tlSigned(amount)} · ${pctSigned(amountPct)}`)
+    : null);
+  const badges = [badge('Günlük', pl.daily, pl.dailyPct), badge('Toplam', pl.total, pl.totalPct)].filter(Boolean);
+  return badges.length ? h('span', { class: 'pl-badges' }, badges) : null;
 }
 
 /** Quant "Not dağılımı" gibi: türlerin tek çubukta payları ve açıklama satırı. */

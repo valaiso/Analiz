@@ -111,8 +111,6 @@ export function renderDagilim(ctx) {
       missingPositionValue.length
         ? `Dağılım grafiği bekletiliyor: Midas adedi/fiyatı okunamayan varlıklar: ${missingPositionValue.map((row) => row.code).join(', ')}. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`
         : `Dağılım grafiği bekletiliyor: pozisyon fiyatlarından hesaplanan ${tl(securitiesValue)} değeri Midas hesap toplamı ${tl(midasTotal)} ile uyuşmuyor. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`));
-    root.append(h('div', { class: 'notice' },
-      `Hisse/fon ve kripto açık adetleri Midas Pozisyonlar tablolarından alınır; emir geçmişinden açık pozisyon türetilmez. ${live.filter((row) => row.marketValueTRY > 0).length}/${live.length} açık varlığın değeri doğrulandı.`));
     const sortedGroups = groupAssetRows(positions).map((group) => ({
       ...group,
       groupValue: group.rows.reduce((sum, row) => sum + (row.marketValueTRY || 0), 0),
@@ -122,9 +120,6 @@ export function renderDagilim(ctx) {
       root.append(toneCard({
         ...(SECTION_TONES[group.label] || SECTION_TONES.Diğer),
         title: localOnly ? 'Kripto' : group.label,
-        sub: localOnly ? 'Açık miktar Midas Kripto Pozisyonlar tablosundan alınır.'
-          : group.label === 'Fon' ? 'Türe göre gruplanmıştır · değer = Midas adedi × güncel fiyat'
-            : 'Değer = Midas adedi × güncel fiyat × güncel kur',
         badge: liveValuesReconcile ? plBadge(group.rows) : null,
         figure: liveValuesReconcile ? tl(group.groupValue) : null,
         figureSub: liveValuesReconcile && midasTotal > 0 ? `portföyün ${pct(group.groupValue / midasTotal * 100, 1)}` : null,

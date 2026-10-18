@@ -773,8 +773,11 @@ html[data-theme="dark"] .sec-slate, html[data-theme="dark"] .sec-indigo, html[da
 }
 
 /* Başlıktaki toplam K/Z rozeti */
-.pl-badge { display: inline-block; margin-left: 8px; padding: 2px 9px; border-radius: 999px; font-size: .74rem; font-weight: 700;
-  font-variant-numeric: tabular-nums; white-space: nowrap; vertical-align: 1px; }
+.pl-badges { display: inline-flex; flex-wrap: wrap; gap: 6px; vertical-align: 1px; }
+.sec-title .sub .pl-badges { margin-top: 2px; }
+.pl-badge { display: inline-flex; align-items: center; gap: 6px; padding: 2px 9px; border-radius: 999px; font-size: .74rem; font-weight: 700;
+  font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pl-badge small { font-size: .62rem; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; opacity: .75; }
 .pl-badge.up { color: var(--up); background: var(--up-soft); }
 .pl-badge.down { color: var(--down); background: var(--down-soft); }
 
@@ -790,7 +793,7 @@ html[data-theme="dark"] .sec-slate, html[data-theme="dark"] .sec-indigo, html[da
 .type-dist .dist-item b { font-variant-numeric: tabular-nums; }
 .type-dist .dist-item em { font-style: normal; color: var(--text-dim); font-size: .76rem; font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) {
-  .pl-badge { display: table; margin: 4px 0 0; }
+  .pl-badges { display: flex; margin-top: 4px; }
   .type-dist .dist-legend { grid-template-columns: 1fr; gap: 6px; }
   .type-dist .dist-item em { display: none; }
 }

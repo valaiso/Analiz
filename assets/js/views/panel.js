@@ -515,8 +515,7 @@ export function renderPanel(ctx) {
     }, ...children);
     // Quant "kategori liderleri" düzeni: her varlık bir kutucuk; fonlar türe göre (PPF'ler yan yana).
     for (const group of positionGroups) {
-      root.append(groupCard(group,
-        group.label === 'Fon' ? 'Türe göre gruplanmıştır · değer = Midas adedi × güncel fiyat' : 'Değer = Midas adedi × güncel fiyat × güncel kur',
+      root.append(groupCard(group, null,
         ...groupTiles(group, { share, valuesOk: positionSnapshotConsistent })));
     }
   } else if (!hasMidasTotal && open.length) {
