@@ -5,7 +5,8 @@
 import { isNum } from './util.js';
 import { getMarketAssets, saveMarketAssets, getMidasAccountSnapshot, setReferencePriceLookup } from './store.js';
 
-const DATA_URL = new URL('../../data/', import.meta.url).href;
+// Sayfa köküne göre: JS sürüm klasöründen (v/<özet>/assets) yüklense de veri kökteki data/ klasöründedir.
+const DATA_URL = new URL('data/', document.baseURI).href;
 const LOCAL_ASSET_KEY = 'analiz-local-market-assets-v1';
 
 export const DB = {

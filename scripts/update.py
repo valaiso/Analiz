@@ -378,8 +378,40 @@ def build_site(conn: sqlite3.Connection, out_dir: Path, years: int) -> dict:
     shutil.copy2(ROOT / "sw.js", out_dir / "sw.js")
     shutil.copy2(ROOT / "public" / "site.webmanifest", out_dir / "site.webmanifest")
     (out_dir / ".nojekyll").write_text("", encoding="utf-8")
+    _version_assets(out_dir)
 
     return info
+
+
+def _version_assets(out_dir: Path) -> None:
+    """Önbellek kırıcı (TEFAS Quant ile aynı yöntem).
+
+    GitHub Pages dosyaları ~10 dk önbellekte tutar; yeni panel.js eski tiles.js ile
+    karışınca modül hatası olur ve site eski haliyle kalır. JS/CSS içerik özetli
+    klasöre (v/<özet>/assets) kopyalanır, index.html oraya yönlendirilir. ES modül
+    içe aktarmaları göreli olduğu için tüm alt modüller aynı sürümden gelir.
+    Veri, logolar ve görseller kök yollarında kalır.
+    """
+    import hashlib
+
+    assets = out_dir / "assets"
+    digest = hashlib.sha1()
+    for f in sorted(assets.rglob("*")):
+        if f.is_file() and f.suffix in (".js", ".css"):
+            digest.update(f.relative_to(assets).as_posix().encode())
+            digest.update(f.read_bytes())
+    version = digest.hexdigest()[:10]
+    target = out_dir / "v" / version / "assets"
+    shutil.copytree(assets, target, ignore=shutil.ignore_patterns("logos"))
+    index = out_dir / "index.html"
+    html = index.read_text(encoding="utf-8")
+    for old in ('href="assets/css/style.css"', 'src="assets/js/app.js"'):
+        if old not in html:
+            raise RuntimeError(f"index.html içinde bulunamadı: {old}")
+    html = html.replace('href="assets/css/style.css"', f'href="v/{version}/assets/css/style.css"')
+    html = html.replace('src="assets/js/app.js"', f'src="v/{version}/assets/js/app.js"')
+    index.write_text(html, encoding="utf-8")
+    print(f"[sürüm] varlıklar v/{version}/ altında", flush=True)
 
 
 def main() -> int:

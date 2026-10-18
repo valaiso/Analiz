@@ -11,7 +11,7 @@ import { assetType } from './asset-groups.js';
 const FMP = 'https://financialmodelingprep.com/image-stock/';
 const CRYPTO = 'https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/';
 
-const ISSUER_DIR = new URL('../logos/issuers/', import.meta.url).href;
+const ISSUER_DIR = new URL('assets/logos/issuers/', document.baseURI).href;
 
 // Fon adının başı → kurucu şirketin logosu (assets/logos/issuers/<ad>.png).
 const FUND_ISSUERS = [
