@@ -179,6 +179,22 @@ export function saveMidasAccountSnapshot(snapshot) {
 }
 
 /**
+ * Bu tarayıcıdaki Midas pozisyonları hesaptaki kopyadan yeniyse (veya hesapta
+ * hiç yoksa) hesaba yükler. Bulut durumu yüklendikten sonra çağrılır.
+ */
+export function ensureMidasPositionsSynced() {
+  if (!midasSnapshot) return false;
+  const cloud = state.midasPositionsCloud;
+  const localStock = midasSnapshot.stockCapturedAt || '';
+  const localCrypto = midasSnapshot.cryptoCapturedAt || '';
+  const stale = !cloud || localStock > (cloud.stockCapturedAt || '') || localCrypto > (cloud.cryptoCapturedAt || '');
+  if (!stale) return false;
+  syncMidasPositionsToCloud();
+  persist();
+  return true;
+}
+
+/**
  * Günlük bildirimi gönderen sunucu tarafı adetleri bilmeli: son Midas
  * pozisyonlarının sade kopyası hesaba eşitlenen duruma yazılır.
  */
@@ -667,7 +683,6 @@ export function importJSON(text, mode = 'replace') {
   }
 
   state = migrate(parsed);
-  if (midasSnapshot && !state.midasPositionsCloud) syncMidasPositionsToCloud();
   if (Array.isArray(parsed.midasTx)) midasTx = parsed.midasTx;
   persist();
   if (Array.isArray(parsed.midasTx)) persistMidasTransactions();

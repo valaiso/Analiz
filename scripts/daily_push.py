@@ -154,9 +154,11 @@ def main() -> int:
         key_file.write(os.environ["VAPID_PRIVATE_KEY"].replace("\\n", "\n"))
     sent = failed = 0
     for user_id in user_ids:
+        user_subs = sum(1 for row in subs if row["user_id"] == user_id)
         cloud = state_by_user.get(user_id, {}).get("midasPositionsCloud")
         if not cloud:
-            print(f"{user_id[:8]}: hesapta Midas pozisyonu yok, atlandı")
+            print(f"{user_id[:8]}: {user_subs} cihaz aboneliği var ama hesapta Midas pozisyonu yok; "
+                  "siteyi Midas verisinin olduğu bilgisayarda bir kez açın")
             continue
         now_total, prev_total, missing = portfolio_change(cloud, funds)
         if prev_total <= 0:
@@ -172,7 +174,7 @@ def main() -> int:
             "tag": f"gunluk-{dt.date.today().isoformat()}",
             "url": "/Analiz/#panel",
         }
-        print(f"{user_id[:8]}: {payload['title']} | {payload['body']}")
+        print(f"{user_id[:8]}: {user_subs} cihaz · {payload['title']} | {payload['body']}")
         for sub in (row for row in subs if row["user_id"] == user_id):
             try:
                 webpush(subscription_info=sub["subscription"], data=json.dumps(payload, ensure_ascii=False),

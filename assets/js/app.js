@@ -6,7 +6,7 @@ import { analyze } from './portfolio.js';
 import {
   transactions, profiles, activeProfileId, setActiveProfile, activeProfileName,
   settings, setSetting, subscribe, getState, importJSON, getMidasAccountSnapshot,
-  saveMidasLiveQuotes,
+  saveMidasLiveQuotes, ensureMidasPositionsSynced,
 } from './store.js';
 import { requestMidasLiveQuotes } from './midas-import.js';
 import { needsIntradayQuote } from './asset-groups.js';
@@ -279,6 +279,8 @@ async function startAuthenticatedSession(user) {
       }
 
       cloudReady = true;
+      // Günlük bildirim için son Midas adetleri hesaba yüklenir.
+      ensureMidasPositionsSynced();
       await loadCore();
       updateDataStatus();
       renderProfileSelect();
