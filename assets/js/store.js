@@ -253,6 +253,26 @@ export function saveMidasLiveQuotes(quotes) {
   } catch (err) {
     console.error('Piyasa fiyatları bu tarayıcıya kaydedilemedi', err);
   }
+  // Canlı fiyatlar yalnızca eklentili PC'de alınır; telefon da aynı değeri
+  // göstersin diye en fazla 5 dakikada bir hesaba yazılır.
+  const lastCloudQuotes = Date.parse(state.midasLiveQuotesCloud?.at || '') || 0;
+  if (Date.now() - lastCloudQuotes >= 5 * 60_000) {
+    state.midasLiveQuotesCloud = { at: midasSnapshot.liveQuotesCapturedAt, quotes: midasSnapshot.liveQuotes };
+    persist();
+  }
+  return true;
+}
+
+/** Hesaptaki canlı fiyatlardan bu cihazdakinden yeni olanları alır. */
+function adoptCloudLiveQuotes() {
+  const cloud = state.midasLiveQuotesCloud?.quotes;
+  if (!midasSnapshot || !cloud || typeof cloud !== 'object') return false;
+  const local = midasSnapshot.liveQuotes || {};
+  const newer = Object.entries(cloud).filter(([code, quote]) =>
+    Number(quote?.timestamp) > (Number(local[code]?.timestamp) || 0));
+  if (!newer.length) return false;
+  midasSnapshot = { ...midasSnapshot, liveQuotes: { ...local, ...Object.fromEntries(newer) } };
+  try { localStorage.setItem(MIDAS_SNAPSHOT_KEY, JSON.stringify(midasSnapshot)); } catch { /* bellekteki kopya yeterli */ }
   return true;
 }
 
@@ -817,6 +837,7 @@ export function importJSON(text, mode = 'replace') {
   state = migrate(parsed);
   if (Array.isArray(parsed.midasTx)) midasTx = parsed.midasTx;
   adoptCloudMidasSnapshot();
+  adoptCloudLiveQuotes();
   persist();
   if (Array.isArray(parsed.midasTx)) persistMidasTransactions();
   return state.tx.length;

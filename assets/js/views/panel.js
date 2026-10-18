@@ -16,7 +16,7 @@ import {
   applyDailyMarketTransactions, groupAssetRows, assetType, midasStockAccountValue, assetLabel, groupFundsByType, fundStopajRate,
   midasBaseline, unexplainedChange,
 } from '../asset-groups.js';
-import { kpiCard, plCard, sectionCard, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
+import { kpiCard, plCard, sectionCard, toneCard, groupStrip, SECTION_TONES, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
 /**
  * Fon TEFAS'ta fiyat yayımlamayı bırakmış mı?
@@ -414,8 +414,11 @@ export function renderPanel(ctx) {
         `Tahmini toplam: ${tl(stopajEstimate)} · oranın nedenini görmek için üzerine gel`))
     : h('p', { class: 'dim', style: 'margin:0' },
       'Vergili fonlarda kâr oluştuğunda tahmini stopaj burada gösterilir.');
-  const stopajSection = sectionCard('Stopaj Kesintileri',
-    'Hisse senedi yoğun fonlar %0, ≥%51 BIST hisseli fonlar 1 yıl sonra %0, diğerleri %17,5 · portföy değerini etkilemez', stopajContent);
+  const stopajSection = toneCard({
+    tone: 'amber', icon: '%', title: 'Stopaj Kesintileri',
+    sub: 'Hisse yoğun fonlar %0, ≥%51 BIST hisseli fonlar 1 yıl sonra %0, diğerleri %17,5 · portföy değerini etkilemez',
+    figure: tl(stopajEstimate), figureSub: 'tahmini toplam',
+  }, stopajContent);
 
   if (txs.length >= 5 && daysSinceBackup() === null) {
     root.append(h('div', { class: 'notice' },
@@ -573,18 +576,27 @@ export function renderPanel(ctx) {
       rows: [...group.rows].sort((a, b) => (b.allocationPct ?? -1) - (a.allocationPct ?? -1)),
       groupValue: group.rows.reduce((sum, row) => sum + (row.marketValueTRY || 0), 0),
     })).sort((a, b) => b.groupValue - a.groupValue);
+    const share = (value) => (midasPortfolioTotal > 0 ? value / midasPortfolioTotal * 100 : null);
+    const groupCard = (group, sub, ...children) => toneCard({
+      ...(SECTION_TONES[group.label] || SECTION_TONES.Diğer),
+      title: groupTitles[group.label] || group.label, sub,
+      figure: tl(group.groupValue),
+      figureSub: isNum(share(group.groupValue)) ? `portföyün ${pct(share(group.groupValue), 1)}` : `${group.rows.length} varlık`,
+    }, ...children);
     for (const group of positionGroups) {
       if (group.label === 'Fon') {
-        // Aynı türdeki fonlar (ör. iki PPF) alt alta, tür toplamıyla birlikte.
-        const typeBlocks = groupFundsByType(group.rows).map((fundGroup) => h('div', { class: 'stack', style: 'gap:6px' },
-          h('h3', { style: 'margin:8px 0 0;font-size:.95rem' },
-            `${fundGroup.type} · ${tl(fundGroup.value)}${midasPortfolioTotal > 0 ? ` · ${pct(fundGroup.value / midasPortfolioTotal * 100, 1)}` : ''}`),
+        // Aynı türdeki fonlar (ör. iki PPF) alt alta, tür toplamı ve payıyla birlikte.
+        const typeBlocks = groupFundsByType(group.rows).map((fundGroup) => h('div', { class: 'sec-group' },
+          groupStrip({
+            label: fundGroup.type,
+            value: `${tl(fundGroup.value)}${isNum(share(fundGroup.value)) ? ` · ${pct(share(fundGroup.value), 1)}` : ''}`,
+            share: share(fundGroup.value),
+          }),
           positionsTable(fundGroup.rows).element));
-        root.append(sectionCard(groupTitles.Fon, 'Türe göre gruplanmıştır · portföy değeri = Midas adedi × güncel fiyat', ...typeBlocks));
+        root.append(groupCard(group, 'Türe göre gruplanmıştır · portföy değeri = Midas adedi × güncel fiyat', ...typeBlocks));
         continue;
       }
-      root.append(sectionCard(groupTitles[group.label] || group.label,
-        'Portföy değeri = Midas adedi × güncel fiyat × güncel kur', positionsTable(group.rows).element));
+      root.append(groupCard(group, 'Portföy değeri = Midas adedi × güncel fiyat × güncel kur', positionsTable(group.rows).element));
     }
   } else if (!hasMidasTotal && open.length) {
     const table = sortableTable({
@@ -636,8 +648,11 @@ export function renderPanel(ctx) {
   if (nakit.monthly.length > 1) {
     const kutu = h('div');
     const sonAylar = nakit.monthly.slice(-18);
-    nakitSection = sectionCard('Aylık Yatırım Akışı',
-      `Son ${sonAylar.length} ay · pozitif = para koydun, negatif = çektin`, kutu);
+    nakitSection = toneCard({
+      tone: 'indigo', icon: '⇅', title: 'Aylık Yatırım Akışı',
+      sub: `Son ${sonAylar.length} ay · pozitif = para koydun, negatif = çektin`,
+      figure: tlSigned(sonAylar.reduce((sum, m) => sum + m.amount, 0)), figureSub: 'dönem toplamı',
+    }, kutu);
     barChart(kutu, {
       items: sonAylar.map((m) => ({ label: m.month.slice(2), value: m.amount })),
       format: (v) => tlSigned(v),
@@ -648,14 +663,14 @@ export function renderPanel(ctx) {
   else root.append(stopajSection);
 
   if (nakit.realizedByYear.length) {
-    root.append(sectionCard('Yıllara Göre Gerçekleşen Kâr/Zarar',
-      'Yalnızca satılan pozisyonlardan; açık pozisyonlar dahil değil',
-      h('div', { class: 'table-wrap' }, h('table', {},
-        h('thead', {}, h('tr', {},
-          h('th', { style: 'text-align:left' }, 'Yıl'), h('th', {}, 'Gerçekleşen K/Z'))),
-        h('tbody', {}, nakit.realizedByYear.map((y) => h('tr', {},
-          h('td', {}, String(y.year)),
-          h('td', { class: cls(y.amount) }, tlSigned(y.amount)))))))));
+    // Her yıl ayrı kutucuk: üst çizgi kâr/zarar rengini taşır.
+    root.append(toneCard({
+      tone: 'slate', icon: '∑', title: 'Yıllara Göre Gerçekleşen Kâr/Zarar',
+      sub: 'Yalnızca satılan pozisyonlardan; açık pozisyonlar dahil değil',
+      figure: tlSigned(yearlyRealizedTotal), figureSub: 'toplam',
+    }, h('div', { class: 'year-tiles' }, nakit.realizedByYear.map((y) => h('div', { class: `year-tile ${cls(y.amount)}` },
+      h('span', {}, String(y.year)),
+      h('strong', { class: cls(y.amount) }, tlSigned(y.amount)))))));
   }
 
 

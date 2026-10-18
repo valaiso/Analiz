@@ -385,12 +385,13 @@ function updateQuoteTimestamp() {
     .map(([, quote]) => Number(quote?.timestamp))
     .filter((timestamp) => Number.isFinite(timestamp) && timestamp > 0);
   const timestamp = quoteTimes.length ? Math.max(...quoteTimes) : Date.parse(snapshot?.capturedAt || '');
+  // Canlı fiyat varsa onun saati, yoksa son Midas taramasının saati gösterilir.
   label.textContent = Number.isFinite(timestamp)
-    ? new Intl.DateTimeFormat('tr-TR', {
-      day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-    }).format(new Date(timestamp))
+    ? `${quoteTimes.length ? 'Fiyat' : 'Midas'} ${new Intl.DateTimeFormat('tr-TR', {
+      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+    }).format(new Date(timestamp))}`
     : '—';
-  label.title = 'Son kotasyonun tarih ve saati';
+  label.title = quoteTimes.length ? 'Son canlı fiyatın tarih ve saati' : 'Son Midas taramasının tarih ve saati';
 }
 
 async function refreshIntradayQuotes() {

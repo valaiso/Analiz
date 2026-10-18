@@ -600,6 +600,77 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
   .rp-footer { padding-bottom: 14px; }
 }
 
+/* ------------------------------------------------- renkli bölüm kartları */
+/* Her konu sabit bir renk taşır (Fon mavi, ETF turkuaz, Hisse turuncu, Kripto mor,
+   Stopaj kehribar, Yatırım akışı çivit, Gerçekleşen K/Z gri). Renk yalnızca başlık
+   bandı, simge, tablo başlığı ve çubuklarda kullanılır; veriler nötr kalır. */
+.sec-blue   { --sec: #1f5fbf; }
+.sec-teal   { --sec: #0d9488; }
+.sec-orange { --sec: #dd6b20; }
+.sec-violet { --sec: #7c3aed; }
+.sec-amber  { --sec: #b7791f; }
+.sec-indigo { --sec: #4f46e5; }
+.sec-slate  { --sec: #475569; }
+html[data-theme="dark"] .sec-slate { --sec: #94a3b8; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sec-slate { --sec: #94a3b8; } }
+
+.sec { padding: 0; overflow: hidden; border-top: 3px solid var(--sec); }
+.sec:hover { border-color: color-mix(in srgb, var(--sec) 30%, var(--border)); border-top-color: var(--sec); }
+.sec-head {
+  display: flex; align-items: center; gap: 12px; padding: 14px 18px;
+  background: linear-gradient(90deg, color-mix(in srgb, var(--sec) 10%, var(--surface)), var(--surface) 70%);
+  border-bottom: 1px solid color-mix(in srgb, var(--sec) 16%, var(--border));
+}
+.sec-icon {
+  flex: 0 0 34px; height: 34px; border-radius: 10px; display: grid; place-items: center;
+  background: var(--sec); color: #fff; font-size: 1rem; font-weight: 700;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--sec) 30%, transparent);
+}
+.sec-title { display: grid; gap: 1px; min-width: 0; flex: 1; }
+.sec-title h2 { font-size: 1.02rem; }
+.sec-title .sub { color: var(--text-dim); font-size: .78rem; }
+.sec-figure { display: grid; justify-items: end; gap: 1px; text-align: right; }
+.sec-figure strong { font-size: 1.15rem; font-variant-numeric: tabular-nums; letter-spacing: -.01em; color: color-mix(in srgb, var(--sec) 75%, var(--text)); }
+.sec-figure span { font-size: .72rem; color: var(--text-dim); }
+.sec-body { padding: 14px 18px 18px; display: grid; gap: 14px; min-width: 0; }
+.sec-body > * { min-width: 0; }
+
+/* Tablo başlığı bölüm renginde, satır üstü vurgusu hafif tonlu */
+.sec th { color: color-mix(in srgb, var(--sec) 70%, var(--text)); background: color-mix(in srgb, var(--sec) 6%, var(--surface));
+  border-bottom: 2px solid color-mix(in srgb, var(--sec) 35%, var(--border)); }
+.sec tbody tr:hover { background: color-mix(in srgb, var(--sec) 5%, var(--surface)); }
+.sec .code-chip { border-color: color-mix(in srgb, var(--sec) 30%, var(--border)); background: color-mix(in srgb, var(--sec) 8%, var(--surface)); }
+.sec .sec-row-head { text-align: left; font-weight: 700; font-size: .8rem; letter-spacing: .02em;
+  color: color-mix(in srgb, var(--sec) 75%, var(--text)); background: color-mix(in srgb, var(--sec) 9%, var(--surface));
+  border-left: 3px solid var(--sec); }
+
+/* Fon türü şeridi: ad, portföy payı çubuğu, tutar */
+.sec-group { display: grid; gap: 6px; }
+.sec-group + .sec-group { padding-top: 6px; border-top: 1px dashed var(--border); }
+.sec-strip { display: grid; grid-template-columns: minmax(120px, auto) 1fr auto; align-items: center; gap: 12px;
+  padding: 7px 10px; border-radius: 8px; background: color-mix(in srgb, var(--sec) 7%, var(--surface)); }
+.sec-strip-name { font-weight: 700; font-size: .88rem; display: flex; align-items: center; gap: 8px; }
+.sec-strip-name::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--sec); }
+.sec-strip-bar { height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--sec) 12%, var(--surface)); overflow: hidden; }
+.sec-strip-bar i { display: block; height: 100%; border-radius: 99px; background: var(--sec); }
+.sec-strip-value { font-size: .84rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+/* Yıllık gerçekleşen K/Z kutucukları */
+.year-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+.year-tile { display: grid; gap: 4px; padding: 12px 14px; border-radius: 10px; background: var(--surface-2); border-top: 3px solid var(--text-dim); }
+.year-tile.up { border-top-color: var(--up); background: var(--up-soft); }
+.year-tile.down { border-top-color: var(--down); background: var(--down-soft); }
+.year-tile span { font-family: var(--mono); font-size: .74rem; font-weight: 700; color: var(--text-dim); letter-spacing: .06em; }
+.year-tile strong { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+
+@media (max-width: 640px) {
+  .sec-head { padding: 12px 13px; flex-wrap: wrap; }
+  .sec-figure { flex-basis: 100%; justify-items: start; text-align: left; padding-left: 46px; }
+  .sec-body { padding: 12px 13px 14px; }
+  .sec-strip { grid-template-columns: 1fr auto; }
+  .sec-strip-bar { grid-column: 1 / -1; grid-row: 2; }
+}
+
 /* Yazdırma / PDF: yalnızca rapor sayfaları, her biri bir A4 */
 @media print {
   @page { size: A4; margin: 0; }

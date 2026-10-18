@@ -33,6 +33,40 @@ export function sectionCard(title, sub, ...children) {
     ...children);
 }
 
+/**
+ * Varlık sınıfı / konu başına sabit renk ve simge. Her bölüm kendi rengini
+ * taşır; aynı tür (ör. Fon) panelde ve Dağılım'da aynı renktedir.
+ */
+export const SECTION_TONES = {
+  Fon: { tone: 'blue', icon: '◈' },
+  ETF: { tone: 'teal', icon: '◎' },
+  Hisse: { tone: 'orange', icon: '▲' },
+  Kripto: { tone: 'violet', icon: '₿' },
+  Diğer: { tone: 'slate', icon: '•' },
+};
+
+/**
+ * Renkli başlık bantlı bölüm kartı: simge rozeti, başlık/açıklama ve sağda
+ * isteğe bağlı özet rakam (ör. grup toplamı ve portföydeki payı).
+ */
+export function toneCard({ tone = 'blue', icon = '•', title, sub, figure, figureSub }, ...children) {
+  return h('section', { class: `card sec sec-${tone}` },
+    h('div', { class: 'sec-head' },
+      h('span', { class: 'sec-icon', 'aria-hidden': 'true' }, icon),
+      h('div', { class: 'sec-title' }, h('h2', { text: title }), sub ? h('span', { class: 'sub', text: sub }) : null),
+      figure != null ? h('div', { class: 'sec-figure' },
+        h('strong', {}, figure), figureSub ? h('span', {}, figureSub) : null) : null),
+    h('div', { class: 'sec-body' }, ...children));
+}
+
+/** Alt grup şeridi: renkli işaret, ad, tutar ve portföy payı çubuğu. */
+export function groupStrip({ label, value, share }) {
+  return h('div', { class: 'sec-strip' },
+    h('span', { class: 'sec-strip-name' }, label),
+    h('span', { class: 'sec-strip-bar' }, isNum(share) ? h('i', { style: `width:${Math.min(100, Math.max(1, share)).toFixed(1)}%` }) : null),
+    h('span', { class: 'sec-strip-value' }, value));
+}
+
 export function emptyState(title, message, actionLabel, onAction) {
   return h('div', { class: 'card empty' },
     h('h3', { text: title }),
