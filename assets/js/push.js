@@ -74,7 +74,7 @@ export async function testNotification() {
 
 /** Sorun giderme için kısa tanı satırı: neden açılamadığını gösterir. */
 export function pushDiagnostics() {
-  const ios = navigator.userAgent.match(/OS (\d+)[_.](\d+)/);
+  const ios = isIOS() ? navigator.userAgent.match(/OS (\d+)[_.](\d+)/) : null;
   const parts = [
     ios ? `iOS ${ios[1]}.${ios[2]}` : navigator.userAgent.includes('Windows') ? 'Windows' : 'tarayıcı',
     `uygulama modu: ${isStandaloneApp() ? 'evet' : 'hayır'}`,
