@@ -63,6 +63,11 @@ async function saveSubscription(sub) {
  * Döner: hesapta kayıtlı cihaz sayısı (bilinmiyorsa null).
  */
 export async function syncPushSubscription() {
+  // Servis çalışanı her açılışta güncellenir; site dosyalarını da güncel tutan odur.
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register(SW_URL, { scope: SW_SCOPE, updateViaCache: 'none' })
+      .then((reg) => reg.update()).catch(() => {});
+  }
   if (!pushSupported() || Notification.permission !== 'granted') return registeredDeviceCount();
   const reg = await navigator.serviceWorker.getRegistration(SW_SCOPE);
   const sub = await reg?.pushManager.getSubscription();

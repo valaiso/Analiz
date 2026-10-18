@@ -1,8 +1,19 @@
-/* Bildirim servis çalışanı: günlük portföy bildirimini gösterir.
-   Önbellekleme yapmaz; site her zaman ağdan yüklenir. */
+/* Servis çalışanı: günlük portföy bildirimini gösterir ve sitenin her açılışta
+   güncel sürümle yüklenmesini sağlar. Önbellek tutmaz. */
 
 self.addEventListener('install', () => self.skipWaiting());
 self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+
+// iPhone ana ekran uygulaması HTML/CSS/JS dosyalarını uzun süre önbellekte
+// tutup eski sürümü açabiliyor. Sitenin kendi dosyaları her istekte sunucuya
+// sorulur (değişmediyse 304 döner, hızlıdır); ağ yoksa tarayıcı önbelleği kullanılır.
+self.addEventListener('fetch', (event) => {
+  const request = event.request;
+  if (request.method !== 'GET') return;
+  const url = new URL(request.url);
+  if (url.origin !== self.location.origin || !url.pathname.startsWith('/Analiz/')) return;
+  event.respondWith(fetch(new Request(request, { cache: 'no-cache' })).catch(() => fetch(request)));
+});
 
 self.addEventListener('push', (event) => {
   let data = {};
