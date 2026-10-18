@@ -9,6 +9,7 @@ import {
   saveMidasLiveQuotes, ensureMidasPositionsSynced,
 } from './store.js';
 import { requestMidasLiveQuotes } from './midas-import.js';
+import { syncPushSubscription } from './push.js';
 import { needsIntradayQuote } from './asset-groups.js';
 import { supabase } from './supabase-client.js';
 import { renderPanel } from './views/panel.js';
@@ -281,6 +282,7 @@ async function startAuthenticatedSession(user) {
       cloudReady = true;
       // Günlük bildirim için son Midas adetleri hesaba yüklenir.
       ensureMidasPositionsSynced();
+      void syncPushSubscription().catch(() => {});
       await loadCore();
       updateDataStatus();
       renderProfileSelect();

@@ -41,6 +41,11 @@ export async function enablePush() {
   await navigator.serviceWorker.ready;
   const sub = await reg.pushManager.getSubscription()
     || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyToBytes(VAPID_PUBLIC_KEY) });
+  await saveSubscription(sub);
+  return sub;
+}
+
+async function saveSubscription(sub) {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Önce hesabına giriş yap.');
   const { error } = await supabase.from('push_subscriptions').upsert({
@@ -50,7 +55,24 @@ export async function enablePush() {
     updated_at: new Date().toISOString(),
   }, { onConflict: 'endpoint' });
   if (error) throw new Error(`Abonelik hesaba kaydedilemedi: ${error.message}`);
-  return sub;
+}
+
+/**
+ * İzin verilmiş ve abonelik varsa her açılışta hesaba yeniden yazar. iPhone
+ * aboneliği yenileyebilir ya da ilk kayıt ağ hatasıyla kaybolmuş olabilir.
+ * Döner: hesapta kayıtlı cihaz sayısı (bilinmiyorsa null).
+ */
+export async function syncPushSubscription() {
+  if (!pushSupported() || Notification.permission !== 'granted') return registeredDeviceCount();
+  const reg = await navigator.serviceWorker.getRegistration(SW_SCOPE);
+  const sub = await reg?.pushManager.getSubscription();
+  if (sub) await saveSubscription(sub);
+  return registeredDeviceCount();
+}
+
+export async function registeredDeviceCount() {
+  const { count, error } = await supabase.from('push_subscriptions').select('endpoint', { count: 'exact', head: true });
+  return error ? null : count;
 }
 
 export async function disablePush() {

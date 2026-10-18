@@ -10,7 +10,7 @@ import {
   allTransactions, daysSinceBackup,
 } from '../store.js';
 import { sectionCard } from './common.js';
-import { pushStatus, enablePush, disablePush, testNotification, pushDiagnostics } from '../push.js';
+import { pushStatus, enablePush, disablePush, testNotification, pushDiagnostics, syncPushSubscription } from '../push.js';
 
 /**
  * Sayıyı hem Türkçe hem İngilizce yazımdan okur.
@@ -166,8 +166,14 @@ export function renderAyarlar(ctx) {
 
   const pushText = h('p', { class: 'dim', style: 'margin:0' }, 'Durum kontrol ediliyor…');
   const pushButtons = h('div', { class: 'btn-row' });
+  const pushDiag = h('p', { class: 'dim', style: 'margin:0;font-size:.75rem' }, `Tanı: ${pushDiagnostics()}`);
   const showPush = async () => {
     const status = await pushStatus().catch(() => 'unsupported');
+    // Bu cihazın aboneliği hesaba yeniden yazılır; kayıtlı cihaz sayısı gösterilir.
+    const devices = await syncPushSubscription().catch((error) => {
+      pushDiag.textContent = `Tanı: ${pushDiagnostics()} · hata: ${error.message || error}`;
+      return null;
+    });
     pushButtons.replaceChildren();
     const button = (label, primary, action) => h('button', {
       class: `btn${primary ? ' btn-primary' : ''}`, type: 'button',
@@ -185,7 +191,7 @@ export function renderAyarlar(ctx) {
         + 'Ana ekrandaki Analiz simgesini sil → Safari’de siteyi aç → Paylaş → Ana Ekrana Ekle → “Web Uygulaması olarak aç” açık olsun → Ekle. Sonra yeni simgeden aç.',
       unsupported: 'Bu cihaz bildirimleri desteklemiyor. iPhone’da iOS 16.4 veya üstü gerekir (Ayarlar → Genel → Yazılım Güncelleme).',
       denied: 'Bildirim izni reddedilmiş. iPhone Ayarlar → Bildirimler → Analiz’den izni aç.',
-      on: 'Açık · her işlem günü (Pzt–Cum) 18:00’de “Portföy bugün 🟢 +%… / 🔴 −%…” bildirimi gelir.',
+      on: `Açık · her işlem günü (Pzt–Cum) 18:00’de “Portföy bugün 🟢 +%… / 🔴 −%…” bildirimi gelir.${devices !== null ? ` Hesabında kayıtlı cihaz: ${devices}.` : ''}`,
       off: 'Kapalı · aç dersen telefon izin ister.',
     }[status];
     if (status === 'off') pushButtons.append(button('Bildirimleri aç', true, async () => {
@@ -196,7 +202,6 @@ export function renderAyarlar(ctx) {
       button('Deneme bildirimi gönder', true, testNotification),
       button('Bildirimleri kapat', false, async () => { await disablePush(); toast('Bildirim kapatıldı'); }));
   };
-  const pushDiag = h('p', { class: 'dim', style: 'margin:0;font-size:.75rem' }, `Tanı: ${pushDiagnostics()}`);
   root.append(sectionCard('Günlük Bildirim (18:00)',
     'Telefonuna her işlem günü portföyün günlük değişimi gelir', pushText, pushButtons, pushDiag));
   void showPush();

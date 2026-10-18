@@ -176,10 +176,7 @@ def main() -> int:
         payload = {
             "title": f"{'🟢' if up else '🔴'} Portföy bugün {sign}%{fmt_tr(pct)} {'arttı' if up else 'düştü'}",
             "body": f"{sign}₺{fmt_tr(change, 0)} · toplam ₺{fmt_tr(now_total, 0)}"
-                    + (f" · fiyatı alınamayan: {', '.join(missing)}" if missing else "")
-                    # Elle denemede kırılım da yazılır; yalnızca kullanıcının cihazına gider.
-                    + ("\n" + " · ".join(f"{name} ₺{fmt_tr(value, 0)} ({count})" for name, (value, count) in groups.items())
-                       if force else ""),
+                    + (f" · fiyatı alınamayan: {', '.join(missing)}" if missing else ""),
             "tag": f"gunluk-{dt.date.today().isoformat()}",
             "url": "/Analiz/#panel",
         }
