@@ -20,6 +20,8 @@ import requests
 from pywebpush import WebPushException, webpush
 
 SITE_URL = "https://valaiso.github.io/Analiz"
+# VAPID iletişim adresi mailto: olmalı; kişisel e-posta yerine GitHub noreply adresi.
+VAPID_SUBJECT = "mailto:valaiso@users.noreply.github.com"
 FUND_KINDS = {"YAT", "EMK", "GYF", "GSYF"}
 NO_DAILY_CHANGE = {"THF", "TP2"}
 UA = {"User-Agent": "Mozilla/5.0 (Analiz daily push)"}
@@ -178,7 +180,7 @@ def main() -> int:
         for sub in (row for row in subs if row["user_id"] == user_id):
             try:
                 webpush(subscription_info=sub["subscription"], data=json.dumps(payload, ensure_ascii=False),
-                        vapid_private_key=key_file.name, vapid_claims={"sub": SITE_URL}, ttl=6 * 3600)
+                        vapid_private_key=key_file.name, vapid_claims={"sub": VAPID_SUBJECT}, ttl=6 * 3600)
                 sent += 1
             except WebPushException as error:
                 status = getattr(error.response, "status_code", None)
