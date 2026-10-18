@@ -6,6 +6,7 @@ import { donutWithLegend, barChart, stackedAreaChart } from '../charts.js';
 import { weightHistory, attribution } from '../insights.js';
 import { transactions, getMidasAccountSnapshot } from '../store.js';
 import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType, fundTypeLabel, assetLabel, midasStockAccountValue, groupFundsByType } from '../asset-groups.js';
+import { assetLogo } from '../logos.js';
 import { sectionCard, emptyState, toneCard, SECTION_TONES } from './common.js';
 
 const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
@@ -130,8 +131,9 @@ export function renderDagilim(ctx) {
           h('th', {}, 'Adet'), h('th', { class: 'col-m-hide' }, 'Portföy Değeri'), h('th', { class: 'col-m-hide' }, 'Ort. Maliyet'),
           h('th', { class: 'col-m-hide' }, 'Dağılım'), h('th', { class: 'col-total' }, 'Toplam K/Z'), h('th', { class: 'col-daily' }, 'Günlük'))),
         h('tbody', {}, rows.map((row) => row.typeHeader ? typeHeaderRow(row.typeHeader) : h('tr', {},
-          h('td', {}, h('span', { class: 'code-chip' }, row.code),
-            assetLabel(row.code) ? h('span', { class: 'pill', style: 'margin-left:6px' }, assetLabel(row.code)) : null),
+          h('td', {}, h('span', { class: 'asset-cell' }, assetLogo(row.code, { kind: row.kind, currency: row.currency }),
+            h('span', { class: 'asset-names' }, h('span', { class: 'code-chip' }, row.code),
+              assetLabel(row.code) ? h('span', { class: 'pill asset-label' }, assetLabel(row.code)) : null))),
           h('td', {}, fmtUnits(row.units)),
           h('td', { class: 'col-m-hide' }, liveValuesReconcile && isNum(row.marketValueTRY) ? tl(row.marketValueTRY) : '—'),
           h('td', { class: 'col-m-hide' }, `${row.avgCost == null ? '—' : new Intl.NumberFormat('tr-TR', { style: 'currency', currency: row.currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2 }).format(row.avgCost)}`),
@@ -178,7 +180,7 @@ export function renderDagilim(ctx) {
             h('th', { style: 'text-align:left' }, 'Varlık'),
             h('th', {}, `Toplam K/Z (${currency})`), h('th', {}, 'Getiri'))),
           h('tbody', {}, rows.map((row) => row.typeHeader ? typeHeaderRow(row.typeHeader) : h('tr', {},
-            h('td', {}, h('span', { class: 'code-chip' }, row.code)),
+            h('td', {}, h('span', { class: 'asset-cell' }, assetLogo(row.code, { kind: row.kind, currency: row.currency }), h('span', { class: 'code-chip' }, row.code))),
             h('td', { class: cls2(row.totalPLNative) }, signedCurrency(row.totalPLNative, currency)),
             h('td', { class: cls2(row.totalPct) }, isNum(row.totalPct) ? pctSigned(row.totalPct, 2) : '—'))))));
         const groupPL = rows.reduce((sum, row) => sum + row.totalPLNative, 0);

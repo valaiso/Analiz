@@ -16,6 +16,7 @@ import {
   applyDailyMarketTransactions, groupAssetRows, assetType, midasStockAccountValue, assetLabel, groupFundsByType, fundStopajRate,
   midasBaseline, unexplainedChange,
 } from '../asset-groups.js';
+import { assetLogo } from '../logos.js';
 import { kpiCard, plCard, sectionCard, toneCard, groupStrip, SECTION_TONES, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
 /**
@@ -403,7 +404,7 @@ export function renderPanel(ctx) {
       h('th', {}, 'Oran'),
       h('th', {}, 'Tahmini stopaj'))),
     h('tbody', {}, stopajRows.map((row) => h('tr', {},
-      h('td', { style: 'text-align:left' }, h('span', { class: 'code-chip' }, row.code)),
+      h('td', { style: 'text-align:left' }, h('span', { class: 'asset-cell' }, assetLogo(row.code), h('span', { class: 'code-chip' }, row.code))),
       h('td', {}, tl(row.profit)),
       h('td', { title: row.reason }, pct(row.rate * 100, 1)),
       h('td', { title: row.reason }, tl(row.amount))))));
@@ -558,8 +559,10 @@ export function renderPanel(ctx) {
     const basePositionsTable = (rows) => sortableTable({
       initialSort: { key: 'allocationPct', dir: 'desc' },
       columns: [
-        { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', {}, h('span', { class: 'code-chip' }, r.code),
-          assetLabel(r.code) ? h('span', { class: 'pill', style: 'margin-left:6px' }, assetLabel(r.code)) : null) },
+        { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', { class: 'asset-cell' },
+          assetLogo(r.code, { kind: r.kind, currency: r.currency }),
+          h('span', { class: 'asset-names' }, h('span', { class: 'code-chip' }, r.code),
+            assetLabel(r.code) ? h('span', { class: 'pill asset-label' }, assetLabel(r.code)) : null)) },
         { key: 'units', label: 'Adet', render: (r) => fmtUnits(r.units) },
         { key: 'price', label: 'Güncel Fiyat', className: 'col-m-hide', render: (r) => moneyByCurrency(r.price, r.currency) },
         { key: 'marketValueTRY', label: 'Portföy Değeri', className: 'col-m-hide', render: (r) => positionSnapshotConsistent && isNum(r.marketValueTRY) ? tl(r.marketValueTRY) : '—' },

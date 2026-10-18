@@ -694,6 +694,34 @@ html[data-theme="dark"] .sec-slate { --sec: #94a3b8; }
 .sec-lite > .card-head h2 { display: flex; align-items: center; gap: 8px; }
 .sec-lite > .card-head h2::before { content: ""; width: 10px; height: 10px; border-radius: 3px; background: var(--sec); flex: none; }
 
+/* Varlık logosu: kodun solunda yuvarlak */
+.asset-cell { display: inline-flex; align-items: center; gap: 9px; min-width: 0; vertical-align: middle; }
+.asset-names { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.asset-logo {
+  position: relative; flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%; overflow: hidden;
+  display: grid; place-items: center; background: var(--logo-bg, #64748b); color: #fff;
+  box-shadow: 0 0 0 1px var(--border);
+}
+.asset-logo-text { font-size: .62rem; font-weight: 800; letter-spacing: .02em; }
+.asset-logo img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; padding: 3px; opacity: 0; transition: opacity .15s; }
+.asset-logo.has-img { background: #fff; }
+.asset-logo.has-img img { opacity: 1; }
+.asset-logo.has-img .asset-logo-text { visibility: hidden; }
+.asset-logo.on-dark { background: #1e293b; }
+.asset-logo.logo-kripto.has-img img { padding: 0; }
+.logo-fon { --logo-bg: #1f5fbf; }
+.logo-etf { --logo-bg: #0d9488; }
+.logo-hisse { --logo-bg: #dd6b20; }
+.logo-kripto { --logo-bg: #7c3aed; }
+.logo-diger { --logo-bg: #475569; }
+
+@media (max-width: 640px) {
+  /* Telefonda yalnızca logo + kod: açıklama (PPF, ETF adı vb.) gizlenir */
+  .pos-table .asset-label, .pos-table td:first-child .pill { display: none !important; }
+  .asset-logo { flex-basis: 32px; width: 32px; height: 32px; }
+  .pos-table .asset-cell .code-chip { background: none; border: 0; padding: 0; font-size: .92rem; }
+}
+
 /* Yazdırma / PDF: yalnızca rapor sayfaları, her biri bir A4 */
 @media print {
   @page { size: A4; margin: 0; }
