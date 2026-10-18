@@ -18,3 +18,7 @@ Thumbs.db
 
 # Web Push gizli anahtarı (GitHub secret olarak saklanır, depoya girmez)
 vapid-private-key.pem
+
+# Yerel deneme dosyaları
+_rapor-test.html
+.claude/

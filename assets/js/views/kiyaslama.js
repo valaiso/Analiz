@@ -14,6 +14,7 @@ const BENCH_STYLES = {
   USDTRY: { color: 'var(--c4)' },
   TUFE: { color: 'var(--c6)' },
   PARAPIYASASI: { color: 'var(--c5)' },
+  SP500TL: { color: 'var(--c1)' },
 };
 
 const benchStyle = (key) => BENCH_STYLES[key] || { color: colorAt(Object.keys(BENCH_STYLES).length) };

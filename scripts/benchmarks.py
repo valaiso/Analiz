@@ -209,7 +209,34 @@ def tufe_series(start: dt.date, end: dt.date) -> dict[str, float]:
     if published:
         print(f"  TUFE: {len(published)} aylik gozlem, yayim gunlerine hizalandi", flush=True)
     return published
-def collect(start: dt.date, end: dt.date, days: list[str]) -> dict:
+def money_market_index(days: list[str], funds: list[tuple[int, list]]) -> dict[str, float]:
+    """Para piyasası fonlarının eşit ağırlıklı günlük getiri endeksi (başlangıç 100).
+
+    Her gün, o gün ve önceki gün fiyatı olan PPF'lerin günlük getirilerinin
+    ortalaması alınır ve zincirlenir. %5'ten büyük günlük sıçramalar (hatalı
+    veri, bölünme) ortalamaya katılmaz.
+    """
+    out: dict[str, float] = {}
+    level = 100.0
+    for k in range(len(days)):
+        returns = []
+        for start, series in funds:
+            i = k - start
+            if i < 1 or i >= len(series):
+                continue
+            prev, cur = series[i - 1], series[i]
+            if prev and cur and prev > 0:
+                r = cur / prev - 1
+                if abs(r) <= 0.05:
+                    returns.append(r)
+        if returns:
+            level *= 1 + sum(returns) / len(returns)
+        if returns or out:
+            out[days[k]] = level
+    return out
+
+
+def collect(start: dt.date, end: dt.date, days: list[str], money_market: list[tuple[int, list]] | None = None) -> dict:
     """Tum kiyaslama serilerini toplayip takvim gunlerine hizalar.
 
     `days` portfoy takviminin gunleridir (TEFAS'in veri urettigi gunler).
@@ -263,6 +290,20 @@ def collect(start: dt.date, end: dt.date, days: list[str]) -> dict:
         add("GRAMALTIN", "Gram Altin", "TL", gram)
 
     add("TUFE", "TUFE (Enflasyon)", "endeks", tufe_series(start, end))
+
+    # S&P 500, Türk yatırımcının gördüğü haliyle TL'ye çevrilir.
+    try:
+        spx = yahoo_series("^GSPC", start, end)
+    except Exception as exc:                                    # noqa: BLE001
+        print(f"  S&P 500 cekilemedi: {exc}", flush=True)
+        spx = {}
+    if spx and usdtry:
+        usd_ff = _forward_fill(usdtry, sorted(set(usdtry) | set(spx)))
+        add("SP500TL", "S&P 500 (TL)", "puan",
+            {day: value * usd_ff[day] for day, value in spx.items() if day in usd_ff})
+
+    if money_market:
+        add("PARAPIYASASI", "PPF Ortalaması", "endeks", money_market_index(days, money_market))
     return series
 
 

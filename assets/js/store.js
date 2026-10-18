@@ -326,6 +326,27 @@ export function recordPortfolioValue(calendarDate, value) {
   return true;
 }
 
+/**
+ * Aylık rapor için ayın son pozisyon fotoğrafı. Ay içinde her kayıtta üzerine
+ * yazılır; ay bitince son yazılan fotoğraf ay sonu durumu olur.
+ */
+export const monthlySnapshots = () => state.monthlySnapshots || {};
+
+export function recordMonthlySnapshot(calendarDate, snapshot) {
+  if (!snapshot || !Array.isArray(snapshot.rows)) return false;
+  const date = tradingDateFor(calendarDate);
+  const month = date.slice(0, 7);
+  const previous = state.monthlySnapshots?.[month];
+  const lastAt = Date.parse(previous?.savedAt || '') || 0;
+  if (previous && previous.date === date && Date.now() - lastAt < VALUE_RECORD_INTERVAL_MS) return false;
+  state.monthlySnapshots = {
+    ...(state.monthlySnapshots || {}),
+    [month]: { ...snapshot, date, savedAt: new Date().toISOString() },
+  };
+  persist();
+  return true;
+}
+
 /** Geçmiş bir günün toplam değerini elle yazar (hafta sonu Cuma'ya gider). */
 export function setPortfolioValue(calendarDate, value) {
   const amount = Math.round(Number(value) * 100) / 100;

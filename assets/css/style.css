@@ -435,7 +435,7 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
   /* Telefonda 5 sekme: İşlemler ve Fonlar gizlenir, Ayarlar gösterilir. */
   .nav-section-settings { display: contents; }
   .tab-desktop-only { display: none; }
-  .tab { width: auto; min-width: 0; min-height: 56px; flex: 1 0 66px; flex-direction: column; justify-content: center; gap: 3px; padding: 5px 4px; border: 0; border-radius: 8px; font-size: .68rem; }
+  .tab { width: auto; min-width: 0; min-height: 56px; flex: 1 1 0; flex-direction: column; justify-content: center; gap: 3px; padding: 5px 4px; border: 0; border-radius: 8px; font-size: .68rem; }
   .tab[aria-selected="true"] { border: 0; }
   .nav-icon { flex: 0 0 auto; font-size: 1.05rem; }
   .main-column { padding-bottom: calc(66px + env(safe-area-inset-bottom)); }
@@ -457,9 +457,38 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
   .donut-wrap .chart { max-width: 100%; }
 }
 
+/* ---------------------------------------------------------------- aylık rapor */
+.report { display: flex; flex-direction: column; gap: 16px; }
+.report-toolbar { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.report-page-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; margin-bottom: 12px; }
+.report-page-head h2 { margin: 0; font-size: 1.05rem; }
+.report-page-head .sub { color: var(--text-dim); font-size: .8rem; }
+.report-page h3 { font-size: .9rem; margin: 14px 0 6px; }
+.report-kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+.report-kpi { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.report-kpi-label { font-size: .72rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: .03em; }
+.report-kpi strong { font-size: 1.15rem; }
+.report-kpi-sub { font-size: .75rem; color: var(--text-dim); }
+.report-insights { margin: 14px 0 0; padding-left: 18px; line-height: 1.55; }
+.report-list { margin: 0; padding-left: 18px; line-height: 1.7; }
+.report-notes { margin: 0; padding-left: 18px; line-height: 1.6; font-size: .85rem; }
+.report-row-main td { font-weight: 700; }
+
 @media print {
-  .sidebar, .topbar, .footer, .btn, .seg { display: none !important; }
+  .sidebar, .topbar, .footer, .btn, .seg, .report-toolbar { display: none !important; }
   .card { break-inside: avoid; box-shadow: none; }
+  /* Rapor A4'te açık temayla basılır; renkler korunur. */
+  @page { size: A4; margin: 12mm; }
+  :root, :root[data-theme="dark"] {
+    color-scheme: light;
+    --bg: #fff; --surface: #fff; --surface-2: #f3f6fb; --border: #dfe7f1;
+    --text: #12233d; --text-dim: #5b6b81; --accent: #3478e5; --up: #0f9d58; --down: #e5484d;
+  }
+  body, .app-shell, .main-column, .app { background: #fff !important; padding: 0 !important; }
+  * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .report-page { break-inside: auto; border: 0; padding: 0 0 8mm; }
+  .report-page + .report-page { break-before: page; }
+  .report-page table, .report-kpis, .report-page .chart { break-inside: avoid; }
 }
 
 /* Alt alta duran pozisyon tablolarında sütunlar aynı hizada */

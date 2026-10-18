@@ -19,6 +19,7 @@ import { renderRisk } from './views/risk.js';
 import { renderIslemler } from './views/islemler.js';
 import { renderFonlar, showFundDetail } from './views/fonlar.js';
 import { renderAyarlar } from './views/ayarlar.js';
+import { renderRapor } from './views/rapor.js';
 
 const VIEWS = {
   panel: { render: renderPanel, needsAnalysis: true },
@@ -27,6 +28,7 @@ const VIEWS = {
   risk: { render: renderRisk, needsAnalysis: true },
   islemler: { render: renderIslemler, needsAnalysis: false },
   fonlar: { render: renderFonlar, needsAnalysis: true },
+  rapor: { render: renderRapor, needsAnalysis: false },
   ayarlar: { render: renderAyarlar, needsAnalysis: false },
 };
 
@@ -459,7 +461,7 @@ function setActiveTab(view) {
   const title = document.querySelector('#pageTitle');
   if (title) title.textContent = ({
     panel: 'Panel', dagilim: 'Dağılım', kiyaslama: 'Kıyaslama', risk: 'Risk',
-    islemler: 'İşlemler', fonlar: 'Fonlar', ayarlar: 'Ayarlar',
+    islemler: 'İşlemler', fonlar: 'Fonlar', rapor: 'Rapor', ayarlar: 'Ayarlar',
   })[view] || 'Panel';
 }
 

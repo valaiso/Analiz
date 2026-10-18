@@ -8,7 +8,7 @@ import { sliceLastDays } from '../portfolio.js';
 import { cashflowCalendar, realReturn } from '../insights.js';
 import {
   transactions, daysSinceBackup, getMidasAccountSnapshot,
-  valueHistory, recordPortfolioValue, setPortfolioValue, removePortfolioValue, cashflows, midasBaselineState, pendingCashflow,
+  valueHistory, recordPortfolioValue, recordMonthlySnapshot, setPortfolioValue, removePortfolioValue, cashflows, midasBaselineState, pendingCashflow,
   updateMidasBaseline, confirmPendingCashflow, rejectPendingCashflow, removeCashflow, dividends, dividendsBetween,
 } from '../store.js';
 import {
@@ -213,7 +213,27 @@ export function renderPanel(ctx) {
         onclick: () => navigate('islemler'),
       }, 'Midas’tan yeniden oku')));
   }
-  if (hasMidasTotal && midasSnapshotComplete) recordPortfolioValue(todayInIstanbul(), midasPortfolioTotal);
+  if (hasMidasTotal && midasSnapshotComplete) {
+    recordPortfolioValue(todayInIstanbul(), midasPortfolioTotal);
+    // Aylık rapor için ayın son pozisyon fotoğrafı (ay boyunca güncellenir).
+    recordMonthlySnapshot(todayInIstanbul(), {
+      total: midasPortfolioTotal,
+      cash: stockPositionsCaptured ? stockAccount.cash : 0,
+      rows: snapshotPositions.filter((row) => isNum(row.marketValueTRY) && row.marketValueTRY > 0).map((row) => ({
+        code: row.code,
+        group: assetType(row.code, row.kind, row.category),
+        label: assetLabel(row.code) || '',
+        currency: row.currency || 'TRY',
+        units: row.units,
+        price: row.price,
+        value: Math.round(row.marketValueTRY * 100) / 100,
+        unitTRY: row.units > 0 ? row.marketValueTRY / row.units : null,
+        totalPLTRY: isNum(row.totalPLTRY) ? Math.round(row.totalPLTRY * 100) / 100 : null,
+        totalPct: isNum(row.totalPct) ? row.totalPct : null,
+        frozen: Boolean(row.frozen),
+      })),
+    });
+  }
 
   /* ------------------------------------------------- para giriş/çıkış tespiti */
 

@@ -361,7 +361,8 @@ def build_site(conn: sqlite3.Connection, out_dir: Path, years: int) -> dict:
     _write_json(data_dir / "calendar.json", calendar)
 
     # Benchmarks
-    bench = benchmarks.collect(dt.date.fromisoformat(calendar[0]), dt.date.fromisoformat(last_day), calendar)
+    bench = benchmarks.collect(dt.date.fromisoformat(calendar[0]), dt.date.fromisoformat(last_day), calendar,
+                               money_market=para_piyasasi)
     _write_json(data_dir / "benchmarks.json", bench)
 
     info = {
