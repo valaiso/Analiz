@@ -4,7 +4,10 @@ import {
 import { getMidasAccountSnapshot } from './store.js';
 
 const GROUP_ORDER = ['ETF', 'Fon', 'Hisse', 'Kripto', 'Diğer'];
-const NO_DAILY_CHANGE_CODES = new Set(['THF', 'TP2']);
+// Temerrüde düşen, alım-satımı olmayan fonlar: fiyat Midas'taki değerde sabit,
+// günlük değişim 0, kâr/zarar gösterilmez.
+export const FROZEN_FUND_CODES = new Set(['THF', 'TP2']);
+const NO_DAILY_CHANGE_CODES = FROZEN_FUND_CODES;
 const INTRADAY_QUOTE_KINDS = new Set([
   'US_ETF', 'BIST_ETF', 'BYF', 'HISSE', 'BIST_STOCK', 'BIST_HISSE', 'US_STOCK',
 ]);
@@ -251,7 +254,11 @@ export function etfLabel(code) {
 }
 
 /** Kodun yanındaki kısa açıklama: fon türü veya ETF kapsamı. */
-export const assetLabel = (code) => fundTypeLabel(code) || etfLabel(code);
+export const assetLabel = (code) => {
+  const label = fundTypeLabel(code) || etfLabel(code);
+  return FROZEN_FUND_CODES.has(String(code || '').toLocaleUpperCase('tr'))
+    ? `${label ? `${label} · ` : ''}temerrüt, fiyat sabit` : label;
+};
 
 /** Fon satırlarını türüne göre gruplar; en büyük toplam değerli tür önce gelir. */
 export function groupFundsByType(rows) {
@@ -575,7 +582,9 @@ export function addSiteMarketMetrics(positions) {
     const midasPriceKnown = position.midasStockSnapshot && Number.isFinite(position.price) && position.price > 0;
     const historyStale = !exchangeTraded && midasPriceKnown
       && isStalePriceDate(quoteDate, DB.meta?.lastDataDate || DB.calendar.at(-1));
-    const price = useQuotePrice ? liveQuote.price
+    const frozen = FROZEN_FUND_CODES.has(position.code) && midasPriceKnown;
+    const price = frozen ? position.price
+      : useQuotePrice ? liveQuote.price
       : historyStale ? position.price
       : historyPriceIsToday && Number.isFinite(priceFromHistory) ? priceFromHistory
         : snapshotPriceIsToday && Number.isFinite(position.price) && position.price > 0 ? position.price
@@ -652,13 +661,13 @@ export function addSiteMarketMetrics(positions) {
     const dailyPLNative = calculatedDailyPLNative;
     const dailyPLTRY = calculatedDailyPLTRY;
     const dailyPct = calculatedDailyPct;
-    const totalPLNative = noDailyChange ? 0
+    // Temerrütteki fonda K/Z yok; donuk TEFAS fiyatlı diğer fonlarda Midas fiyatıyla hesaplanır.
+    const totalPLNative = FROZEN_FUND_CODES.has(position.code) ? null
       : Number.isFinite(position.totalPL) ? position.totalPL
         : hasSitePrice && Number.isFinite(avgCost) ? units * (price - avgCost)
           : null;
-    const totalPLTRY = noDailyChange ? 0
-      : Number.isFinite(totalPLNative) ? totalPLNative * fx : null;
-    const totalPct = noDailyChange ? 0
+    const totalPLTRY = Number.isFinite(totalPLNative) ? totalPLNative * fx : null;
+    const totalPct = FROZEN_FUND_CODES.has(position.code) ? null
       : Number.isFinite(position.totalPct) ? position.totalPct
         : hasSitePrice && Number.isFinite(avgCost) && avgCost > 0 ? ((price / avgCost) - 1) * 100
           : null;
@@ -693,6 +702,7 @@ export function addSiteMarketMetrics(positions) {
       quoteAgeMinutes,
       noDailyChange,
       priceFromMidasBecauseStale: historyStale,
+      frozen: FROZEN_FUND_CODES.has(position.code),
       dailyFromLastSession: useLastSession ? lastSessionDate || true : null,
     };
   });

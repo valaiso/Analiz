@@ -137,7 +137,7 @@ export function renderDagilim(ctx) {
           h('td', {}, `${row.avgCost == null ? '—' : new Intl.NumberFormat('tr-TR', { style: 'currency', currency: row.currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2 }).format(row.avgCost)}`),
           h('td', {}, row.localRecord || !isNum(row.allocationPct) ? '—' : pct(row.allocationPct, 2)),
           h('td', { class: cls2(row.totalPLTRY) }, liveValuesReconcile && isNum(row.totalPLNative) ? `${signedCurrency(row.totalPLNative, row.currency)}${isNum(row.totalPct) ? ` · ${pctSigned(row.totalPct)}` : ''}` : '—'),
-          h('td', { class: cls2(row.dailyPLNative) }, liveValuesReconcile && isNum(row.dailyPLNative) ? `${signedCurrency(row.dailyPLNative, row.currency)}${isNum(row.dailyPct) ? ` · ${pctSigned(row.dailyPct)}` : ''}` : '—'))))));
+          h('td', { class: cls2(row.dailyPLNative) }, !row.frozen && liveValuesReconcile && isNum(row.dailyPLNative) ? `${signedCurrency(row.dailyPLNative, row.currency)}${isNum(row.dailyPct) ? ` · ${pctSigned(row.dailyPct)}` : ''}` : '—'))))));
       root.append(sectionCard(localOnly ? 'Kripto' : group.label,
         localOnly ? 'Açık miktar Midas Kripto Pozisyonlar tablosundan alınır.'
           : 'Portföy değeri = Midas adedi × güncel fiyat × güncel kur', table));

@@ -245,6 +245,8 @@ export async function refreshData() {
  */
 const FUND_KINDS = new Set(['YAT', 'EMK', 'GYF', 'GSYF']);
 const STALE_DAYS = 5;
+// asset-groups.js FROZEN_FUND_CODES ile aynı liste (döngüsel içe aktarmayı önlemek için ayrı).
+const FROZEN_CODES = new Set(['THF', 'TP2']);
 const MAX_MIDAS_GAP = 0.2;
 
 /**
@@ -265,6 +267,8 @@ function repairedFill(code, start, prices) {
   const real = prices.map((value, k) => [start + k, value]).filter(([, value]) => isNum(value) && value > 0);
   if (!real.length) return fallback();
   const lastDate = DB.calendar[real.at(-1)[0]];
+  // Temerrütteki fon (THF, TP2): tüm seri Midas fiyatında sabit; hareket yok.
+  if (FROZEN_CODES.has(code)) return new Array(Math.max(prices.length, DB.calendar.length - start)).fill(position.price);
   if (!lastDate || (Date.parse(`${latestDate}T00:00:00Z`) - Date.parse(`${lastDate}T00:00:00Z`)) / 86400000 <= STALE_DAYS) return fallback();
   const midasPrice = position.price;
   // Sondaki hatalı noktaları at (en fazla 10 nokta geriye bakılır).
