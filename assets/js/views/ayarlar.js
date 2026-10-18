@@ -10,7 +10,7 @@ import {
   allTransactions, daysSinceBackup,
 } from '../store.js';
 import { sectionCard } from './common.js';
-import { pushStatus, enablePush, disablePush, testNotification } from '../push.js';
+import { pushStatus, enablePush, disablePush, testNotification, pushDiagnostics } from '../push.js';
 
 /**
  * Sayıyı hem Türkçe hem İngilizce yazımdan okur.
@@ -173,13 +173,17 @@ export function renderAyarlar(ctx) {
       class: `btn${primary ? ' btn-primary' : ''}`, type: 'button',
       onclick: async (event) => {
         event.currentTarget.disabled = true;
-        try { await action(); } catch (error) { toast(error.message || 'Bildirim ayarlanamadı'); }
+        try { await action(); } catch (error) {
+          toast(error.message || 'Bildirim ayarlanamadı');
+          pushDiag.textContent = `Tanı: ${pushDiagnostics()} · hata: ${error.message || error}`;
+        }
         await showPush();
       },
     }, label);
     pushText.textContent = {
-      'needs-home-screen': 'iPhone’da bildirim için siteyi Safari’de Paylaş → Ana Ekrana Ekle ile ekleyip ana ekrandaki simgeden aç.',
-      unsupported: 'Bu tarayıcı bildirimleri desteklemiyor.',
+      'needs-home-screen': 'Site şu an Safari sayfası olarak açık; iPhone bildirime yalnızca ana ekran uygulamasında izin verir. '
+        + 'Ana ekrandaki Analiz simgesini sil → Safari’de siteyi aç → Paylaş → Ana Ekrana Ekle → “Web Uygulaması olarak aç” açık olsun → Ekle. Sonra yeni simgeden aç.',
+      unsupported: 'Bu cihaz bildirimleri desteklemiyor. iPhone’da iOS 16.4 veya üstü gerekir (Ayarlar → Genel → Yazılım Güncelleme).',
       denied: 'Bildirim izni reddedilmiş. iPhone Ayarlar → Bildirimler → Analiz’den izni aç.',
       on: 'Açık · her işlem günü (Pzt–Cum) 18:00’de “Portföy bugün 🟢 +%… / 🔴 −%…” bildirimi gelir.',
       off: 'Kapalı · aç dersen telefon izin ister.',
@@ -192,8 +196,9 @@ export function renderAyarlar(ctx) {
       button('Deneme bildirimi gönder', true, testNotification),
       button('Bildirimleri kapat', false, async () => { await disablePush(); toast('Bildirim kapatıldı'); }));
   };
+  const pushDiag = h('p', { class: 'dim', style: 'margin:0;font-size:.75rem' }, `Tanı: ${pushDiagnostics()}`);
   root.append(sectionCard('Günlük Bildirim (18:00)',
-    'Telefonuna her işlem günü portföyün günlük değişimi gelir', pushText, pushButtons));
+    'Telefonuna her işlem günü portföyün günlük değişimi gelir', pushText, pushButtons, pushDiag));
   void showPush();
 
   /* ------------------------------------------------------------------ profiller */

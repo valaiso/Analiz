@@ -71,3 +71,16 @@ export async function testNotification() {
     tag: 'deneme',
   });
 }
+
+/** Sorun giderme için kısa tanı satırı: neden açılamadığını gösterir. */
+export function pushDiagnostics() {
+  const ios = navigator.userAgent.match(/OS (\d+)[_.](\d+)/);
+  const parts = [
+    ios ? `iOS ${ios[1]}.${ios[2]}` : navigator.userAgent.includes('Windows') ? 'Windows' : 'tarayıcı',
+    `uygulama modu: ${isStandaloneApp() ? 'evet' : 'hayır'}`,
+    `bildirim desteği: ${'Notification' in window ? 'var' : 'yok'}`,
+    `push desteği: ${'PushManager' in window ? 'var' : 'yok'}`,
+    `izin: ${'Notification' in window ? { granted: 'verildi', denied: 'reddedildi', default: 'sorulmadı' }[Notification.permission] : '—'}`,
+  ];
+  return parts.join(' · ');
+}
