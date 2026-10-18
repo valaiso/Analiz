@@ -86,20 +86,24 @@ def fmt_tr(value: float, decimals: int = 2) -> str:
     return text.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
-def portfolio_change(cloud: dict, funds: dict) -> tuple[float, float, list[str]]:
-    """(şimdiki değer, önceki değer, fiyatı bulunamayan kodlar) — ₺ cinsinden."""
+def portfolio_change(cloud: dict, funds: dict) -> tuple[float, float, list[str], dict]:
+    """(şimdiki değer, önceki değer, fiyatı bulunamayan kodlar, grup kırılımı) — ₺ cinsinden."""
     usd = yahoo_quote("USDTRY=X")
     if not usd:
         raise RuntimeError("USD/TRY kuru alınamadı")
     usd_now, usd_prev = usd
     now_total = prev_total = 0.0
     missing: list[str] = []
+    groups: dict[str, list] = {}  # grup -> [₺ değer, adet sayısı]
 
-    def add(units: float, now_price: float, prev_price: float, currency: str) -> None:
+    def add(units: float, now_price: float, prev_price: float, currency: str, group: str) -> None:
         nonlocal now_total, prev_total
         fx_now, fx_prev = (usd_now, usd_prev) if currency == "USD" else (1.0, 1.0)
         now_total += units * now_price * fx_now
         prev_total += units * prev_price * fx_prev
+        bucket = groups.setdefault(group, [0.0, 0])
+        bucket[0] += units * now_price * fx_now
+        bucket[1] += 1
 
     for row in cloud.get("positions") or []:
         code, units = str(row.get("code", "")).upper(), float(row.get("units") or 0)
@@ -114,14 +118,14 @@ def portfolio_change(cloud: dict, funds: dict) -> tuple[float, float, list[str]]
                 missing.append(code)
                 continue
             chg = 0.0 if code in NO_DAILY_CHANGE else float(meta.get("chg") or 0)
-            add(units, price, price / (1 + chg / 100), "TRY")
+            add(units, price, price / (1 + chg / 100), "TRY", "Fon")
             continue
         ticker = code if currency == "USD" or kind.startswith("US_") else f"{code}.IS"
         quote = yahoo_quote(ticker)
         if not quote:
             missing.append(code)
             continue
-        add(units, quote[0], quote[1], currency)
+        add(units, quote[0], quote[1], currency, "Hisse/ETF ($)" if currency == "USD" else "Hisse/ETF (₺)")
 
     for row in cloud.get("cryptoPositions") or []:
         code, units = str(row.get("code", "")).upper(), float(row.get("units") or 0)
@@ -131,8 +135,8 @@ def portfolio_change(cloud: dict, funds: dict) -> tuple[float, float, list[str]]
         if not quote:
             missing.append(code)
             continue
-        add(units, quote[0], quote[1], "USD")
-    return now_total, prev_total, missing
+        add(units, quote[0], quote[1], "USD", "Kripto")
+    return now_total, prev_total, missing, groups
 
 
 def main() -> int:
@@ -162,7 +166,7 @@ def main() -> int:
             print(f"{user_id[:8]}: {user_subs} cihaz aboneliği var ama hesapta Midas pozisyonu yok; "
                   "siteyi Midas verisinin olduğu bilgisayarda bir kez açın")
             continue
-        now_total, prev_total, missing = portfolio_change(cloud, funds)
+        now_total, prev_total, missing, groups = portfolio_change(cloud, funds)
         if prev_total <= 0:
             continue
         change = now_total - prev_total
@@ -172,11 +176,16 @@ def main() -> int:
         payload = {
             "title": f"{'🟢' if up else '🔴'} Portföy bugün {sign}%{fmt_tr(pct)} {'arttı' if up else 'düştü'}",
             "body": f"{sign}₺{fmt_tr(change, 0)} · toplam ₺{fmt_tr(now_total, 0)}"
-                    + (f" · fiyatı alınamayan: {', '.join(missing)}" if missing else ""),
+                    + (f" · fiyatı alınamayan: {', '.join(missing)}" if missing else "")
+                    # Elle denemede kırılım da yazılır; yalnızca kullanıcının cihazına gider.
+                    + ("\n" + " · ".join(f"{name} ₺{fmt_tr(value, 0)} ({count})" for name, (value, count) in groups.items())
+                       if force else ""),
             "tag": f"gunluk-{dt.date.today().isoformat()}",
             "url": "/Analiz/#panel",
         }
-        print(f"{user_id[:8]}: {user_subs} cihaz · {payload['title']} | {payload['body']}")
+        # Depo herkese açık: Actions çıktısına tutar yazılmaz.
+        print(f"{user_id[:8]}: {user_subs} cihaz · {len(cloud.get('positions') or [])} hisse/fon/ETF, "
+              f"{len(cloud.get('cryptoPositions') or [])} kripto pozisyonu · eksik fiyat: {', '.join(missing) or 'yok'}")
         for sub in (row for row in subs if row["user_id"] == user_id):
             try:
                 webpush(subscription_info=sub["subscription"], data=json.dumps(payload, ensure_ascii=False),
