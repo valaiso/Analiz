@@ -44,6 +44,13 @@ function migrate(raw) {
       .filter(([date]) => date >= '2026-10-17'));
     delete state.valueHistorySeeded;
   }
+  // Eski sürüm hafta sonunu ayrı gün olarak kaydediyordu: Cumartesi/Pazar
+  // kayıtları Cuma'ya taşınır (en geç tarihli hafta sonu değeri Cuma kapanışıdır).
+  const weekendKeys = Object.keys(state.valueHistory).filter((date) => tradingDateFor(date) !== date).sort();
+  for (const date of weekendKeys) {
+    state.valueHistory[tradingDateFor(date)] = state.valueHistory[date];
+    delete state.valueHistory[date];
+  }
   // Silinmiş profile bağlı işlemleri ilk profile taşı.
   const ids = new Set(state.profiles.map((p) => p.id));
   for (const t of state.tx) if (!ids.has(t.profile)) t.profile = state.profiles[0].id;
@@ -290,8 +297,21 @@ const VALUE_RECORD_INTERVAL_MS = 30 * 60_000;
 export const valueHistory = () => state.valueHistory || {};
 
 /** Bugünün toplamını yazar; aynı gün içinde en fazla 30 dakikada bir buluta gider. */
-export function recordPortfolioValue(date, value) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date)) || !(Number.isFinite(value) && value > 0)) return false;
+/**
+ * Hafta sonu piyasa kapalıdır ve Midas Cuma kapanışını gösterir: Cumartesi /
+ * Pazar değeri ayrı bir gün sayılmaz, önceki Cuma'nın kapanışı olarak yazılır.
+ */
+export function tradingDateFor(date) {
+  const day = new Date(`${date}T12:00:00Z`).getUTCDay();
+  if (day !== 0 && day !== 6) return date;
+  const friday = new Date(`${date}T12:00:00Z`);
+  friday.setUTCDate(friday.getUTCDate() - (day === 6 ? 1 : 2));
+  return friday.toISOString().slice(0, 10);
+}
+
+export function recordPortfolioValue(calendarDate, value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(calendarDate)) || !(Number.isFinite(value) && value > 0)) return false;
+  const date = tradingDateFor(calendarDate);
   const history = { ...(state.valueHistory || {}) };
   const rounded = Math.round(value * 100) / 100;
   const lastAt = Date.parse(state.valueHistoryUpdatedAt || '') || 0;
