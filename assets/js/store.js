@@ -194,7 +194,8 @@ export function ensureMidasPositionsSynced() {
   const cloud = state.midasPositionsCloud;
   const localStock = midasSnapshot.stockCapturedAt || '';
   const localCrypto = midasSnapshot.cryptoCapturedAt || '';
-  const stale = !cloud || localStock > (cloud.stockCapturedAt || '') || localCrypto > (cloud.cryptoCapturedAt || '');
+  const stale = !cloud || !state.midasSnapshotCloud
+    || localStock > (cloud.stockCapturedAt || '') || localCrypto > (cloud.cryptoCapturedAt || '');
   if (!stale) return false;
   syncMidasPositionsToCloud();
   persist();
@@ -216,6 +217,27 @@ function syncMidasPositionsToCloud() {
     stockCapturedAt: midasSnapshot.stockCapturedAt || null,
     cryptoCapturedAt: midasSnapshot.cryptoCapturedAt || null,
   };
+  // Diğer cihazlar (telefon) Midas'ı okuyamaz: panelin kullandığı tam pozisyon
+  // tablosu hesaba yazılır. Canlı fiyatlar ve tarama tanıları her cihazda yerel kalır.
+  const { liveQuotes, liveQuotesCapturedAt, positionsDiagnostic, cryptoPositionsDiagnostic, ...portable } = midasSnapshot;
+  state.midasSnapshotCloud = portable;
+}
+
+const snapshotStamp = (snapshot) => [snapshot?.stockCapturedAt, snapshot?.cryptoCapturedAt, snapshot?.summaryCapturedAt]
+  .filter(Boolean).sort().at(-1) || '';
+
+/**
+ * Hesaptaki Midas pozisyonları bu tarayıcıdakinden yeniyse (veya burada hiç
+ * yoksa) yerel kopya olarak alınır. Böylece telefon, PC'de yapılan son Midas
+ * taramasıyla aynı toplamı gösterir.
+ */
+function adoptCloudMidasSnapshot() {
+  const cloud = state.midasSnapshotCloud;
+  if (!cloud || typeof cloud !== 'object') return false;
+  if (midasSnapshot && snapshotStamp(midasSnapshot) >= snapshotStamp(cloud)) return false;
+  midasSnapshot = { ...cloud, liveQuotes: midasSnapshot?.liveQuotes || {} };
+  try { localStorage.setItem(MIDAS_SNAPSHOT_KEY, JSON.stringify(midasSnapshot)); } catch { /* bellekteki kopya yeterli */ }
+  return true;
 }
 
 /** Store recent market quotes separately from the last Midas account snapshot. */
@@ -794,6 +816,7 @@ export function importJSON(text, mode = 'replace') {
 
   state = migrate(parsed);
   if (Array.isArray(parsed.midasTx)) midasTx = parsed.midasTx;
+  adoptCloudMidasSnapshot();
   persist();
   if (Array.isArray(parsed.midasTx)) persistMidasTransactions();
   return state.tx.length;
