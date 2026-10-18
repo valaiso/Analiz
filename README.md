@@ -3,7 +3,7 @@
 Chrome ve Edge için Manifest V3 eklentisi. Midas Atlas'ta zaten açık olan oturumdan,
 yalnızca ekranda görünen işlem geçmişi satırlarını okur. Parolaya, çerezlere veya
 Midas'ın özel API uçlarına erişmez; ağ isteği ya da emir göndermez.
-Eklenti simgesi proje kökündeki `iconV1.png` görselini kullanır.
+Eklenti simgesi taçlı kedi logosudur (`icon16/32/48/128.png`).
 
 Midas satırlarında bulunan ve Analiz'in yayımlanmış fiyat havuzunda olmayan semboller
 için kullanıcı **Midas’tan İşlemleri Oku** dediğinde açık alış döneminin başlangıcından
@@ -32,7 +32,7 @@ olarak etiketlenir ve ekranda sağlayıcının tam adı kullanılır.
 7. Midas'ın **Kripto** görünümüne geçip Kripto **Pozisyonlar** ve **Emir geçmişi** tablolarını açın; Analiz'de **Kripto Emirlerini Oku** düğmesine basın. Kripto açık varlıkları yatırım hesabından ayrı kaydedilir. Emir çiftlerinde (ör. ETH/USDT) sembol, çiftin ilk varlığıdır; USDT/USDC tek başına açık pozisyon sayılmaz.
 8. Önizlemede emir sembolü, alış/satış, tarih, adet ve fiyatı kontrol edip içe aktarımı onaylayın.
 
-Güncel paket sürümü `0.28.8`'dır. Eklenti Analiz deposunun dışında, `C:\Users\EMİR\Desktop\midas-reader` klasöründe tutulur; GitHub Actions eklentiyi paketlemez. Kod değişince Chrome/Edge uzantılar sayfasında eklentinin **Yenile** düğmesine basın, ardından Midas ve Analiz sekmelerini yenileyin. Aktarım günlüğü okuyucu sürümünü de yazar.
+Güncel paket sürümü `0.28.9`'dır. Eklenti Analiz deposunun dışında, `C:\Users\EMİR\Desktop\midas-reader` klasöründe tutulur; GitHub Actions eklentiyi paketlemez. Kod değişince Chrome/Edge uzantılar sayfasında eklentinin **Yenile** düğmesine basın, ardından Midas ve Analiz sekmelerini yenileyin. Aktarım günlüğü okuyucu sürümünü de yazar.
 
 Eklenti Midas Atlas ve Analiz GitHub Pages adreslerinin yanı sıra Yahoo Finance ve
 TEFAS fiyat kaynaklarına erişim izni ister.

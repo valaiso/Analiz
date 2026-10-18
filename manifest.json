@@ -1,18 +1,20 @@
 {
   "manifest_version": 3,
   "name": "Analiz · Midas işlem aktarımı",
-  "version": "0.28.8",
+  "version": "0.28.9",
   "description": "Açık Midas işlem geçmişini kullanıcı isteğiyle Analiz'e yerel olarak aktarır.",
   "icons": {
-    "16": "iconV1.png",
-    "48": "iconV1.png",
-    "128": "iconV1.png"
+    "16": "icon16.png",
+    "32": "icon32.png",
+    "48": "icon48.png",
+    "128": "icon128.png"
   },
   "action": {
     "default_icon": {
-      "16": "iconV1.png",
-      "48": "iconV1.png",
-      "128": "iconV1.png"
+      "16": "icon16.png",
+      "32": "icon32.png",
+      "48": "icon48.png",
+      "128": "icon128.png"
     },
     "default_title": "Analiz · Midas işlem aktarımı"
   },
@@ -22,16 +24,26 @@
     "https://query1.finance.yahoo.com/*",
     "https://www.tefas.gov.tr/*"
   ],
-  "background": { "service_worker": "service-worker.js" },
+  "background": {
+    "service_worker": "service-worker.js"
+  },
   "content_scripts": [
     {
-      "matches": ["https://atlas.getmidas.com/*"],
-      "js": ["midas-reader.js"],
+      "matches": [
+        "https://atlas.getmidas.com/*"
+      ],
+      "js": [
+        "midas-reader.js"
+      ],
       "run_at": "document_idle"
     },
     {
-      "matches": ["https://valaiso.github.io/Analiz/*"],
-      "js": ["analiz-bridge.js"],
+      "matches": [
+        "https://valaiso.github.io/Analiz/*"
+      ],
+      "js": [
+        "analiz-bridge.js"
+      ],
       "run_at": "document_idle"
     }
   ]
