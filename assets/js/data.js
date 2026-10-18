@@ -160,6 +160,32 @@ export function addLocalMarketAssets(assets) {
 }
 
 /** Trim account-owned histories to the active purchase cycle or remove them after a full sale. */
+/**
+ * Depolama temizliği: hesaba eşitlenen ek fiyat havuzundan gereksiz kayıtları
+ * siler. Silinenler: sitenin yayımlanmış verisinde zaten olan varlıkların
+ * kopyaları (ör. SPY) ve hiç tutulmayan, hiçbir işlemde geçmeyen varlıklar.
+ * keepCodes: açık pozisyonlar ve işlem kayıtlarındaki kodlar.
+ */
+export function cleanupLocalMarketAssets(keepCodes = []) {
+  const keep = new Set([...keepCodes].map((code) => String(code).toLocaleUpperCase('tr')));
+  const published = new Set(DB.funds.filter((fund) => !fund.localMarketData).map((fund) => fund.code));
+  const current = readLocalAssets();
+  const kept = current.filter((asset) => !published.has(asset.code) && keep.has(asset.code));
+  const removed = current.length - kept.length;
+  if (removed) {
+    try { localStorage.setItem(LOCAL_ASSET_KEY, JSON.stringify(kept)); } catch { /* bulut kopyası yeterli */ }
+    saveMarketAssets(kept);
+    const keptCodes = new Set(kept.map((asset) => asset.code));
+    for (const asset of current) {
+      if (keptCodes.has(asset.code) || published.has(asset.code)) continue;
+      historyCache.delete(asset.code);
+    }
+    DB.funds = DB.funds.filter((fund) => !fund.localMarketData || keptCodes.has(fund.code));
+    DB.byCode = new Map(DB.funds.map((fund) => [fund.code, fund]));
+  }
+  return removed;
+}
+
 export function pruneLocalMarketAssets(activeCycleStarts = {}, closedCodes = []) {
   const closed = new Set((closedCodes || []).map((code) => String(code).toLocaleUpperCase('tr')));
   const current = readLocalAssets();

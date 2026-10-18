@@ -541,6 +541,30 @@ function withoutPhantomFills(rows) {
   return rows.filter((tx) => !isPhantomMidasFill(tx, siblings));
 }
 
+/**
+ * Depolama temizliği (her açılışta): hatalı fiyatı-1 Midas kayıtları kalıcı
+ * silinir; artık tutulmayan varlıkların canlı fiyatları atılır.
+ * Döner: { phantomFills, staleQuotes }
+ */
+export function cleanupStoredData() {
+  const before = midasTx.length;
+  midasTx = withoutPhantomFills(midasTx);
+  const phantomFills = before - midasTx.length;
+  if (phantomFills) persistMidasTransactions();
+  let staleQuotes = 0;
+  if (midasSnapshot?.liveQuotes) {
+    const held = new Set([...(midasSnapshot.positions || []), ...(midasSnapshot.cryptoPositions || [])]
+      .map((row) => row?.code).filter(Boolean));
+    const quotes = Object.fromEntries(Object.entries(midasSnapshot.liveQuotes).filter(([code]) => held.has(code)));
+    staleQuotes = Object.keys(midasSnapshot.liveQuotes).length - Object.keys(quotes).length;
+    if (staleQuotes) {
+      midasSnapshot = { ...midasSnapshot, liveQuotes: quotes };
+      try { localStorage.setItem(MIDAS_SNAPSHOT_KEY, JSON.stringify(midasSnapshot)); } catch { /* bellekteki kopya yeterli */ }
+    }
+  }
+  return { phantomFills, staleQuotes };
+}
+
 /** Aktif profilin (veya 'ALL' ise tümünün) işlemleri, tarihe göre sıralı. */
 export function transactions(profileId = state.activeProfile) {
   const all = [...state.tx, ...withoutPhantomFills(midasTx.filter((tx) => !GENERIC_CRYPTO_CODES.has(

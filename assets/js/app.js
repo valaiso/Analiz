@@ -1,12 +1,12 @@
 /* Uygulama çatısı: veri yükleme, sekme yönlendirme, profil/tema ve Supabase eşitlemesi. */
 
 import { $, h, fmtDate, toast } from './util.js';
-import { loadCore, loadHistories, refreshData, DB } from './data.js';
+import { loadCore, loadHistories, refreshData, DB, cleanupLocalMarketAssets } from './data.js';
 import { analyze } from './portfolio.js';
 import {
   transactions, profiles, activeProfileId, setActiveProfile, activeProfileName,
   settings, setSetting, subscribe, getState, importJSON, getMidasAccountSnapshot,
-  saveMidasLiveQuotes, ensureMidasPositionsSynced,
+  saveMidasLiveQuotes, ensureMidasPositionsSynced, cleanupStoredData, allTransactions,
 } from './store.js';
 import { requestMidasLiveQuotes } from './midas-import.js';
 import { syncPushSubscription } from './push.js';
@@ -261,6 +261,23 @@ async function pullCloudChanges() {
   }
 }
 
+/** Gereksiz tarayıcı/hesap verisini temizler; hata olsa da açılışı engellemez. */
+function runStorageCleanup() {
+  try {
+    const { phantomFills, staleQuotes } = cleanupStoredData();
+    const snapshot = getMidasAccountSnapshot() || {};
+    const keepCodes = [
+      ...(snapshot.positions || []), ...(snapshot.cryptoPositions || []), ...allTransactions(),
+    ].map((row) => row?.code).filter(Boolean);
+    const assets = cleanupLocalMarketAssets(keepCodes);
+    if (phantomFills || staleQuotes || assets) {
+      console.info(`Depolama temizliği: ${phantomFills} hatalı Midas kaydı, ${assets} gereksiz fiyat geçmişi, ${staleQuotes} eski canlı fiyat silindi.`);
+    }
+  } catch (error) {
+    console.warn('Depolama temizliği yapılamadı', error);
+  }
+}
+
 async function startAuthenticatedSession(user) {
   if (cloudReady && sessionUser?.id === user.id) return;
   if (startingSession) return startingSession;
@@ -286,6 +303,8 @@ async function startAuthenticatedSession(user) {
       ensureMidasPositionsSynced();
       void syncPushSubscription().catch(() => {});
       await loadCore();
+      // Yayımlanmış veri yüklendikten sonra: kopya ve gereksiz kayıtlar silinir.
+      runStorageCleanup();
       updateDataStatus();
       renderProfileSelect();
       navigate(VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : 'panel');
