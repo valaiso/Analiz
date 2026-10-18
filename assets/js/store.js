@@ -518,10 +518,33 @@ export function removeProfile(id) {
 
 /* -------------------------------------------------------------------- işlemler */
 
+/**
+ * Midas okuyucusu bazı emirleri ikinci bir satırdan fiyatı "1" olarak da
+ * okuyor (ör. BIMAS 413,25 TL'nin yanında BIMAS 1 TL). Fiyatı tam 1 olan Midas
+ * kaydı; aynı gün/kod/yön/adette gerçek fiyatlı eşi varsa ya da varlığın
+ * bilinen fiyatından çok uzaksa hatalı sayılır.
+ */
+let referencePrice = () => null;
+export function setReferencePriceLookup(fn) { referencePrice = typeof fn === 'function' ? fn : () => null; }
+
+function isPhantomMidasFill(tx, siblings) {
+  if (tx.source !== 'midas' || Number(tx.price) !== 1) return false;
+  const key = [tx.date, tx.code, tx.type, Number(tx.units)].join('|');
+  if (siblings.has(key)) return true;
+  const ref = Number(referencePrice(tx.code));
+  return Number.isFinite(ref) && ref > 0 && (ref > 1.5 || ref < 0.67);
+}
+
+function withoutPhantomFills(rows) {
+  const siblings = new Set(rows.filter((tx) => tx.source === 'midas' && Number(tx.price) !== 1)
+    .map((tx) => [tx.date, tx.code, tx.type, Number(tx.units)].join('|')));
+  return rows.filter((tx) => !isPhantomMidasFill(tx, siblings));
+}
+
 /** Aktif profilin (veya 'ALL' ise tümünün) işlemleri, tarihe göre sıralı. */
 export function transactions(profileId = state.activeProfile) {
-  const all = [...state.tx, ...midasTx.filter((tx) => !GENERIC_CRYPTO_CODES.has(
-    String(tx.code || '').toLocaleUpperCase('en-US')))];
+  const all = [...state.tx, ...withoutPhantomFills(midasTx.filter((tx) => !GENERIC_CRYPTO_CODES.has(
+    String(tx.code || '').toLocaleUpperCase('en-US'))))];
   const list = profileId === 'ALL'
     ? all
     : all.filter((t) => t.profile === profileId);
@@ -569,6 +592,8 @@ export function addMidasTransactions(rows) {
   const batchFingerprintsWithoutId = new Set();
   const profile = state.activeProfile === 'ALL' ? state.profiles[0].id : state.activeProfile;
   let added = 0, updated = 0, skipped = 0;
+  const incomingSiblings = new Set((rows || []).filter((tx) => Number(tx.price) !== 1)
+    .map((tx) => [String(tx.date || ''), String(tx.code || '').trim().toLocaleUpperCase('tr'), tx.type === 'SAT' ? 'SAT' : 'AL', Number(tx.units)].join('|')));
   for (const tx of rows || []) {
     const record = {
       id: `midas-${uid()}`,
@@ -587,6 +612,7 @@ export function addMidasTransactions(rows) {
       note: tx.note || 'Midas aktarımı',
     };
     if (!record.date || !record.code || !(record.units > 0) || !(record.price > 0)) { skipped += 1; continue; }
+    if (isPhantomMidasFill(record, incomingSiblings)) { skipped += 1; continue; }
     if (GENERIC_CRYPTO_CODES.has(record.code.toLocaleUpperCase('en-US'))) { skipped += 1; continue; }
     const fingerprint = transactionFingerprint(record);
     if (manualFingerprints.has(fingerprint)) { skipped += 1; continue; }
@@ -676,7 +702,7 @@ export function removeTransaction(id) {
   else if (midasTx.length !== midasBefore) persistMidasTransactions();
 }
 
-export const allTransactions = () => [...state.tx, ...midasTx];
+export const allTransactions = () => [...state.tx, ...withoutPhantomFills(midasTx)];
 
 /* --------------------------------------------------------------------- ayarlar */
 

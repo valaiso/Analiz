@@ -3,7 +3,7 @@
    istek atılır ve bellekte tutulur. */
 
 import { isNum } from './util.js';
-import { getMarketAssets, saveMarketAssets, getMidasAccountSnapshot } from './store.js';
+import { getMarketAssets, saveMarketAssets, getMidasAccountSnapshot, setReferencePriceLookup } from './store.js';
 
 const DATA_URL = new URL('../../data/', import.meta.url).href;
 const LOCAL_ASSET_KEY = 'analiz-local-market-assets-v1';
@@ -16,6 +16,10 @@ export const DB = {
   benchmarks: {},       // { BIST100: {label, unit, values:[...]}, ... }
   meta: {},
 };
+
+// Hatalı Midas kayıtlarını ayıklamak için varlığın bilinen son fiyatı.
+setReferencePriceLookup((code) => DB.byCode.get(String(code || '').toLocaleUpperCase('tr'))?.price ?? null);
+
 
 const historyCache = new Map();     // kod -> { i, p, filled }
 const pending = new Map();          // kod -> Promise
