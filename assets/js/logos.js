@@ -1,8 +1,8 @@
 /* Varlık logoları: kodun solunda yuvarlak simge.
    ABD ETF/hisse ve BIST hisseleri Financial Modeling Prep'in açık logo adresinden,
-   kripto paralar cryptocurrency-icons paketinden gelir. Fonlarda kurucu banka
-   borsada işlem görüyorsa onun logosu kullanılır. Logo yoksa veya yüklenemezse
-   varlık sınıfı renginde baş harfler gösterilir. */
+   kripto paralar cryptocurrency-icons paketinden gelir. Fonlarda kurucu portföy
+   şirketinin logosu sitenin içinden (assets/logos/issuers) gelir. Logo yoksa veya
+   yüklenemezse varlık sınıfı renginde baş harfler gösterilir. */
 
 import { h } from './util.js';
 import { DB } from './data.js';
@@ -11,11 +11,19 @@ import { assetType } from './asset-groups.js';
 const FMP = 'https://financialmodelingprep.com/image-stock/';
 const CRYPTO = 'https://cdn.jsdelivr.net/npm/cryptocurrency-icons@0.18.1/svg/color/';
 
-// Fon adındaki portföy şirketi → borsadaki ana banka kodu.
+const ISSUER_DIR = new URL('../logos/issuers/', import.meta.url).href;
+
+// Fon adının başı → kurucu şirketin logosu (assets/logos/issuers/<ad>.png).
 const FUND_ISSUERS = [
-  ['İŞ PORTFÖY', 'ISCTR'], ['GARANTİ', 'GARAN'], ['YAPI KREDİ', 'YKBNK'], ['AK PORTFÖY', 'AKBNK'],
-  ['HALK PORTFÖY', 'HALKB'], ['VAKIF', 'VAKBN'], ['ŞEKER', 'SKBNK'], ['ALBARAKA', 'ALBRK'],
-  ['İNFO', 'INFO'], ['TSKB', 'TSKB'],
+  ['GARANTİ', 'garanti'], ['İŞ PORTFÖY', 'is'], ['DENİZ', 'deniz'], ['AK PORTFÖY', 'ak'],
+  ['YAPI KREDİ', 'yapikredi'], ['ZİRAAT', 'ziraat'], ['QNB', 'qnb'], ['PARDUS', 'pardus'],
+  ['KUVEYT TÜRK', 'kuveytturk'], ['ROTA', 'rota'], ['HEDEF', 'hedef'], ['İSTANBUL PORTFÖY', 'istanbul'],
+  ['TÜRKİYE', 'turkiye'], ['ANADOLU HAYAT', 'anadolu'], ['NEO PORTFÖY', 'neo'], ['AGESA', 'agesa'],
+  ['AKTİF', 'aktif'], ['INVEO', 'inveo'], ['ALLIANZ', 'allianz'], ['FİBA', 'fiba'],
+  ['ALLBATROSS', 'allbatross'], ['HSBC', 'hsbc'], ['OSMANLI', 'osmanli'], ['RE-PIE', 'repie'],
+  ['METLİFE', 'metlife'], ['ATA PORTFÖY', 'ata'], ['AXA', 'axa'], ['ALBARAKA', 'albaraka'],
+  ['TACİRLER', 'tacirler'], ['PUSULA', 'pusula'], ['TERA', 'tera'], ['ÜNLÜ', 'unlu'],
+  ['VAKIF', 'vakif'], ['HALK', 'halk'], ['BTCTURK', 'btcturk'],
 ];
 
 const failed = new Set();       // yüklenemeyen adresler: her çizimde yeniden istenmez
@@ -23,7 +31,7 @@ const onDark = new Map();       // adres → beyaz/şeffaf logo mu (koyu zemin g
 
 function fundIssuer(name) {
   const upper = String(name || '').toLocaleUpperCase('tr');
-  return FUND_ISSUERS.find(([key]) => upper.includes(key))?.[1] || null;
+  return FUND_ISSUERS.find(([key]) => upper.startsWith(key))?.[1] || null;
 }
 
 function logoSource(code, kind, currency) {
@@ -32,8 +40,8 @@ function logoSource(code, kind, currency) {
   const resolvedKind = String(kind || meta.kind || '').toUpperCase();
   if (type === 'Kripto') return `${CRYPTO}${code.toLowerCase()}.svg`;
   if (type === 'Fon') {
-    const bank = fundIssuer(meta.name);
-    return bank ? `${FMP}${bank}.IS.png` : null;
+    const issuer = fundIssuer(meta.name);
+    return issuer ? `${ISSUER_DIR}${issuer}.png` : null;
   }
   const us = ['US_ETF', 'US_STOCK'].includes(resolvedKind) || (currency || meta.currency) === 'USD';
   return `${FMP}${encodeURIComponent(code)}${us ? '' : '.IS'}.png`;

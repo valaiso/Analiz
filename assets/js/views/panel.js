@@ -573,6 +573,35 @@ export function renderPanel(ctx) {
       ],
       rows,
     });
+    // "ZİRAAT PORTFÖY BAŞAK PARA PİYASASI (TL) FONU" → kurucu "ZİRAAT PORTFÖY", ad "BAŞAK PARA PİYASASI"
+    const fundParts = (code) => {
+      const full = String(DB.byCode.get(code)?.name || '').replace(/\s*YÖNETİMİ A\.Ş\.?/i, '');
+      const match = full.match(/^(.*?PORTFÖY)\s+(.*)$/);
+      const clean = (text) => text.replace(/\s+FONU?\b/g, '').replace(/\s*\(.*?\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
+      return { issuer: match ? match[1] : '', name: clean(match ? match[2] : full) };
+    };
+    const fundTile = (r, type) => {
+      const valueOk = positionSnapshotConsistent && isNum(r.marketValueTRY);
+      const daily = r.frozen ? '—' : r.noDailyChange || isNum(r.dailyPLNative) ? signedCurrency(r.dailyPLNative, r.currency) : '—';
+      const total = r.frozen ? 'temerrüt' : positionSnapshotConsistent && isNum(r.totalPLNative) ? signedCurrency(r.totalPLNative, r.currency) : '—';
+      const parts = fundParts(r.code);
+      return h('article', { class: `fund-tile${r.frozen ? ' is-frozen' : ''}` },
+        h('div', { class: 'fund-tile-top' },
+          assetLogo(r.code, { kind: r.kind, currency: r.currency }),
+          h('span', { class: 'fund-tile-type' }, parts.issuer || type),
+          isNum(r.allocationPct) ? h('span', { class: 'fund-tile-share' }, pct(r.allocationPct, 1)) : null),
+        h('div', { class: 'fund-tile-code' }, r.code),
+        h('div', { class: 'fund-tile-name' }, parts.name || assetLabel(r.code) || ''),
+        h('div', { class: 'fund-tile-figs' },
+          h('div', { class: 'fig-value' }, h('span', {}, 'Değer'), h('b', {}, valueOk ? tl(r.marketValueTRY) : '—')),
+          h('div', { class: `col-daily ${cls(r.dailyPLTRY)}` }, h('span', {}, 'Günlük'),
+            h('b', {}, daily), !r.frozen && isNum(r.dailyPct) ? h('em', {}, pctSigned(r.dailyPct)) : null),
+          h('div', { class: `col-total ${cls(r.totalPLTRY)}` }, h('span', {}, 'Toplam K/Z'),
+            h('b', {}, total), !r.frozen && isNum(r.totalPct) ? h('em', {}, pctSigned(r.totalPct)) : null)),
+        h('div', { class: 'fund-tile-foot' },
+          h('span', {}, `${fmtUnits(r.units)} adet`),
+          h('span', {}, `${moneyByCurrency(r.price, r.currency)}${isNum(r.avgCost) ? ` · ort. ${moneyByCurrency(r.avgCost, r.currency)}` : ''}`)));
+    };
     const groupTitles = { ETF: 'ETF’ler', Fon: 'Fonlar', Hisse: 'Hisseler', Kripto: 'Kripto', Diğer: 'Diğer Varlıklar' };
     const positionGroups = groupAssetRows(displayPositions).map((group) => ({
       ...group,
@@ -589,13 +618,14 @@ export function renderPanel(ctx) {
     for (const group of positionGroups) {
       if (group.label === 'Fon') {
         // Aynı türdeki fonlar (ör. iki PPF) alt alta, tür toplamı ve payıyla birlikte.
+        // Quant "kategori liderleri" düzeni: her fon bir kutucuk, aynı türdekiler yan yana.
         const typeBlocks = groupFundsByType(group.rows).map((fundGroup) => h('div', { class: 'sec-group' },
           groupStrip({
             label: fundGroup.type,
             value: `${tl(fundGroup.value)}${isNum(share(fundGroup.value)) ? ` · ${pct(share(fundGroup.value), 1)}` : ''}`,
             share: share(fundGroup.value),
           }),
-          positionsTable(fundGroup.rows).element));
+          h('div', { class: 'fund-tiles pos-tiles' }, fundGroup.rows.map((row) => fundTile(row, fundGroup.type)))));
         root.append(groupCard(group, 'Türe göre gruplanmıştır · portföy değeri = Midas adedi × güncel fiyat', ...typeBlocks));
         continue;
       }

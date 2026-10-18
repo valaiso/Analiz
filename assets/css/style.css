@@ -722,6 +722,49 @@ html[data-theme="dark"] .sec-slate { --sec: #94a3b8; }
   .pos-table .asset-cell .code-chip { background: none; border: 0; padding: 0; font-size: .92rem; }
 }
 
+/* Fon kutucukları (TEFAS Quant "kategori liderleri" düzeni) */
+.fund-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(232px, 1fr)); gap: 12px; }
+.fund-tile {
+  display: grid; gap: 4px; padding: 13px 14px 12px; border-radius: 12px; background: var(--surface);
+  border: 1px solid var(--border); border-top: 3px solid var(--sec, var(--brand-3)); box-shadow: var(--shadow);
+  transition: transform .16s, border-color .16s; min-width: 0;
+}
+.fund-tile:hover { transform: translateY(-1px); border-color: color-mix(in srgb, var(--sec) 40%, var(--border)); border-top-color: var(--sec); }
+.fund-tile.is-frozen { border-top-color: var(--text-dim); opacity: .9; }
+.fund-tile-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.fund-tile-type { color: var(--text-dim); font-size: .68rem; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.fund-tile-share { font-size: .72rem; font-weight: 700; padding: 2px 7px; border-radius: 999px; color: var(--sec);
+  background: color-mix(in srgb, var(--sec) 12%, var(--surface)); font-variant-numeric: tabular-nums; }
+.fund-tile-code { font-family: var(--mono); font-size: 1.35rem; font-weight: 750; color: var(--sec); margin-top: 4px; letter-spacing: -.01em; }
+.fund-tile-name { color: var(--text-dim); font-size: .78rem; line-height: 1.35; height: 2.7em; overflow: hidden; }
+.fund-tile-figs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--border); }
+.fund-tile-figs > div { display: grid; gap: 1px; min-width: 0; }
+.fund-tile-figs span { font-size: .62rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: .04em; white-space: nowrap; }
+.fund-tile-figs b { font-variant-numeric: tabular-nums; font-size: .86rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.fund-tile-figs em { font-style: normal; font-size: .72rem; font-variant-numeric: tabular-nums; }
+.fund-tile-figs .up b, .fund-tile-figs .up em { color: var(--up); }
+.fund-tile-figs .down b, .fund-tile-figs .down em { color: var(--down); }
+.fund-tile-figs .fig-value b { color: var(--text); }
+.fund-tile-foot { display: flex; justify-content: space-between; gap: 8px; margin-top: 6px; font-size: .7rem; color: var(--text-dim);
+  font-variant-numeric: tabular-nums; flex-wrap: wrap; }
+.fund-tile .asset-logo { flex-basis: 30px; width: 30px; height: 30px; }
+
+@media (max-width: 640px) {
+  /* Telefonda iki sütun; değer ve ayrıntı satırı gizli, Günlük'e dokununca Toplam K/Z */
+  .fund-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .fund-tile { padding: 10px 11px; }
+  .fund-tile-code { font-size: 1.1rem; }
+  .fund-tile-name, .fund-tile-foot, .fund-tile-figs .fig-value, .fund-tile-type { display: none; }
+  .fund-tile-top { justify-content: space-between; }
+  .fund-tile-figs { grid-template-columns: 1fr; margin-top: 4px; padding-top: 7px; }
+  .pos-tiles .col-total { display: none; }
+  body.pos-show-total .pos-tiles .col-total { display: grid; }
+  body.pos-show-total .pos-tiles .col-daily { display: none; }
+  .pos-tiles .col-daily, .pos-tiles .col-total { cursor: pointer; }
+  .pos-tiles .col-daily span::after, .pos-tiles .col-total span::after { content: " ⇄"; color: var(--sec); }
+}
+
 /* Yazdırma / PDF: yalnızca rapor sayfaları, her biri bir A4 */
 @media print {
   @page { size: A4; margin: 0; }

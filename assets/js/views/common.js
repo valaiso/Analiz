@@ -10,7 +10,7 @@ const phoneQuery = typeof matchMedia === 'function' ? matchMedia('(max-width: 64
 if (typeof document !== 'undefined') {
   document.addEventListener('click', (event) => {
     if (!phoneQuery?.matches) return;
-    const cell = event.target.closest?.('.pos-table .col-daily, .pos-table .col-total');
+    const cell = event.target.closest?.('.pos-table .col-daily, .pos-table .col-total, .pos-tiles .col-daily, .pos-tiles .col-total');
     if (!cell) return;
     event.preventDefault();
     event.stopPropagation();
