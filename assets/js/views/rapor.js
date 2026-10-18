@@ -1,241 +1,205 @@
-/* Rapor: aylık portföy raporu (A4, PDF olarak kaydedilebilir).
-   Düzen: kapak bandı + numaralı bölümler; her bölüm yazdırmada ayrı sayfadır. */
+/* Rapor: aylık portföy raporu - TEFAS Quant rapor düzeni (2 sayfa A4, PDF olarak kaydedilebilir).
+   Sayfa 1: getiri, kıyaslama ve değer köprüsü. Sayfa 2: dağılım, pozisyonlar, risk ve notlar. */
 
 import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, cls, isNum, fmtDate, colorAt } from '../util.js';
-import { lineChart, donutWithLegend, barChart } from '../charts.js';
+import { lineChart } from '../charts.js';
 import { valueHistory, cashflows, dividends, monthlySnapshots, transactions } from '../store.js';
 import { buildMonthlyReport, reportMonths, monthLabel, FIRST_REPORT_MONTH } from '../report.js';
 import { sectionCard } from './common.js';
 
 const LINE_COLORS = {
-  PORTFOY: 'var(--accent)', BIST100: 'var(--c2)', SP500TL: 'var(--c1)', GRAMALTIN: 'var(--c7)',
+  PORTFOY: '#1f5fbf', BIST100: 'var(--c2)', SP500TL: 'var(--c3)', GRAMALTIN: 'var(--c7)',
   USDTRY: 'var(--c4)', PARAPIYASASI: 'var(--c5)',
 };
-const SECTION_COUNT = 7;
+const PAGE_COUNT = 2;
 
 const currentMonth = () => new Intl.DateTimeFormat('en-CA', {
   timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit',
 }).format(new Date()).slice(0, 7);
 
-/** ▲ / ▼ işaretli, renkli yüzde. */
-function trend(value, digits = 2) {
-  if (!isNum(value)) return h('span', { class: 'dim' }, '—');
-  const arrow = value > 0 ? '▲' : value < 0 ? '▼' : '■';
-  return h('span', { class: `trend ${cls(value)}` }, `${arrow} ${pctSigned(value, digits)}`);
+const tone = (value) => (value > 0 ? 'up' : value < 0 ? 'down' : '');
+const pctText = (value, digits = 2) => (isNum(value) ? pctSigned(value, digits) : '—');
+const pctCell = (value) => h('td', { class: `r ${tone(value)}` }, pctText(value));
+const empty = (text) => h('div', { class: 'rp-empty' }, text);
+
+function block(title, dot, ...children) {
+  return h('section', { class: 'rp-block' },
+    h('h3', {}, h('span', { class: `rp-dot ${dot || ''}` }), title), ...children);
 }
 
-const pctCell = (value) => h('td', {}, trend(value));
-
-/** Verisi olmayan bölüm için açıklayıcı not (boş tire yerine). */
-const emptyNote = (text) => h('div', { class: 'report-empty' }, h('span', { class: 'report-empty-icon' }, 'i'), h('span', {}, text));
-
-function section(number, title, sub, report, ...children) {
-  return h('section', { class: 'report-page' },
-    h('header', { class: 'report-section-head' },
-      h('span', { class: 'report-section-no' }, String(number)),
-      h('div', {}, h('h2', {}, title), sub ? h('p', {}, sub) : null)),
-    h('div', { class: 'report-section-body' }, ...children),
-    h('footer', { class: 'report-footer' },
-      h('span', {}, `Analiz · ${report.label} Portföy Raporu`),
-      h('span', {}, `${number} / ${SECTION_COUNT}`)));
+function kpi(label, value, sub, valueTone) {
+  return h('div', { class: valueTone || '' },
+    h('span', {}, label), h('b', {}, value), sub ? h('em', {}, sub) : null);
 }
 
-function tile(label, value, sub, tone = 'blue') {
-  return h('div', { class: `report-tile tone-${tone}` },
-    h('span', { class: 'report-tile-label' }, label),
-    h('strong', { class: 'report-tile-value' }, value),
-    sub ? h('span', { class: 'report-tile-sub' }, sub) : null);
+/** Ortadan iki yöne çubuk listesi (Quant "kategorilere göre net akış" düzeni). */
+function divergingRows(rows, format) {
+  const max = Math.max(1e-9, ...rows.filter((row) => !row.total).map((row) => Math.abs(row.value || 0)));
+  return h('div', { class: 'rp-cats' }, rows.map((row) => h('div', { class: `rp-cat${row.main ? ' main' : ''}${row.total ? ' total' : ''}` },
+    h('span', { class: 'rp-cat-name' }, row.label),
+    row.total ? h('span', {}) : h('span', { class: 'rp-cat-track' }, h('span', { class: 'rp-cat-mid' }),
+      isNum(row.value) && Math.abs(row.value) > 1e-9
+        ? h('i', { class: row.value >= 0 ? 'up' : 'down', style: `width:${(Math.abs(row.value) / max * 50).toFixed(1)}%` })
+        : null),
+    h('span', { class: `rp-cat-val ${row.total ? '' : tone(row.value)}` }, isNum(row.value) ? format(row.value, row) : '—'))));
+}
+
+function bar(value, max, barTone) {
+  const width = max ? Math.min(100, Math.abs(value) / max * 100) : 0;
+  return h('span', { class: `rp-bar ${barTone}` }, h('i', { style: `width:${width.toFixed(1)}%` }));
+}
+
+function moversTable(rows, barTone, note) {
+  if (!rows.length) return empty(note);
+  const max = Math.max(1, ...rows.map((row) => Math.abs(row.contribution || 0)));
+  return h('table', { class: 'rp-table' },
+    h('thead', {}, h('tr', {}, h('th', { class: 'rk' }, '#'), h('th', {}, 'Varlık'),
+      h('th', { class: 'r' }, 'Katkı'), h('th', { class: 'r' }, 'Ay içi'), h('th', { class: 'bar-col' }, ''))),
+    h('tbody', {}, rows.map((row, index) => h('tr', {},
+      h('td', { class: 'rk' }, String(index + 1)),
+      h('td', {}, h('b', { class: 'mono' }, row.code)),
+      h('td', { class: `r ${barTone}` }, tlSigned(row.contribution)),
+      h('td', { class: `r ${tone(row.monthPct)}` }, pctText(row.monthPct, 1)),
+      h('td', { class: 'bar-col' }, bar(row.contribution, max, barTone))))));
+}
+
+function page(report, number, preview, ...children) {
+  return h('article', { class: 'rp-page' },
+    h('header', { class: 'rp-cover' },
+      h('div', { class: 'rp-brand' }, h('img', { src: '/Analiz/iconV1.png', alt: '' }),
+        h('div', {}, h('b', {}, 'Analiz'), h('span', {}, 'PORTFÖY RAPORU'))),
+      h('span', { class: 'rp-badge' }, preview ? 'ÖNİZLEME' : report.complete ? 'AYLIK RAPOR' : 'ARA RAPOR'),
+      h('h1', {}, number === 1 ? `${report.label} Portföy Raporu` : 'Pozisyonlar, Dağılım ve Risk'),
+      h('p', { class: 'rp-period' }, report.periodText)),
+    ...children,
+    h('footer', { class: 'rp-footer' },
+      h('span', {}, 'Kaynak: Midas (adet, fiyat), TEFAS (fon fiyatları), Yahoo Finance ve TCMB (kıyaslar). Getiriler zaman ağırlıklıdır; para yatırma/çekme getiri sayılmaz. Yatırım tavsiyesi değildir.'),
+      h('span', {}, `Oluşturma ${report.generated} · Sayfa ${number} / ${PAGE_COUNT}`)));
 }
 
 function renderReport(report, { preview }) {
   const m = report.periods.month;
   const real = report.comparisonRows[0]?.realMonth;
   const change = m ? m.endValue - m.startValue : null;
-  const changePct = m && m.startValue > 0 ? (m.endValue / m.startValue - 1) * 100 : null;
-  const generated = new Intl.DateTimeFormat('tr-TR', { dateStyle: 'long' }).format(new Date());
-  const root = h('div', { class: 'report' });
-  const shortHistory = !m;
   const shortNote = `Bu dönem için en az iki kayıtlı gün gerekiyor (ilk kayıt ${fmtDate(report.firstDate)}). Getiri ve kıyaslar sonraki işlem günlerinde dolacak.`;
+  report.generated = new Intl.DateTimeFormat('tr-TR', { dateStyle: 'medium' }).format(new Date());
+  report.periodText = `${m ? `${fmtDate(m.startDate)} – ${fmtDate(m.endDate)}` : report.label} · ${report.risk.positionCount || 0} varlık · ilk kayıt ${fmtDate(report.firstDate)}`;
 
-  /* ------------------------------------------------------------ kapak + özet */
-  const cover = h('div', { class: 'report-cover' },
-    h('div', { class: 'report-cover-top' },
-      h('div', { class: 'report-brand' }, h('img', { src: '/Analiz/iconV1.png', alt: '' }), h('span', {}, 'Analiz')),
-      h('span', { class: 'report-badge' }, preview ? 'ÖNİZLEME' : report.complete ? 'AY SONU RAPORU' : 'ARA RAPOR')),
-    h('h1', {}, `${report.label} Portföy Raporu`),
-    h('p', { class: 'report-cover-period' },
-      m ? `${fmtDate(m.startDate)} – ${fmtDate(m.endDate)} · hazırlanma ${generated}` : `Hazırlanma ${generated}`),
-    h('div', { class: 'report-cover-figures' },
-      h('div', {}, h('span', {}, 'Toplam değer'), h('strong', {}, tl(m?.endValue ?? report.endTotal))),
-      h('div', {}, h('span', {}, 'Aylık değişim'),
-        h('strong', { class: `cover-trend ${cls(change)}` }, isNum(change)
-          ? `${change >= 0 ? '▲' : '▼'} ${tlSigned(change)}${isNum(changePct) ? ` (${pctSigned(changePct, 2)})` : ''}` : '—')),
-      h('div', {}, h('span', {}, 'Gerçek getiri'),
-        h('strong', { class: `cover-trend ${cls(m?.twr)}` }, isNum(m?.twr) ? `${m.twr >= 0 ? '▲' : '▼'} ${pctSigned(m.twr, 2)}` : '—'))));
-
-  const tiles = h('div', { class: 'report-tiles' },
-    tile('Reel getiri', isNum(real) ? trend(real) : '—', 'Enflasyon (TÜFE) düşülmüş', 'teal'),
-    tile('Net para girişi', m ? tlSigned(m.deposits - m.withdrawals) : '—',
-      m ? `${tl(m.deposits)} yatırma · ${tl(m.withdrawals)} çekme` : 'Onaylanan para hareketleri', 'blue'),
-    tile('Temettü geliri', tl(m?.dividends || 0), 'Getiriye dahil', 'green'),
-    tile('Piyasa etkisi', m ? h('span', { class: cls(m.market) }, tlSigned(m.market)) : '—', 'Fiyat hareketlerinden', 'orange'));
-
-  const movers = (rows, empty) => (rows.length
-    ? h('ol', { class: 'report-movers' }, rows.map((row) => h('li', {},
-      h('span', { class: 'code-chip' }, row.code),
-      h('span', { class: cls(row.contribution) }, tlSigned(row.contribution)),
-      isNum(row.monthPct) ? trend(row.monthPct, 1) : null)))
-    : h('p', { class: 'dim', style: 'margin:0;font-size:.85rem' }, empty));
-  const moversNote = report.hasStartSnapshot ? 'Bu ay yok' : 'Önceki ay sonu kaydı gerekiyor';
-
-  root.append(h('section', { class: 'report-page report-first' }, cover,
-    h('div', { class: 'report-section-body' },
-      tiles,
-      report.insights.length
-        ? h('div', { class: 'report-highlights' }, h('h3', {}, 'Öne çıkanlar'),
-          h('ul', {}, report.insights.map((text) => h('li', {}, text))))
-        : null,
-      shortHistory ? emptyNote(shortNote) : null,
-      h('div', { class: 'report-movers-grid' },
-        h('div', {}, h('h3', {}, '▲ En çok kazandıranlar'), movers(report.winners, moversNote)),
-        h('div', {}, h('h3', {}, '▼ En çok kaybettirenler'), movers(report.losers, moversNote)))),
-    h('footer', { class: 'report-footer' },
-      h('span', {}, `Analiz · ${report.label} Portföy Raporu`), h('span', {}, `1 / ${SECTION_COUNT}`))));
-
-  /* -------------------------------------------------------------- 2. kıyaslama */
-  const compareBars = h('div');
-  const chartBox = h('div', { class: 'chart' });
+  /* ------------------------------------------------------------- sayfa 1 */
   const compareRows = report.comparisonRows.filter((row) => row.key !== 'TUFE' || isNum(row.month));
-  root.append(section(2, 'Kıyaslama',
-    'Portföy ile BIST 100, S&P 500 (TL), gram altın, dolar, PPF ortalaması ve enflasyon · reel = TÜFE düşülmüş',
-    report,
-    shortHistory ? emptyNote(shortNote) : h('div', { class: 'report-two' },
-      h('div', {}, h('h3', {}, 'Bu ayın getirisi'), compareBars),
-      h('div', {}, h('h3', {}, 'Dönem içi seyir (başlangıç = 100)'), chartBox)),
-    h('div', { class: 'table-wrap' }, h('table', { class: 'report-table' },
-      h('thead', {}, h('tr', {},
-        h('th', { style: 'text-align:left' }, 'Varlık / endeks'),
-        h('th', {}, 'Bu ay'), h('th', {}, 'Bu ay reel'),
-        h('th', {}, 'Yılbaşından beri'), h('th', {}, 'Başlangıçtan beri'), h('th', {}, 'Başlangıçtan reel'))),
-      h('tbody', {}, compareRows.map((row) => h('tr', { class: row.key === 'PORTFOY' ? 'report-row-main' : '' },
-        h('td', { style: 'text-align:left' }, row.label),
-        pctCell(row.month), pctCell(row.realMonth), pctCell(row.ytd), pctCell(row.inception), pctCell(row.realInception)))))),
-    h('p', { class: 'report-footnote' }, `Yılbaşı ve başlangıç sütunları ${fmtDate(report.firstDate)} tarihli ilk kayıttan itibaren hesaplanır. TÜFE son açıklanan aya kadardır.`)));
-
-  /* ------------------------------------------------------------ 3. değer köprüsü */
+  const chartBox = h('div', { class: 'chart' });
   const bridge = m ? [
     { label: 'Ay başı değeri', value: m.startValue, total: true },
     { label: 'Yatırılan para', value: m.deposits },
     { label: 'Çekilen para', value: -m.withdrawals },
     { label: 'Temettü', value: m.dividends },
-    { label: 'Piyasa (fiyat hareketi)', value: m.market },
+    { label: 'Piyasa etkisi', value: m.market },
     { label: 'Ay sonu değeri', value: m.endValue, total: true },
   ] : [];
-  const bridgeMax = Math.max(1, ...bridge.filter((row) => !row.total).map((row) => Math.abs(row.value)));
-  root.append(section(3, 'Değer Köprüsü', 'Ay başından ay sonuna değişimin kaynakları', report,
-    m ? h('div', { class: 'report-bridge' }, bridge.map((row) => h('div', { class: `report-bridge-row${row.total ? ' total' : ''}` },
-      h('span', { class: 'report-bridge-label' }, row.label),
-      row.total ? h('span', {})
-        : h('span', { class: 'report-bridge-bar' }, Math.abs(row.value) < 0.005 ? null : h('i', {
-          class: row.value >= 0 ? 'up' : 'down',
-          style: `width:${Math.max(2, Math.abs(row.value) / bridgeMax * 100).toFixed(1)}%`,
-        })),
-      h('strong', { class: row.total ? '' : cls(row.value) },
-        row.total ? tl(row.value) : Math.abs(row.value) < 0.005 ? tl(0) : tlSigned(row.value)))))
-      : emptyNote(shortNote),
-    h('p', { class: 'report-footnote' }, 'Alım-satım nakit ile varlık arasında yer değiştirdiği için toplamı değiştirmez; piyasa etkisi fiyat hareketlerinden gelen kazanç/kayıptır.')));
 
-  /* --------------------------------------------------------------- 4. dağılım */
+  const page1 = page(report, 1, preview,
+    h('div', { class: 'rp-kpis' },
+      kpi('Ay sonu değeri', tl(m?.endValue ?? report.endTotal),
+        isNum(change) ? `${tlSigned(change)} değişim` : 'ay başı kaydı bekleniyor'),
+      kpi('Aylık getiri', pctText(m?.twr), 'para hareketlerinden arındırılmış', tone(m?.twr)),
+      kpi('Reel getiri', pctText(real), 'TÜFE düşülmüş', tone(real)),
+      kpi('Net para girişi', m ? tlSigned(m.deposits - m.withdrawals) : '—',
+        `temettü ${tl(m?.dividends || 0)}`)),
+    block('Bu ayın getirisi: portföy ve kıyaslar', 'brand',
+      m ? divergingRows(compareRows.filter((row) => isNum(row.month))
+        .map((row) => ({ label: row.label, value: row.month, main: row.key === 'PORTFOY' })), (value) => pctSigned(value, 2))
+        : empty(shortNote)),
+    block('Dönem tablosu', 'brand',
+      h('table', { class: 'rp-table' },
+        h('thead', {}, h('tr', {},
+          h('th', { style: 'width:30%' }, 'Varlık / endeks'), h('th', { class: 'r' }, 'Bu ay'), h('th', { class: 'r' }, 'Bu ay reel'),
+          h('th', { class: 'r' }, 'Yılbaşından'), h('th', { class: 'r' }, 'Başlangıçtan'), h('th', { class: 'r hide-sm' }, 'Başl. reel'))),
+        h('tbody', {}, compareRows.map((row) => h('tr', { class: row.key === 'PORTFOY' ? 'main' : '' },
+          h('td', {}, row.label), pctCell(row.month), pctCell(row.realMonth), pctCell(row.ytd), pctCell(row.inception),
+          h('td', { class: `r hide-sm ${tone(row.realInception)}` }, pctText(row.realInception)))))),
+      h('p', { class: 'rp-note' }, `Yılbaşı ve başlangıç sütunları ${fmtDate(report.firstDate)} tarihli ilk kayıttan itibaren hesaplanır. TÜFE son açıklanan aya kadardır.`)),
+    block('Dönem içi seyir (başlangıç = 100)', 'brand', m ? chartBox : empty(shortNote)),
+    h('div', { class: 'rp-two' },
+      block('Değer köprüsü', 'brand',
+        m ? divergingRows(bridge, (value, row) => (row.total ? tl(value) : tlSigned(value))) : empty(shortNote)),
+      block('Öne çıkanlar', 'brand',
+        report.insights.length ? h('ul', { class: 'rp-list' }, report.insights.map((text) => h('li', {}, text)))
+          : empty('Ay ilerledikçe öne çıkan gelişmeler burada özetlenir.'))));
+
+  /* ------------------------------------------------------------- sayfa 2 */
   const showStart = report.hasStartSnapshot;
-  const donut = donutWithLegend(report.allocation.map((row, index) => ({ label: row.label, value: row.value, color: colorAt(index) })), {
-    centerTop: tl(report.endTotal, { compact: true }), centerBottom: 'ay sonu',
-    format: (value) => (report.endTotal > 0 ? pct(value / report.endTotal * 100, 1) : '—'),
-  });
-  root.append(section(4, 'Dağılım', showStart ? 'Ay sonu ağırlıkları ve önceki ay sonuna göre değişim' : 'Ay sonu ağırlıkları', report,
-    report.allocation.length ? h('div', { class: 'report-alloc' }, donut,
-      h('div', { class: 'table-wrap' }, h('table', { class: 'report-table' },
-        h('thead', {}, h('tr', {}, h('th', { style: 'text-align:left' }, 'Grup'), h('th', {}, 'Değer'), h('th', {}, 'Ağırlık'),
-          showStart ? h('th', {}, 'Önceki ay') : null)),
-        h('tbody', {}, report.allocation.map((row, index) => h('tr', {},
-          h('td', { style: 'text-align:left' }, h('span', { class: 'report-swatch', style: `background:${colorAt(index)}` }), row.label),
-          h('td', {}, tl(row.value)),
-          h('td', {}, isNum(row.weight) ? pct(row.weight, 1) : '—'),
-          showStart ? h('td', {}, isNum(row.startWeight) ? pct(row.startWeight, 1) : 'yeni') : null))))))
-      : emptyNote('Ay sonu pozisyon kaydı yok. Ay içinde siteyi bir kez açmak kaydı oluşturur.')));
+  const moversNote = showStart ? 'Bu ay yok' : 'Varlık bazında katkı, önceki ay sonu pozisyon kaydı oluşunca görünür.';
+  const allocTotal = report.allocation.reduce((sum, row) => sum + row.value, 0);
+  const valueMax = Math.max(1, ...report.positions.map((row) => row.value || 0));
+  const risk = report.risk;
 
-  /* ------------------------------------------------------------ 5. pozisyonlar */
-  const contributionBox = h('div');
-  root.append(section(5, 'Pozisyonlar',
-    showStart ? 'Ay sonu · katkı = ay başında tutulan adetin fiyat değişimi (yaklaşık)' : 'Ay sonu', report,
-    report.positions.length ? h('div', { class: 'table-wrap' }, h('table', { class: 'report-table report-positions' },
-      h('thead', {}, h('tr', {},
-        h('th', { style: 'text-align:left' }, 'Varlık'), h('th', {}, 'Adet'), h('th', {}, 'Değer'), h('th', {}, 'Ağırlık'),
-        showStart ? h('th', {}, 'Ay içi') : null, showStart ? h('th', {}, 'Katkı') : null, h('th', {}, 'Toplam K/Z'))),
-      h('tbody', {}, report.positions.map((row) => h('tr', {},
-        h('td', { style: 'text-align:left' },
-          h('div', { class: 'report-asset' }, h('span', { class: 'code-chip' }, row.code),
-            row.label ? h('span', { class: 'report-asset-label' }, row.label) : null)),
-        h('td', {}, fmtUnits(row.units)),
-        h('td', {}, tl(row.value)),
-        h('td', {}, isNum(row.weight) ? pct(row.weight, 1) : '—'),
-        showStart ? h('td', {}, row.frozen ? 'sabit' : trend(row.monthPct, 1)) : null,
-        showStart ? h('td', { class: cls(row.contribution) }, row.frozen ? '—' : isNum(row.contribution) ? tlSigned(row.contribution) : '—') : null,
-        h('td', {}, row.frozen ? h('span', { class: 'dim' }, 'temerrüt') : isNum(row.totalPLTRY)
-          ? h('span', { class: cls(row.totalPLTRY) }, `${tlSigned(row.totalPLTRY)}${isNum(row.totalPct) ? ` · ${pctSigned(row.totalPct, 1)}` : ''}`)
-          : '—')))),
-      report.cash > 0.5 ? h('tfoot', {}, h('tr', {}, h('td', { style: 'text-align:left' }, 'Nakit ve bekleyen emirler'), h('td', {}, ''),
-        h('td', {}, tl(report.cash)), h('td', {}, report.endTotal > 0 ? pct(report.cash / report.endTotal * 100, 1) : '—'),
-        showStart ? h('td', {}, '') : null, showStart ? h('td', {}, '') : null, h('td', {}, ''))) : null))
-      : emptyNote('Ay sonu pozisyon kaydı yok.'),
-    showStart ? h('div', {}, h('h3', {}, 'Varlıkların bu aya katkısı'), contributionBox)
-      : emptyNote('Varlık bazında aylık getiri ve katkı, önceki ay sonu pozisyon kaydı oluştuğunda (ilk kez Kasım raporunda) görünür.')));
-
-  /* ------------------------------------------------------------ 6. risk ve vergi */
-  root.append(section(6, 'Risk ve Vergi', 'Yoğunlaşma, dönem içi düşüş ve tahmini stopaj', report,
-    h('div', { class: 'report-tiles' },
-      tile('En büyük düşüş', isNum(report.risk.maxDrawdown) ? trend(report.risk.maxDrawdown) : '—', 'Ay içi, para hareketlerinden arındırılmış', 'red'),
-      tile('En büyük pozisyon', `${report.risk.largestCode || '—'}${isNum(report.risk.largestWeight) ? ` · ${pct(report.risk.largestWeight, 1)}` : ''}`, 'Portföydeki payı', 'orange'),
-      tile('İlk 3 varlık', pct(report.risk.top3Weight, 1), `${report.risk.positionCount} varlık içinde`, 'blue'),
-      tile('Tahmini stopaj', tl(report.stopajTotal), 'Satışta fon kârından kesilir', 'purple')),
-    report.risk.largestWeight > 40 ? h('div', { class: 'report-alert' },
-      `Portföyün %${Math.round(report.risk.largestWeight)} kadarı tek varlıkta (${report.risk.largestCode}). Bu varlıktaki bir gelişme portföyün tamamını belirgin şekilde etkiler.`) : null));
-
-  /* ------------------------------------------------------------------ 7. notlar */
-  root.append(section(7, 'Notlar ve Veri Kaynakları', null, report,
-    h('ul', { class: 'report-notes' },
-      h('li', {}, 'Getiriler zaman ağırlıklıdır: onaylanan para yatırma/çekme getiri sayılmaz; temettü getiridir.'),
+  const page2 = page(report, 2, preview,
+    h('div', { class: 'rp-kpis' },
+      kpi('En büyük pozisyon', risk.largestCode || '—', isNum(risk.largestWeight) ? `portföyün ${pct(risk.largestWeight, 1)}` : ''),
+      kpi('İlk 3 varlık', pct(risk.top3Weight, 1), `${risk.positionCount} varlık içinde`),
+      kpi('En büyük düşüş', pctText(risk.maxDrawdown), 'ay içi, zirveden', tone(risk.maxDrawdown)),
+      kpi('Tahmini stopaj', tl(report.stopajTotal), 'satışta fon kârından')),
+    block('Varlık dağılımı', 'brand',
+      report.allocation.length ? h('div', {},
+        h('div', { class: 'rp-stack' }, report.allocation.map((row, index) => h('span', {
+          style: `flex:${Math.max(0.001, row.value)};background:${colorAt(index)}`, title: row.label,
+        }))),
+        h('div', { class: 'rp-legend' }, report.allocation.map((row, index) => h('div', {},
+          h('i', { style: `background:${colorAt(index)}` }),
+          h('span', {}, row.label),
+          h('b', {}, allocTotal > 0 ? pct(row.value / allocTotal * 100, 1) : '—'),
+          showStart ? h('em', { class: 'dim', style: 'font-style:normal;font-size:8.5px' },
+            isNum(row.startWeight) ? `önceki ${pct(row.startWeight, 1)}` : 'yeni') : null))))
+        : empty('Ay sonu pozisyon kaydı yok. Ay içinde siteyi bir kez açmak kaydı oluşturur.')),
+    h('div', { class: 'rp-two' },
+      block('En çok kazandıranlar', 'up', moversTable(report.winners, 'up', moversNote)),
+      block('En çok kaybettirenler', 'down', moversTable(report.losers, 'down', moversNote))),
+    block('Pozisyonlar', 'brand',
+      report.positions.length ? h('table', { class: 'rp-table' },
+        h('thead', {}, h('tr', {},
+          h('th', { style: 'width:30%' }, 'Varlık'), h('th', { class: 'r hide-sm' }, 'Adet'), h('th', { class: 'r' }, 'Değer'),
+          h('th', { class: 'r' }, 'Ağırlık'), h('th', { class: 'r' }, showStart ? 'Ay içi' : 'Toplam K/Z'),
+          h('th', { class: 'r hide-sm' }, 'K/Z %'), h('th', { class: 'bar-col' }, ''))),
+        h('tbody', {}, report.positions.map((row) => h('tr', {},
+          h('td', {}, h('b', { class: 'mono' }, row.code), ' ', h('span', { class: 'nm' }, row.label || '')),
+          h('td', { class: 'r hide-sm' }, fmtUnits(row.units)),
+          h('td', { class: 'r' }, tl(row.value)),
+          h('td', { class: 'r' }, isNum(row.weight) ? pct(row.weight, 1) : '—'),
+          showStart
+            ? h('td', { class: `r ${tone(row.monthPct)}` }, row.frozen ? 'sabit' : pctText(row.monthPct, 1))
+            : h('td', { class: `r ${tone(row.totalPLTRY)}` }, row.frozen ? 'temerrüt' : isNum(row.totalPLTRY) ? tlSigned(row.totalPLTRY) : '—'),
+          h('td', { class: `r hide-sm ${tone(row.totalPct)}` }, row.frozen ? '—' : pctText(row.totalPct, 1)),
+          h('td', { class: 'bar-col' }, bar(row.value || 0, valueMax, 'brand'))))),
+        report.cash > 0.5 ? h('tfoot', {}, h('tr', {},
+          h('td', {}, 'Nakit ve bekleyen emirler'), h('td', { class: 'hide-sm' }, ''), h('td', { class: 'r' }, tl(report.cash)),
+          h('td', { class: 'r' }, report.endTotal > 0 ? pct(report.cash / report.endTotal * 100, 1) : '—'),
+          h('td', {}, ''), h('td', { class: 'hide-sm' }, ''), h('td', { class: 'bar-col' }, ''))) : null)
+        : empty('Ay sonu pozisyon kaydı yok.'),
+      risk.largestWeight > 40 ? h('div', { class: 'rp-alert' },
+        `Portföyün %${Math.round(risk.largestWeight)} kadarı tek varlıkta (${risk.largestCode}); bu varlıktaki bir gelişme portföyün tamamını belirgin şekilde etkiler.`) : null),
+    block('Notlar', 'brand', h('ul', { class: 'rp-list' },
       h('li', {}, `Değerler hesaba kaydedilen günlük toplamlardan gelir (ilk kayıt ${fmtDate(report.firstDate)}); hafta sonları atlanır.`),
       report.frozenCodes.length ? h('li', {}, `${report.frozenCodes.join(', ')} temerrüttedir; fiyatı Midas’taki değerde sabittir, getiri ve K/Z hesaplanmaz.`) : null,
-      h('li', {}, 'Kıyaslamalar: BIST 100, S&P 500 (dolar kuruyla TL’ye çevrilmiş), gram altın ve dolar Yahoo Finance’ten; PPF ortalaması TEFAS para piyasası fonlarının eşit ağırlıklı günlük getirisinden; TÜFE TCMB/TÜİK verisinden.'),
-      h('li', {}, 'Pozisyon adetleri ve fiyatları Midas’tan, fon fiyatları TEFAS’tan alınır.'),
-      h('li', {}, 'Bu rapor kişisel takip amaçlıdır, yatırım tavsiyesi değildir.'))));
+      h('li', {}, 'Kıyaslar: BIST 100, S&P 500 (TL), gram altın, dolar (Yahoo Finance); PPF ortalaması TEFAS para piyasası fonlarından; TÜFE TCMB/TÜİK verisinden.'),
+      h('li', {}, 'Stopaj tahminidir: hisse yoğun fonlarda %0, diğer fonlarda %17,5; portföy değerini etkilemez.'))));
 
-  // Grafikler DOM'a eklendikten sonra çizilir.
+  const doc = h('div', { class: 'rp-doc' }, page1, page2);
+  // Grafik DOM'a eklendikten sonra çizilir.
   requestAnimationFrame(() => {
-    if (!shortHistory) {
-      barChart(compareBars, {
-        items: compareRows.filter((row) => isNum(row.month)).map((row) => ({ label: row.label, value: row.month })),
-        format: (value) => pctSigned(value, 2), labelWidth: 118,
-      });
-      lineChart(chartBox, {
-        dates: report.chart.dates, height: 220,
-        xFormat: (date) => `${date.slice(8, 10)}/${date.slice(5, 7)}`,
-        yFormat: (value) => value.toFixed(0),
-        valueFormat: (value) => value.toFixed(2),
-        series: report.chart.series.map((series) => ({
-          name: series.label, values: series.values,
-          color: LINE_COLORS[series.key] || 'var(--c6)',
-          width: series.key === 'PORTFOY' ? 2.8 : 1.5, fill: series.key === 'PORTFOY',
-        })),
-      });
-    }
-    if (showStart) {
-      const items = report.positions.filter((row) => isNum(row.contribution) && !row.frozen)
-        .map((row) => ({ label: row.code, value: row.contribution }));
-      if (items.length) barChart(contributionBox, { items, format: (value) => tlSigned(value) });
-    }
+    if (!m) return;
+    lineChart(chartBox, {
+      dates: report.chart.dates, height: 170,
+      xFormat: (date) => `${date.slice(8, 10)}/${date.slice(5, 7)}`,
+      yFormat: (value) => value.toFixed(0),
+      valueFormat: (value) => value.toFixed(2),
+      series: report.chart.series.map((series) => ({
+        name: series.label, values: series.values,
+        color: LINE_COLORS[series.key] || 'var(--c6)',
+        width: series.key === 'PORTFOY' ? 2.6 : 1.4, fill: series.key === 'PORTFOY',
+      })),
+    });
   });
-  return root;
+  return doc;
 }
 
 export function renderRapor() {
@@ -248,26 +212,34 @@ export function renderRapor() {
   });
 
   const holder = h('div');
+  let shownMonth = null;
   const printButton = h('button', {
     class: 'btn btn-primary', type: 'button',
-    onclick: () => window.print(),
-  }, 'PDF indir');
+    onclick: () => {
+      const previous = document.title;
+      document.title = `Analiz-Portfoy-Raporu-${shownMonth || ''}`; // PDF dosya adı
+      window.print();
+      setTimeout(() => { document.title = previous; }, 500);
+    },
+  }, '⤓ PDF olarak indir');
   const show = (month, preview = false) => {
+    shownMonth = month;
     holder.replaceChildren(renderReport(buildMonthlyReport(input(month)), { preview }));
   };
+  const toolbar = (...actions) => h('div', { class: 'rp-toolbar no-print' },
+    h('div', {}, h('h2', {}, 'Aylık portföy raporu'),
+      h('p', { class: 'dim' }, 'Getiri, kıyaslama, dağılım ve pozisyonlar · PDF için yazdırma penceresinde “PDF olarak kaydet” seç')),
+    h('div', { class: 'rp-actions' }, ...actions));
 
   if (months.length) {
     const select = h('select', { 'aria-label': 'Rapor ayı' },
       months.map((month) => h('option', { value: month }, monthLabel(month))));
     select.addEventListener('change', () => show(select.value));
-    root.append(h('div', { class: 'card report-toolbar' },
-      h('label', { class: 'dim' }, 'Ay ', select), printButton,
-      h('span', { class: 'dim', style: 'font-size:.8rem' }, 'PDF indir → yazdırma penceresinde “PDF olarak kaydet” seç.')));
-    root.append(holder);
+    root.append(toolbar(select, printButton), holder);
     show(months[0]);
   } else {
     const now = currentMonth();
-    root.append(sectionCard('Aylık Rapor',
+    const intro = sectionCard('Aylık Rapor',
       `İlk rapor ${monthLabel(FIRST_REPORT_MONTH)} ayıyla başlar`,
       h('p', { style: 'margin:0' },
         `${monthLabel(FIRST_REPORT_MONTH)} raporu ay boyunca ara rapor olarak, ay bitince tam rapor olarak burada görünür. `
@@ -275,14 +247,14 @@ export function renderRapor() {
       h('div', { class: 'btn-row', style: 'margin-top:12px' },
         h('button', {
           class: 'btn', type: 'button',
-          onclick: (event) => {
-            event.currentTarget.closest('.card').after(h('div', { class: 'card report-toolbar' }, printButton,
-              h('span', { class: 'dim', style: 'font-size:.8rem' }, 'Önizleme: rapor düzenini görmek için bu ayın verisiyle hazırlandı.')));
+          onclick: () => {
+            intro.replaceWith(toolbar(h('span', { class: 'dim', style: 'font-size:.82rem' },
+              `Önizleme: ${monthLabel(now)} verisiyle`), printButton));
             show(now, true);
           },
-        }, `Görünüme göz at (${monthLabel(now)} verisiyle önizleme)`))));
-    root.lastChild.classList.add('report-intro');
-    root.append(holder);
+        }, `Görünüme göz at (${monthLabel(now)} verisiyle önizleme)`)));
+    intro.classList.add('no-print');
+    root.append(intro, holder);
   }
   return root;
 }

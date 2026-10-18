@@ -343,34 +343,39 @@ export function renderPanel(ctx) {
         : !isNum(analysis.xirr) ? 'Nakit akışlarından XIRR hesaplanamadı' : null,
     }),
   ];
+  const totalValueText = hasMidasTotal ? tl(midasPortfolioTotal) : hasMidasImportState ? '—' : tl(totals.value);
+  const totalValueSub = hasMidasTotal
+    ? `Hisse/Fon/ETF ${tl(stockMidasTotal)}${stockAccount.cash > 0.5 && stockPositionsCaptured ? ` (${tl(stockAccount.cash)} nakit dahil)` : ''} + Kripto ${tl(cryptoTotal)}${midasTotalPartial ? ' · kısmi toplam' : ''}`
+    : hasMidasImportState
+      ? 'Midas’ın açık pozisyonları doğrulanana kadar hesaplanmıyor'
+      : `${totals.fundCount} varlık · ${fmtDate(totals.lastDate)}`;
+  const dailyAmount = hasMidasTotal ? siteDailyChange : hasMidasImportState ? null : totals.dayPL;
+  const dailyPctValue = hasMidasTotal ? siteDailyPct : hasMidasImportState ? null : totals.dayPct;
+  const dailyHint = hasMidasTotal
+    ? (isNum(siteDailyChange)
+      ? `Piyasa fiyatlarından hesaplandı${dailyLastSessionNote ? ` · ${dailyLastSessionNote}` : ''}${dailyCryptoScope ? ` · ${dailyCryptoScope}` : ''}${dailyIncompleteHint ? ` · kısmi: ${dailyIncompleteHint}` : ''}`
+      : `Günlük fiyat hareketi hesaplanamadı; eksik: ${dailyIncompleteHint || 'açık pozisyon fiyatı bulunamadı'}`)
+    : hasMidasImportState
+      ? 'Midas pozisyonları doğrulanana kadar günlük değişim hesaplanmıyor'
+      : `${fmtDate(totals.prevDate)} kapanışına göre`;
+  const heroTrend = (value) => (value > 0 ? 'hero-up' : value < 0 ? 'hero-down' : '');
+  // Kurumsal özet bandı: toplam değer ve günlük kazanç.
+  root.append(h('section', { class: 'hero' },
+    h('div', {},
+      h('span', { class: 'hero-eyebrow' }, `PORTFÖY ÖZETİ${snapshotTime ? ` · MİDAS ${snapshotTime}` : ''}`),
+      h('h2', {}, totalValueText),
+      h('p', {}, totalValueSub)),
+    h('div', { class: 'hero-figures' },
+      h('div', {},
+        h('span', {}, 'Günlük kazanç'),
+        h('strong', { class: heroTrend(dailyAmount) }, isNum(dailyAmount) ? tlSigned(dailyAmount) : '—'),
+        h('em', { class: heroTrend(dailyPctValue) }, isNum(dailyPctValue) ? pctSigned(dailyPctValue) : '')),
+      h('div', {},
+        h('span', {}, 'Gerçek getiri'),
+        h('strong', { class: heroTrend(real?.twr) }, isNum(real?.twr) ? pctSigned(real.twr) : '—'),
+        h('em', {}, real && isNum(real.twr) ? `${fmtDate(real.startDate)}’den beri` : 'ikinci kayıt gününden itibaren')),
+      h('p', { class: 'hero-note' }, dailyHint))));
   root.append(h('div', { class: 'grid grid-kpi' },
-    kpiCard({
-      label: 'Toplam Değer',
-      tone: 'blue',
-      value: hasMidasTotal ? tl(midasPortfolioTotal) : hasMidasImportState ? '—' : tl(totals.value),
-      sub: hasMidasTotal
-        ? `Hisse/Fon/ETF ${tl(stockMidasTotal)}${stockAccount.cash > 0.5 && stockPositionsCaptured ? ` (${tl(stockAccount.cash)} nakit dahil)` : ''} + Kripto ${tl(cryptoTotal)}${snapshotTime ? ` · ${snapshotTime}` : ''}${midasTotalPartial ? ' · kısmi toplam' : ''}`
-        : hasMidasImportState
-          ? 'Midas’ın açık pozisyonları doğrulanana kadar hesaplanmıyor'
-          : `${totals.fundCount} varlık · ${fmtDate(totals.lastDate)}`,
-    }),
-    plCard({
-      label: 'Günlük Kazanç',
-      tone: 'orange',
-      amount: hasMidasTotal
-        ? siteDailyChange : hasMidasImportState ? null : totals.dayPL,
-      pct: hasMidasTotal
-        ? siteDailyPct : hasMidasImportState ? null : totals.dayPct,
-      formatMoney: tlSigned,
-      formatPct: pctSigned,
-      hint: hasMidasTotal
-        ? (isNum(siteDailyChange)
-          ? `Piyasa fiyatlarından hesaplandı${dailyLastSessionNote ? ` · ${dailyLastSessionNote}` : ''}${dailyCryptoScope ? ` · ${dailyCryptoScope}` : ''}${dailyIncompleteHint ? ` · kısmi: ${dailyIncompleteHint}` : ''}`
-          : `Günlük fiyat hareketi hesaplanamadı; eksik: ${dailyIncompleteHint || 'açık pozisyon fiyatı bulunamadı'}`)
-        : hasMidasImportState
-          ? 'Midas pozisyonları doğrulanana kadar günlük değişim hesaplanmıyor'
-          : `${fmtDate(totals.prevDate)} kapanışına göre`,
-    }),
     ...(real ? [] : legacyCards),
     ...(real ? [plCard({
       label: 'Gerçek Getiri',
