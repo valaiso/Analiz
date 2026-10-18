@@ -431,7 +431,10 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
   .sidebar-nav { display: flex; flex-direction: row; gap: 0; overflow-x: auto; overflow-y: hidden; padding: 5px 0; scrollbar-width: none; }
   .sidebar-nav::-webkit-scrollbar { display: none; }
   .nav-section { display: contents; }
-  .nav-heading, .nav-section-settings { display: none; }
+  .nav-heading { display: none; }
+  /* Telefonda 5 sekme: İşlemler ve Fonlar gizlenir, Ayarlar gösterilir. */
+  .nav-section-settings { display: contents; }
+  .tab-desktop-only { display: none; }
   .tab { width: auto; min-width: 0; min-height: 56px; flex: 1 0 66px; flex-direction: column; justify-content: center; gap: 3px; padding: 5px 4px; border: 0; border-radius: 8px; font-size: .68rem; }
   .tab[aria-selected="true"] { border: 0; }
   .nav-icon { flex: 0 0 auto; font-size: 1.05rem; }
