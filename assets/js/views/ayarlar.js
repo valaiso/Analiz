@@ -10,7 +10,7 @@ import {
   allTransactions, daysSinceBackup,
 } from '../store.js';
 import { sectionCard } from './common.js';
-import { pushStatus, enablePush, disablePush, testNotification, pushDiagnostics, syncPushSubscription } from '../push.js';
+import { pushStatus, enablePush, disablePush, testNotification, pushDiagnostics, syncPushSubscription, registeredDeviceCount } from '../push.js';
 
 /**
  * Sayıyı hem Türkçe hem İngilizce yazımdan okur.
@@ -153,10 +153,17 @@ export function renderAyarlar(ctx) {
 
   /* --------------------------------------------------------------- hesap */
 
+  // Günlük bildirimin gideceği cihaz sayısı (bu hesaba kayıtlı aboneler).
+  const deviceLine = h('span', { class: 'dim', style: 'display:block;font-size:.85rem' }, 'Bildirim için kayıtlı cihaz: …');
+  void registeredDeviceCount().then((count) => {
+    deviceLine.textContent = `Bildirim için kayıtlı cihaz: ${count ?? '—'}`;
+  }).catch(() => { deviceLine.textContent = 'Bildirim için kayıtlı cihaz: —'; });
   root.append(sectionCard('Hesap ve eşitleme',
     'Supabase hesabı bu tarayıcıda açık kalır. Telefonun Google hesabı otomatik kullanılmaz.',
     h('div', { class: 'btn-row', style: 'align-items:center;justify-content:space-between' },
-      h('span', { class: 'dim' }, `Giriş yapılan hesap: ${ctx.accountEmail || '—'}`),
+      h('div', {},
+        h('span', { class: 'dim', style: 'display:block' }, `Giriş yapılan hesap: ${ctx.accountEmail || '—'}`),
+        deviceLine),
       h('button', {
         class: 'btn', type: 'button',
         onclick: ctx.changeAccount,
@@ -174,6 +181,7 @@ export function renderAyarlar(ctx) {
       pushDiag.textContent = `Tanı: ${pushDiagnostics()} · hata: ${error.message || error}`;
       return null;
     });
+    if (devices !== null) deviceLine.textContent = `Bildirim için kayıtlı cihaz: ${devices}`;
     pushButtons.replaceChildren();
     const button = (label, primary, action) => h('button', {
       class: `btn${primary ? ' btn-primary' : ''}`, type: 'button',
@@ -191,7 +199,7 @@ export function renderAyarlar(ctx) {
         + 'Ana ekrandaki Analiz simgesini sil → Safari’de siteyi aç → Paylaş → Ana Ekrana Ekle → “Web Uygulaması olarak aç” açık olsun → Ekle. Sonra yeni simgeden aç.',
       unsupported: 'Bu cihaz bildirimleri desteklemiyor. iPhone’da iOS 16.4 veya üstü gerekir (Ayarlar → Genel → Yazılım Güncelleme).',
       denied: 'Bildirim izni reddedilmiş. iPhone Ayarlar → Bildirimler → Analiz’den izni aç.',
-      on: `Açık · her işlem günü (Pzt–Cum) 18:00’de “Portföy bugün 🟢 +%… / 🔴 −%…” bildirimi gelir.${devices !== null ? ` Hesabında kayıtlı cihaz: ${devices}.` : ''}`,
+      on: 'Açık · her işlem günü (Pzt–Cum) 18:00’de “Portföy bugün 🟢 +%… / 🔴 −%…” bildirimi gelir.',
       off: 'Kapalı · aç dersen telefon izin ister.',
     }[status];
     if (status === 'off') pushButtons.append(button('Bildirimleri aç', true, async () => {
