@@ -66,6 +66,15 @@ function transactionFxToTRY(code, tx, fallbackCurrency, index, referenceUnitTRY,
   return currencyFxToTRY(code, currency, index);
 }
 
+const STALE_PRICE_DAYS = 5;
+
+/** Fiyat tarihi en son veri gününden 5 günden eskiyse (veya hiç yoksa) donuk sayılır. */
+function isStalePriceDate(priceDate, latestDate) {
+  if (!latestDate) return false;
+  if (!priceDate) return true;
+  return (Date.parse(`${latestDate}T00:00:00Z`) - Date.parse(`${priceDate}T00:00:00Z`)) / 86400000 > STALE_PRICE_DAYS;
+}
+
 function previousMarketUnitTRY(code, date, currencyHint = '') {
   const hist = cachedHistory(code);
   if (!hist || !DB.calendar.length) return null;
@@ -560,7 +569,14 @@ export function addSiteMarketMetrics(positions) {
     const snapshotPriceIsToday = position.midasStockSnapshot
       && dateInTimezone(position.midasSnapshotCapturedAt, marketTimezone) === marketToday;
     const historyPriceIsToday = quoteIndex >= 0 && quoteDate === marketToday;
+    // TEFAS bir fonun fiyatını yayımlamayı bıraktıysa (ör. THF 24.09'dan beri
+    // ₺0,77'de donuk, Midas ₺2,70 gösteriyor) eski seri değerlemede kullanılmaz;
+    // Midas'ın okunan fiyatı esas alınır ve günlük değişim 0 sayılır.
+    const midasPriceKnown = position.midasStockSnapshot && Number.isFinite(position.price) && position.price > 0;
+    const historyStale = !exchangeTraded && midasPriceKnown
+      && isStalePriceDate(quoteDate, DB.meta?.lastDataDate || DB.calendar.at(-1));
     const price = useQuotePrice ? liveQuote.price
+      : historyStale ? position.price
       : historyPriceIsToday && Number.isFinite(priceFromHistory) ? priceFromHistory
         : snapshotPriceIsToday && Number.isFinite(position.price) && position.price > 0 ? position.price
         : Number.isFinite(priceFromHistory) ? priceFromHistory
@@ -575,7 +591,7 @@ export function addSiteMarketMetrics(positions) {
     // birebir eşitlik aramak geçerli fiyatları yanlışlıkla eksik sayıyordu.
     const firstTrackedPoint = !hasLiveQuote && quoteIndex >= 0 && hist?.i === quoteIndex
       && Boolean(meta.startDate);
-    const noDailyChange = NO_DAILY_CHANGE_CODES.has(position.code);
+    const noDailyChange = NO_DAILY_CHANGE_CODES.has(position.code) || historyStale;
     // Kapanış saati varsaymak yerine, kotasyonun piyasa tarihini bugünkü piyasa
     // tarihiyle karşılaştır. Yeni tarihli kotasyon yoksa son fiyat değerlemede
     // kalır; önceki seansın günlük hareketi bugüne kopyalanmaz.
@@ -676,6 +692,7 @@ export function addSiteMarketMetrics(positions) {
       quoteStale,
       quoteAgeMinutes,
       noDailyChange,
+      priceFromMidasBecauseStale: historyStale,
       dailyFromLastSession: useLastSession ? lastSessionDate || true : null,
     };
   });

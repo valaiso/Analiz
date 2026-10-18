@@ -296,7 +296,9 @@ export function recordPortfolioValue(date, value) {
   const rounded = Math.round(value * 100) / 100;
   const lastAt = Date.parse(state.valueHistoryUpdatedAt || '') || 0;
   if (history[date] === rounded) return false;
-  if (history[date] !== undefined && Date.now() - lastAt < VALUE_RECORD_INTERVAL_MS) return false;
+  // Değer %5'ten fazla değiştiyse (ör. yanlış fiyatla yazılmış kayıt düzeldi) beklemeden yaz.
+  const bigChange = history[date] > 0 && Math.abs(rounded / history[date] - 1) > 0.05;
+  if (history[date] !== undefined && !bigChange && Date.now() - lastAt < VALUE_RECORD_INTERVAL_MS) return false;
   history[date] = rounded;
   state.valueHistory = history;
   state.valueHistoryUpdatedAt = new Date().toISOString();

@@ -81,6 +81,13 @@ def yahoo_quote(ticker: str) -> tuple[float, float] | None:
     return result
 
 
+def fund_price_stale(meta: dict, latest_date: str, days: int = 5) -> bool:
+    date = str(meta.get("date") or "")
+    if not date or not latest_date:
+        return True
+    return (dt.date.fromisoformat(latest_date) - dt.date.fromisoformat(date)).days > days
+
+
 def fmt_tr(value: float, decimals: int = 2) -> str:
     text = f"{abs(value):,.{decimals}f}"
     return text.replace(",", "X").replace(".", ",").replace("X", ".")
@@ -94,6 +101,7 @@ def portfolio_change(cloud: dict, funds: dict) -> tuple[float, float, list[str],
     usd_now, usd_prev = usd
     now_total = prev_total = 0.0
     missing: list[str] = []
+    latest_fund_date = max((str(f.get("date") or "") for f in funds.values()), default="")
     groups: dict[str, list] = {}  # grup -> [₺ değer, adet sayısı]
 
     def add(units: float, now_price: float, prev_price: float, currency: str, group: str) -> None:
@@ -113,11 +121,13 @@ def portfolio_change(cloud: dict, funds: dict) -> tuple[float, float, list[str],
         kind = str(meta.get("kind", "")).upper()
         currency = row.get("currency") or meta.get("currency") or ("USD" if kind.startswith("US_") else "TRY")
         if kind in FUND_KINDS or (code in NO_DAILY_CHANGE):
-            price = float(meta.get("price") or row.get("price") or 0)
+            # TEFAS fiyatı donmuşsa (5 günden eski) Midas'ın okunan fiyatı kullanılır.
+            stale = fund_price_stale(meta, latest_fund_date)
+            price = float((row.get("price") if stale else meta.get("price")) or row.get("price") or 0)
             if price <= 0:
                 missing.append(code)
                 continue
-            chg = 0.0 if code in NO_DAILY_CHANGE else float(meta.get("chg") or 0)
+            chg = 0.0 if code in NO_DAILY_CHANGE or stale else float(meta.get("chg") or 0)
             add(units, price, price / (1 + chg / 100), "TRY", "Fon")
             continue
         ticker = code if currency == "USD" or kind.startswith("US_") else f"{code}.IS"
