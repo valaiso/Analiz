@@ -3,7 +3,7 @@
    istek atılır ve bellekte tutulur. */
 
 import { isNum } from './util.js';
-import { getMarketAssets, saveMarketAssets } from './store.js';
+import { getMarketAssets, saveMarketAssets, getMidasAccountSnapshot } from './store.js';
 
 const DATA_URL = new URL('../../data/', import.meta.url).href;
 const LOCAL_ASSET_KEY = 'analiz-local-market-assets-v1';
@@ -201,7 +201,7 @@ export async function loadHistory(code) {
 
   const task = getJSON(`history/${encodeURIComponent(code)}.json`)
     .then((raw) => {
-      const entry = { i: raw.i | 0, p: raw.p || [], filled: forwardFill(raw.p || []) };
+      const entry = { i: raw.i | 0, p: raw.p || [], filled: repairedFill(code, raw.i | 0, raw.p || []) };
       historyCache.set(code, entry);
       pending.delete(code);
       return entry;
@@ -243,6 +243,43 @@ export async function refreshData() {
  * Sıfır ve negatif değerler geçersiz sayılır - TEFAS ara sıra fiyat
  * açıklanmayan günler için 0 yayımlıyor.
  */
+const FUND_KINDS = new Set(['YAT', 'EMK', 'GYF', 'GSYF']);
+const STALE_DAYS = 5;
+const MAX_MIDAS_GAP = 0.2;
+
+/**
+ * Grafik serisi (filled) için donuk TEFAS fiyatını onarır. TEFAS bir fonun
+ * fiyatını yayımlamayı bıraktıysa ve Midas'ta bu fon tutuluyorsa: Midas
+ * fiyatından %20'den fazla sapan son noktalar (ör. THF'nin 24.09'daki hatalı
+ * ₺0,77'si) atılır, son gerçek noktadan Midas fiyatına düz çizgiyle uzatılır.
+ * Ham `p` dizisine dokunulmaz; günlük değişim ve donukluk tespiti onu kullanır.
+ */
+function repairedFill(code, start, prices) {
+  const fallback = () => forwardFill(prices);
+  if (!FUND_KINDS.has(String(DB.byCode.get(code)?.kind || '').toUpperCase())) return fallback();
+  const snapshot = getMidasAccountSnapshot();
+  const position = snapshot?.positionsSource === 'midas-visible-v1'
+    ? (snapshot.positions || []).find((row) => row.code === code && row.price > 0) : null;
+  const latestDate = DB.meta?.lastDataDate || DB.calendar.at(-1);
+  if (!position || !latestDate || !DB.calendar.length) return fallback();
+  const real = prices.map((value, k) => [start + k, value]).filter(([, value]) => isNum(value) && value > 0);
+  if (!real.length) return fallback();
+  const lastDate = DB.calendar[real.at(-1)[0]];
+  if (!lastDate || (Date.parse(`${latestDate}T00:00:00Z`) - Date.parse(`${lastDate}T00:00:00Z`)) / 86400000 <= STALE_DAYS) return fallback();
+  const midasPrice = position.price;
+  // Sondaki hatalı noktaları at (en fazla 10 nokta geriye bakılır).
+  let keep = real.length - 1;
+  while (keep > 0 && real.length - 1 - keep < 10 && Math.abs(real[keep][1] / midasPrice - 1) > MAX_MIDAS_GAP) keep -= 1;
+  const [lastIndex, lastPrice] = real[keep];
+  const captureIndex = indexForDate(String(snapshot.stockCapturedAt || latestDate).slice(0, 10));
+  const endIndex = Math.max(lastIndex + 1, Math.min(DB.calendar.length - 1, captureIndex >= 0 ? captureIndex : DB.calendar.length - 1));
+  const series = prices.slice(0, lastIndex - start + 1);
+  for (let k = lastIndex + 1; k <= endIndex; k += 1) {
+    series[k - start] = lastPrice + (midasPrice - lastPrice) * (k - lastIndex) / (endIndex - lastIndex);
+  }
+  return forwardFill(series);
+}
+
 function forwardFill(arr) {
   const out = new Array(arr.length);
   let last = null;
