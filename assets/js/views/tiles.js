@@ -111,6 +111,21 @@ function typeDistribution(types, total) {
       h('em', {}, tl(t.value))))));
 }
 
+/**
+ * Grubun yalnızca oran dağılımı (Dağılım sekmesi): fonlarda türler
+ * (Hisse Senedi Yoğun, PPF…), diğer gruplarda varlıkların grup içi payı.
+ */
+export function groupDistribution(group) {
+  const parts = group.label === 'Fon'
+    ? groupFundsByType(group.rows).map((t) => ({ type: t.type, value: t.value }))
+    : group.rows.filter((row) => isNum(row.marketValueTRY) && row.marketValueTRY > 0)
+      .map((row) => ({ type: assetLabel(row.code) ? `${row.code} · ${assetLabel(row.code).replace(/\s*\(.*?\)\s*/g, ' ').replace(/\s*·.*$/, '').trim()}` : row.code, value: row.marketValueTRY }));
+  const sorted = parts.filter((t) => t.value > 0).sort((a, b) => b.value - a.value)
+    .map((t, index) => ({ ...t, color: TYPE_COLORS[index % TYPE_COLORS.length] }));
+  const total = sorted.reduce((sum, t) => sum + t.value, 0);
+  return total > 0 ? typeDistribution(sorted, total) : h('p', { class: 'dim', style: 'margin:0' }, 'Değeri hesaplanan varlık yok.');
+}
+
 /** Bir varlık grubunun kutucukları; fonlarda üstte tür dağılım çubuğu. */
 export function groupTiles(group, { share = () => null, valuesOk = true } = {}) {
   const grid = (rows) => h('div', { class: 'fund-tiles pos-tiles' },
