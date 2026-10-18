@@ -12,6 +12,7 @@ self.addEventListener('push', (event) => {
     icon: '/Analiz/iconV1.png',
     badge: '/Analiz/iconV1.png',
     tag: data.tag || 'gunluk-portfoy',
+    renotify: true,
     data: { url: data.url || '/Analiz/#panel' },
   }));
 });

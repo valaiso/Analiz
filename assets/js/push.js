@@ -68,7 +68,8 @@ export async function testNotification() {
   await reg.showNotification('🟢 Portföy bugün +%1,25', {
     body: 'Deneme bildirimi · her işlem günü 18:00’de gerçek değişim gelir',
     icon: '/Analiz/iconV1.png',
-    tag: 'deneme',
+    // Aynı etiketli bildirim Chrome'da sessizce yer değiştirir; her denemeye yeni etiket.
+    tag: `deneme-${Date.now()}`,
   });
 }
 
