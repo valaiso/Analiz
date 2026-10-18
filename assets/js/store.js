@@ -326,6 +326,23 @@ export function recordPortfolioValue(calendarDate, value) {
   return true;
 }
 
+/** Geçmiş bir günün toplam değerini elle yazar (hafta sonu Cuma'ya gider). */
+export function setPortfolioValue(calendarDate, value) {
+  const amount = Math.round(Number(value) * 100) / 100;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(calendarDate)) || !(amount > 0)) return null;
+  const date = tradingDateFor(calendarDate);
+  state.valueHistory = { ...(state.valueHistory || {}), [date]: amount };
+  persist();
+  return date;
+}
+
+export function removePortfolioValue(date) {
+  const history = { ...(state.valueHistory || {}) };
+  delete history[date];
+  state.valueHistory = history;
+  persist();
+}
+
 /* ------------------------------------------------------ para giriş / çıkışı */
 
 // Onaylanan para yatırma (+) / çekme (−) kayıtları ve son Midas tarama

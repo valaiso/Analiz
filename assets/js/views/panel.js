@@ -1,6 +1,6 @@
 /* Panel: portföyün özeti - toplam değer, günlük ve toplam kazanç, pozisyonlar. */
 
-import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, money, cls, isNum, fmtDate }
+import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, money, cls, isNum, fmtDate, toast }
   from '../util.js';
 import { DB } from '../data.js';
 import { lineChart, barChart } from '../charts.js';
@@ -8,7 +8,7 @@ import { sliceLastDays } from '../portfolio.js';
 import { cashflowCalendar, realReturn } from '../insights.js';
 import {
   transactions, daysSinceBackup, getMidasAccountSnapshot,
-  valueHistory, recordPortfolioValue, cashflows, midasBaselineState, pendingCashflow,
+  valueHistory, recordPortfolioValue, setPortfolioValue, removePortfolioValue, cashflows, midasBaselineState, pendingCashflow,
   updateMidasBaseline, confirmPendingCashflow, rejectPendingCashflow, removeCashflow, dividends, dividendsBetween,
 } from '../store.js';
 import {
@@ -476,8 +476,38 @@ export function renderPanel(ctx) {
     }, RANGES.map((range) => range.key === 'all'
       ? { ...range, label: 'Başlangıç', title: 'Yatırım başlangıcından itibaren' } : range)));
 
-  if (chartDates.length) {
-    root.append(h('section', { class: 'card' }, head, chartBox));
+  // Kayıtlı günler: Midas'ta görülen geçmiş gün toplamları elle eklenip düzeltilebilir.
+  const historyEditor = () => {
+    const stored = valueHistory();
+    const dateInput = h('input', { type: 'date', max: todayInIstanbul() });
+    const valueInput = h('input', { type: 'number', step: 'any', min: '0', placeholder: 'Toplam ₺ (kripto dahil)' });
+    const rows = Object.keys(stored).sort().reverse().map((date) => h('tr', {},
+      h('td', { style: 'text-align:left' }, fmtDate(date)),
+      h('td', {}, tl(stored[date])),
+      h('td', {}, h('button', {
+        class: 'btn btn-sm', type: 'button',
+        onclick: () => { removePortfolioValue(date); ctx.refresh(); },
+      }, 'Sil'))));
+    return h('details', { style: 'margin-top:10px' },
+      h('summary', { style: 'cursor:pointer;font-size:.85rem' }, `Kayıtlı günler (${rows.length}) · geçmiş gün ekle / düzelt`),
+      h('p', { class: 'dim', style: 'margin:8px 0;font-size:.8rem' },
+        'Midas’ta gördüğün bir günün toplam değerini (yatırım + kripto) gir. Aynı gün varsa üzerine yazılır; hafta sonu tarihi Cuma’ya kaydedilir.'),
+      h('div', { class: 'btn-row', style: 'align-items:center' }, dateInput, valueInput,
+        h('button', {
+          class: 'btn btn-primary btn-sm', type: 'button',
+          onclick: () => {
+            const saved = setPortfolioValue(dateInput.value, valueInput.value);
+            if (!saved) { toast('Tarih ve 0’dan büyük bir tutar gir'); return; }
+            toast(`${fmtDate(saved)} değeri kaydedildi`);
+            ctx.refresh();
+          },
+        }, 'Kaydet')),
+      rows.length ? h('div', { class: 'table-wrap', style: 'max-width:420px;margin-top:8px' }, h('table', {},
+        h('tbody', {}, rows))) : null);
+  };
+
+  if (chartDates.length || hasMidasTotal) {
+    root.append(h('section', { class: 'card' }, head, chartBox, hasMidasTotal ? historyEditor() : null));
     drawChart();
   }
 
