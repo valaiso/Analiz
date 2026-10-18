@@ -460,13 +460,13 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
 .hero-eyebrow { color: rgba(255,255,255,.72); font-family: var(--mono); font-size: .6rem; font-weight: 650; letter-spacing: .13em; }
 .hero h2 { font-size: 2.1rem; line-height: 1.15; margin: 10px 0 8px; letter-spacing: -.025em; font-variant-numeric: tabular-nums; }
 .hero p { margin: 0; color: rgba(255,255,255,.82); font-size: .88rem; }
-.hero-figures { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-content: center; }
+.hero-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-content: center; }
 .hero-figures > div {
   background: rgba(255,255,255,.1); border: 1px solid rgba(255,255,255,.18); border-radius: 10px;
   padding: 12px 14px; display: grid; gap: 3px;
 }
 .hero-figures span { font-size: .68rem; text-transform: uppercase; letter-spacing: .06em; color: rgba(255,255,255,.75); }
-.hero-figures strong { font-size: 1.4rem; font-variant-numeric: tabular-nums; letter-spacing: -.02em; }
+.hero-figures strong { font-size: 1.25rem; font-variant-numeric: tabular-nums; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .hero-figures em { font-style: normal; font-size: .8rem; color: rgba(255,255,255,.78); font-variant-numeric: tabular-nums; }
 .hero-figures .hero-note { grid-column: 1 / -1; font-size: .74rem; color: rgba(255,255,255,.7); }
 .hero .hero-up { color: #7ef0b0; }
@@ -475,7 +475,11 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
 @media (max-width: 640px) {
   .hero { padding: 20px 16px; gap: 16px; }
   .hero h2 { font-size: 1.6rem; }
-  .hero-figures strong { font-size: 1.15rem; }
+  .hero-figures { gap: 7px; }
+  .hero-figures > div { padding: 10px 9px; }
+  .hero-figures span { font-size: .58rem; }
+  .hero-figures strong { font-size: .98rem; }
+  .hero-figures em { font-size: .7rem; }
 }
 
 /* --------------------------------------------------------- aylık rapor (A4) */
@@ -601,18 +605,21 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
 }
 
 /* ------------------------------------------------- renkli bölüm kartları */
-/* Her konu sabit bir renk taşır (Fon mavi, ETF turkuaz, Hisse turuncu, Kripto mor,
-   Stopaj kehribar, Yatırım akışı çivit, Gerçekleşen K/Z gri). Renk yalnızca başlık
-   bandı, simge, tablo başlığı ve çubuklarda kullanılır; veriler nötr kalır. */
-.sec-blue   { --sec: #1f5fbf; }
-.sec-teal   { --sec: #0d9488; }
-.sec-orange { --sec: #dd6b20; }
+/* Renkler TEFAS Quant paletinden: lacivert aile (--brand, --brand-2, --brand-3),
+   grafik serileri (--c2 turuncu, --c5 mor, --c6 camgöbeği) ve not rengi (--g-b).
+   Renk yalnızca başlık bandı, simge, çizgi ve çubuklarda; veriler nötr kalır. */
+.sec-blue   { --sec: var(--brand-3); }
+.sec-teal   { --sec: #0891b2; }
+.sec-orange { --sec: #ea580c; }
 .sec-violet { --sec: #7c3aed; }
-.sec-amber  { --sec: #b7791f; }
-.sec-indigo { --sec: #4f46e5; }
-.sec-slate  { --sec: #475569; }
-html[data-theme="dark"] .sec-slate { --sec: #94a3b8; }
-@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .sec-slate { --sec: #94a3b8; } }
+.sec-amber  { --sec: #c58b12; }
+.sec-indigo { --sec: var(--brand-2); }
+.sec-slate  { --sec: var(--brand); }
+html[data-theme="dark"] .sec-slate, html[data-theme="dark"] .sec-indigo, html[data-theme="dark"] .sec-blue { --sec: #4b8df8; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .sec-slate, :root:not([data-theme="light"]) .sec-indigo,
+  :root:not([data-theme="light"]) .sec-blue { --sec: #4b8df8; }
+}
 
 .sec { padding: 0; overflow: hidden; border-top: 3px solid var(--sec); }
 .sec:hover { border-color: color-mix(in srgb, var(--sec) 30%, var(--border)); border-top-color: var(--sec); }
@@ -710,10 +717,10 @@ html[data-theme="dark"] .sec-slate { --sec: #94a3b8; }
 .asset-logo.on-dark { background: #1e293b; }
 .asset-logo.logo-kripto.has-img img { padding: 0; }
 .logo-fon { --logo-bg: #1f5fbf; }
-.logo-etf { --logo-bg: #0d9488; }
-.logo-hisse { --logo-bg: #dd6b20; }
+.logo-etf { --logo-bg: #0891b2; }
+.logo-hisse { --logo-bg: #ea580c; }
 .logo-kripto { --logo-bg: #7c3aed; }
-.logo-diger { --logo-bg: #475569; }
+.logo-diger { --logo-bg: #0b2a5b; }
 
 @media (max-width: 640px) {
   /* Telefonda yalnızca logo + kod: açıklama (PPF, ETF adı vb.) gizlenir */

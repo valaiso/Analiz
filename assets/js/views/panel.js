@@ -17,6 +17,7 @@ import {
   midasBaseline, unexplainedChange,
 } from '../asset-groups.js';
 import { assetLogo } from '../logos.js';
+import { tile, fundParts, groupTiles } from './tiles.js';
 import { kpiCard, plCard, sectionCard, toneCard, groupStrip, SECTION_TONES, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
 /**
@@ -164,9 +165,6 @@ export function renderPanel(ctx) {
     cryptoPositionsCaptured ? 'kripto' : '',
   ].filter(Boolean);
   const accountLabel = `Midas ${verifiedAccounts.join(' + ')} hesabı`;
-  const historySpanDays = series.dates.length > 1
-    ? (Date.parse(`${series.dates.at(-1)}T00:00:00Z`)
-      - Date.parse(`${series.dates[0]}T00:00:00Z`)) / 86400000 : 0;
 
   if (!open.length && !analysis.closed.length && !snapshotPositions.length && !hasMidasTotal) {
     return emptyState(
@@ -319,31 +317,6 @@ export function renderPanel(ctx) {
 
   /* ------------------------------------------------------------------ KPI'lar */
 
-  // İşlem kayıtlarından modellenen K/Z ve XIRR. Midas hesabında Gerçek Getiri
-  // kartı esas alınır; bu iki kart sayfanın altındaki katlanır bölüme iner.
-  const legacyCards = [
-    plCard({
-      label: 'İşlem Kayıtlarına Göre K/Z',
-      tone: 'green',
-      amount: totals.totalPL,
-      pct: totals.totalPct,
-      formatMoney: tlSigned,
-      formatPct: pctSigned,
-      hint: totals.realized !== 0
-        ? `${tlSigned(totals.unrealized)} açık · ${tlSigned(totals.realized)} gerçekleşmiş`
-        : 'Geçmiş alış/satış kayıtlarından hesaplanır',
-    }),
-    kpiCard({
-      label: 'İşlem Kayıtlarına Göre XIRR',
-      tone: 'burgundy',
-      value: isNum(analysis.xirr) && historySpanDays >= 90 ? pctSigned(analysis.xirr, 1) : '—',
-      valueClass: cls(isNum(analysis.xirr) && historySpanDays >= 90 ? analysis.xirr : null),
-      sub: 'Para ağırlıklı yıllık bileşik getiri',
-      hint: historySpanDays < 90
-        ? 'Kayıtlı geçmiş 90 günden kısa; yıllıklandırma yanıltıcı olabileceği için gösterilmiyor'
-        : !isNum(analysis.xirr) ? 'Nakit akışlarından XIRR hesaplanamadı' : null,
-    }),
-  ];
   const totalValueText = hasMidasTotal ? tl(midasPortfolioTotal) : hasMidasImportState ? '—' : tl(totals.value);
   const totalValueSub = hasMidasTotal
     ? `Hisse/Fon/ETF ${tl(stockMidasTotal)}${stockAccount.cash > 0.5 && stockPositionsCaptured ? ` (${tl(stockAccount.cash)} nakit dahil)` : ''} + Kripto ${tl(cryptoTotal)}${midasTotalPartial ? ' · kısmi toplam' : ''}`
@@ -374,45 +347,28 @@ export function renderPanel(ctx) {
       h('div', {},
         h('span', {}, 'Gerçek getiri'),
         h('strong', { class: heroTrend(real?.twr) }, isNum(real?.twr) ? pctSigned(real.twr) : '—'),
-        h('em', {}, real && isNum(real.twr) ? `${fmtDate(real.startDate)}’den beri` : 'ikinci kayıt gününden itibaren')),
+        h('em', {}, real && isNum(real.twr)
+          ? `${fmtDate(real.startDate)}’den beri${realDividends > 0 ? ` · ${tl(realDividends)} temettü dahil` : ''}`
+          : 'ikinci kayıt gününden itibaren')),
+      h('div', {},
+        h('span', {}, 'Stopaj (tahmini)'),
+        h('strong', {}, tl(stopajEstimate)),
+        h('em', {}, 'satışta fon kârından')),
       h('p', { class: 'hero-note' }, dailyHint))));
-  root.append(h('div', { class: 'grid grid-kpi' },
-    ...(real ? [] : legacyCards),
-    ...(real ? [plCard({
-      label: 'Gerçek Getiri',
-      tone: 'teal',
-      amount: real.twr === null ? null : real.profit,
-      pct: real.twr,
-      formatMoney: tlSigned,
-      formatPct: pctSigned,
-      hint: real.twr === null
-        ? `Kayıt ${fmtDate(real.startDate)} tarihinde başladı; ikinci günden itibaren hesaplanır`
-        : `${fmtDate(real.startDate)}’den beri · para giriş/çıkışı (${tlSigned(real.netFlows)}) hariç${realDividends > 0 ? ` · ${tl(realDividends)} temettü dahil` : ''}`,
-    })] : []),
-    kpiCard({
-      label: 'Stopaj Kesintileri',
-      tone: 'purple',
-      value: tl(stopajEstimate),
-      sub: 'Fon türüne göre %0 veya %17,5',
-      hint: 'Hisse senedi yoğun fonlar %0; diğer fonlar %17,5. Ana portföy değerini etkilemez.',
-    })));
 
-  const stopajTable = h('table', {},
-    h('thead', {}, h('tr', {},
-      h('th', { style: 'text-align:left' }, 'Varlık'),
-      h('th', {}, 'Fon kârı'),
-      h('th', {}, 'Oran'),
-      h('th', {}, 'Tahmini stopaj'))),
-    h('tbody', {}, stopajRows.map((row) => h('tr', {},
-      h('td', { style: 'text-align:left' }, h('span', { class: 'asset-cell' }, assetLogo(row.code), h('span', { class: 'code-chip' }, row.code))),
-      h('td', {}, tl(row.profit)),
-      h('td', { title: row.reason }, pct(row.rate * 100, 1)),
-      h('td', { title: row.reason }, tl(row.amount))))));
   const stopajContent = stopajRows.length
-    ? h('div', { class: 'stack' },
-      h('div', { class: 'table-wrap', style: 'max-width:560px' }, stopajTable),
-      h('p', { class: 'dim', style: 'margin:0' },
-        `Tahmini toplam: ${tl(stopajEstimate)} · oranın nedenini görmek için üzerine gel`))
+    ? h('div', { class: 'fund-tiles' }, stopajRows.map((row) => {
+      const parts = fundParts(row.code);
+      return tile({
+        code: row.code, top: parts.issuer || 'Fon', name: parts.name,
+        figs: [
+          { label: 'Fon kârı', value: tl(row.profit) },
+          { label: 'Oran', value: pct(row.rate * 100, 1) },
+          { label: 'Stopaj', value: tl(row.amount) },
+        ],
+        foot: [row.reason],
+      });
+    }))
     : h('p', { class: 'dim', style: 'margin:0' },
       'Vergili fonlarda kâr oluştuğunda tahmini stopaj burada gösterilir.');
   const stopajSection = toneCard({
@@ -543,65 +499,6 @@ export function renderPanel(ctx) {
   /* ---------------------------------------------------------------- pozisyonlar */
 
   if (displayPositions.length) {
-    const moneyByCurrency = (value, currency) => {
-      if (!isNum(value)) return '—';
-      return new Intl.NumberFormat('tr-TR', {
-        style: 'currency', currency: currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2,
-      }).format(value);
-    };
-    // Tüm pozisyon tablolarında sütun genişlikleri sabit; alt alta tablolarda
-    // başlıklar ve değerler aynı hizada kalır.
-    const positionsTable = (rows) => {
-      const table = basePositionsTable(rows);
-      table.element.classList.add('aligned-cols', 'pos-table');
-      return table;
-    };
-    const basePositionsTable = (rows) => sortableTable({
-      initialSort: { key: 'allocationPct', dir: 'desc' },
-      columns: [
-        { key: 'code', label: 'Varlık', defaultDir: 'asc', render: (r) => h('span', { class: 'asset-cell' },
-          assetLogo(r.code, { kind: r.kind, currency: r.currency }),
-          h('span', { class: 'asset-names' }, h('span', { class: 'code-chip' }, r.code),
-            assetLabel(r.code) ? h('span', { class: 'pill asset-label' }, assetLabel(r.code)) : null)) },
-        { key: 'units', label: 'Adet', render: (r) => fmtUnits(r.units) },
-        { key: 'price', label: 'Güncel Fiyat', className: 'col-m-hide', render: (r) => moneyByCurrency(r.price, r.currency) },
-        { key: 'marketValueTRY', label: 'Portföy Değeri', className: 'col-m-hide', render: (r) => positionSnapshotConsistent && isNum(r.marketValueTRY) ? tl(r.marketValueTRY) : '—' },
-        { key: 'avgCost', label: 'Ort. Maliyet', className: 'col-m-hide', render: (r) => moneyByCurrency(r.avgCost, r.currency) },
-        { key: 'dailyPLTRY', label: 'Günlük', className: 'col-daily', render: (r) => r.frozen ? '—' : h('span', { class: cls(r.dailyPLTRY) }, `${r.noDailyChange || isNum(r.dailyPLNative) ? signedCurrency(r.dailyPLNative, r.currency) : '—'}${(r.noDailyChange || isNum(r.dailyPct)) && isNum(r.dailyPct) ? ` · ${pctSigned(r.dailyPct)}` : ''}`) },
-        { key: 'totalPLTRY', label: 'Toplam K/Z', className: 'col-total', render: (r) => r.frozen ? '—' : h('span', { class: cls(r.totalPLTRY) }, `${r.noDailyChange || positionSnapshotConsistent ? signedCurrency(r.totalPLNative, r.currency) : '—'}${(r.noDailyChange || positionSnapshotConsistent) && isNum(r.totalPct) ? ` · ${pctSigned(r.totalPct)}` : ''}`) },
-        { key: 'allocationPct', label: 'Dağılım', className: 'col-m-hide', render: (r) => isNum(r.allocationPct) ? pct(r.allocationPct, 2) : '—' },
-      ],
-      rows,
-    });
-    // "ZİRAAT PORTFÖY BAŞAK PARA PİYASASI (TL) FONU" → kurucu "ZİRAAT PORTFÖY", ad "BAŞAK PARA PİYASASI"
-    const fundParts = (code) => {
-      const full = String(DB.byCode.get(code)?.name || '').replace(/\s*YÖNETİMİ A\.Ş\.?/i, '');
-      const match = full.match(/^(.*?PORTFÖY)\s+(.*)$/);
-      const clean = (text) => text.replace(/\s+FONU?\b/g, '').replace(/\s*\(.*?\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
-      return { issuer: match ? match[1] : '', name: clean(match ? match[2] : full) };
-    };
-    const fundTile = (r, type) => {
-      const valueOk = positionSnapshotConsistent && isNum(r.marketValueTRY);
-      const daily = r.frozen ? '—' : r.noDailyChange || isNum(r.dailyPLNative) ? signedCurrency(r.dailyPLNative, r.currency) : '—';
-      const total = r.frozen ? 'temerrüt' : positionSnapshotConsistent && isNum(r.totalPLNative) ? signedCurrency(r.totalPLNative, r.currency) : '—';
-      const parts = fundParts(r.code);
-      return h('article', { class: `fund-tile${r.frozen ? ' is-frozen' : ''}` },
-        h('div', { class: 'fund-tile-top' },
-          assetLogo(r.code, { kind: r.kind, currency: r.currency }),
-          h('span', { class: 'fund-tile-type' }, parts.issuer || type),
-          isNum(r.allocationPct) ? h('span', { class: 'fund-tile-share' }, pct(r.allocationPct, 1)) : null),
-        h('div', { class: 'fund-tile-code' }, r.code),
-        h('div', { class: 'fund-tile-name' }, parts.name || assetLabel(r.code) || ''),
-        h('div', { class: 'fund-tile-figs' },
-          h('div', { class: 'fig-value' }, h('span', {}, 'Değer'), h('b', {}, valueOk ? tl(r.marketValueTRY) : '—')),
-          h('div', { class: `col-daily ${cls(r.dailyPLTRY)}` }, h('span', {}, 'Günlük'),
-            h('b', {}, daily), !r.frozen && isNum(r.dailyPct) ? h('em', {}, pctSigned(r.dailyPct)) : null),
-          h('div', { class: `col-total ${cls(r.totalPLTRY)}` }, h('span', {}, 'Toplam K/Z'),
-            h('b', {}, total), !r.frozen && isNum(r.totalPct) ? h('em', {}, pctSigned(r.totalPct)) : null)),
-        h('div', { class: 'fund-tile-foot' },
-          h('span', {}, `${fmtUnits(r.units)} adet`),
-          h('span', {}, `${moneyByCurrency(r.price, r.currency)}${isNum(r.avgCost) ? ` · ort. ${moneyByCurrency(r.avgCost, r.currency)}` : ''}`)));
-    };
     const groupTitles = { ETF: 'ETF’ler', Fon: 'Fonlar', Hisse: 'Hisseler', Kripto: 'Kripto', Diğer: 'Diğer Varlıklar' };
     const positionGroups = groupAssetRows(displayPositions).map((group) => ({
       ...group,
@@ -615,21 +512,11 @@ export function renderPanel(ctx) {
       figure: tl(group.groupValue),
       figureSub: isNum(share(group.groupValue)) ? `portföyün ${pct(share(group.groupValue), 1)}` : `${group.rows.length} varlık`,
     }, ...children);
+    // Quant "kategori liderleri" düzeni: her varlık bir kutucuk; fonlar türe göre (PPF'ler yan yana).
     for (const group of positionGroups) {
-      if (group.label === 'Fon') {
-        // Aynı türdeki fonlar (ör. iki PPF) alt alta, tür toplamı ve payıyla birlikte.
-        // Quant "kategori liderleri" düzeni: her fon bir kutucuk, aynı türdekiler yan yana.
-        const typeBlocks = groupFundsByType(group.rows).map((fundGroup) => h('div', { class: 'sec-group' },
-          groupStrip({
-            label: fundGroup.type,
-            value: `${tl(fundGroup.value)}${isNum(share(fundGroup.value)) ? ` · ${pct(share(fundGroup.value), 1)}` : ''}`,
-            share: share(fundGroup.value),
-          }),
-          h('div', { class: 'fund-tiles pos-tiles' }, fundGroup.rows.map((row) => fundTile(row, fundGroup.type)))));
-        root.append(groupCard(group, 'Türe göre gruplanmıştır · portföy değeri = Midas adedi × güncel fiyat', ...typeBlocks));
-        continue;
-      }
-      root.append(groupCard(group, 'Portföy değeri = Midas adedi × güncel fiyat × güncel kur', positionsTable(group.rows).element));
+      root.append(groupCard(group,
+        group.label === 'Fon' ? 'Türe göre gruplanmıştır · değer = Midas adedi × güncel fiyat' : 'Değer = Midas adedi × güncel fiyat × güncel kur',
+        ...groupTiles(group, { share, valuesOk: positionSnapshotConsistent })));
     }
   } else if (!hasMidasTotal && open.length) {
     const table = sortableTable({
@@ -737,14 +624,6 @@ export function renderPanel(ctx) {
     root.append(h('div', { class: 'notice warn' },
       `Dikkat: ${oversold.map((x) => x.code).join(', ')} satış adetleri kayıtlı alışları aşıyor. `
       + 'Eşleşmeyen fazla adetlerin kâr/zararı hesaplanmadı; eksik alış kaydını veya satış miktarını İşlemler sekmesinden kontrol et.'));
-  }
-
-  if (real) {
-    root.append(h('details', { class: 'card' },
-      h('summary', { style: 'cursor:pointer;font-weight:600' }, 'İşlem kayıtlarına göre hesaplar (eski model)'),
-      h('p', { class: 'dim', style: 'margin:8px 0' },
-        'Bu iki değer geçmiş alış/satış kayıtlarından modellenir; Midas’taki gerçek hesapla farklı olabilir. Asıl getiri için yukarıdaki Gerçek Getiri kartına bak.'),
-      h('div', { class: 'grid grid-kpi' }, ...legacyCards)));
   }
 
   return root;

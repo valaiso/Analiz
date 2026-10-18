@@ -7,6 +7,7 @@ import { weightHistory, attribution } from '../insights.js';
 import { transactions, getMidasAccountSnapshot } from '../store.js';
 import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType, fundTypeLabel, assetLabel, midasStockAccountValue, groupFundsByType } from '../asset-groups.js';
 import { assetLogo } from '../logos.js';
+import { groupTiles } from './tiles.js';
 import { sectionCard, emptyState, toneCard, SECTION_TONES } from './common.js';
 
 const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
@@ -118,36 +119,17 @@ export function renderDagilim(ctx) {
     })).sort((a, b) => b.groupValue - a.groupValue);
     for (const group of sortedGroups) {
       const localOnly = group.label === 'Kripto';
-      const isFundGroup = group.label === 'Fon';
-      const rows = isFundGroup
-        ? groupFundsByType(group.rows).flatMap((fundGroup) => [{ typeHeader: fundGroup }, ...fundGroup.rows])
-        : [...group.rows].sort((a, b) => (b.allocationPct ?? -1) - (a.allocationPct ?? -1));
-      const typeHeaderRow = (fundGroup) => h('tr', {},
-        h('td', { colspan: 7, class: 'sec-row-head' },
-          `${fundGroup.type} · ${tl(fundGroup.value)}${midasTotal > 0 ? ` · ${pct(fundGroup.value / midasTotal * 100, 1)}` : ''}`));
-      const table = h('div', { class: 'table-wrap pos-table' }, h('table', {},
-        h('thead', {}, h('tr', {},
-          h('th', { style: 'text-align:left' }, 'Varlık'),
-          h('th', {}, 'Adet'), h('th', { class: 'col-m-hide' }, 'Portföy Değeri'), h('th', { class: 'col-m-hide' }, 'Ort. Maliyet'),
-          h('th', { class: 'col-m-hide' }, 'Dağılım'), h('th', { class: 'col-total' }, 'Toplam K/Z'), h('th', { class: 'col-daily' }, 'Günlük'))),
-        h('tbody', {}, rows.map((row) => row.typeHeader ? typeHeaderRow(row.typeHeader) : h('tr', {},
-          h('td', {}, h('span', { class: 'asset-cell' }, assetLogo(row.code, { kind: row.kind, currency: row.currency }),
-            h('span', { class: 'asset-names' }, h('span', { class: 'code-chip' }, row.code),
-              assetLabel(row.code) ? h('span', { class: 'pill asset-label' }, assetLabel(row.code)) : null))),
-          h('td', {}, fmtUnits(row.units)),
-          h('td', { class: 'col-m-hide' }, liveValuesReconcile && isNum(row.marketValueTRY) ? tl(row.marketValueTRY) : '—'),
-          h('td', { class: 'col-m-hide' }, `${row.avgCost == null ? '—' : new Intl.NumberFormat('tr-TR', { style: 'currency', currency: row.currency === 'USD' ? 'USD' : 'TRY', maximumFractionDigits: 2 }).format(row.avgCost)}`),
-          h('td', { class: 'col-m-hide' }, row.localRecord || !isNum(row.allocationPct) ? '—' : pct(row.allocationPct, 2)),
-          h('td', { class: `col-total ${cls2(row.totalPLTRY)}` }, liveValuesReconcile && isNum(row.totalPLNative) ? `${signedCurrency(row.totalPLNative, row.currency)}${isNum(row.totalPct) ? ` · ${pctSigned(row.totalPct)}` : ''}` : '—'),
-          h('td', { class: `col-daily ${cls2(row.dailyPLNative)}` }, !row.frozen && liveValuesReconcile && isNum(row.dailyPLNative) ? `${signedCurrency(row.dailyPLNative, row.currency)}${isNum(row.dailyPct) ? ` · ${pctSigned(row.dailyPct)}` : ''}` : '—'))))));
       root.append(toneCard({
         ...(SECTION_TONES[group.label] || SECTION_TONES.Diğer),
         title: localOnly ? 'Kripto' : group.label,
         sub: localOnly ? 'Açık miktar Midas Kripto Pozisyonlar tablosundan alınır.'
-          : 'Portföy değeri = Midas adedi × güncel fiyat × güncel kur',
+          : group.label === 'Fon' ? 'Türe göre gruplanmıştır · değer = Midas adedi × güncel fiyat'
+            : 'Değer = Midas adedi × güncel fiyat × güncel kur',
         figure: liveValuesReconcile ? tl(group.groupValue) : null,
         figureSub: liveValuesReconcile && midasTotal > 0 ? `portföyün ${pct(group.groupValue / midasTotal * 100, 1)}` : null,
-      }, table));
+      }, ...groupTiles({
+        ...group, rows: [...group.rows].sort((x, y) => (y.allocationPct ?? -1) - (x.allocationPct ?? -1)),
+      }, { share: (value) => (midasTotal > 0 ? value / midasTotal * 100 : null), valuesOk: liveValuesReconcile })));
     }
   } else {
     const byFund = open.filter((row) => row.value > 0)
@@ -179,7 +161,7 @@ export function renderDagilim(ctx) {
           h('thead', {}, h('tr', {},
             h('th', { style: 'text-align:left' }, 'Varlık'),
             h('th', {}, `Toplam K/Z (${currency})`), h('th', {}, 'Getiri'))),
-          h('tbody', {}, rows.map((row) => row.typeHeader ? typeHeaderRow(row.typeHeader) : h('tr', {},
+          h('tbody', {}, rows.map((row) => h('tr', {},
             h('td', {}, h('span', { class: 'asset-cell' }, assetLogo(row.code, { kind: row.kind, currency: row.currency }), h('span', { class: 'code-chip' }, row.code))),
             h('td', { class: cls2(row.totalPLNative) }, signedCurrency(row.totalPLNative, currency)),
             h('td', { class: cls2(row.totalPct) }, isNum(row.totalPct) ? pctSigned(row.totalPct, 2) : '—'))))));
