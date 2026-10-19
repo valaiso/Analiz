@@ -225,3 +225,32 @@ export function monthlyAllocationCard(snapshots, currentMonth) {
       })))))));
   return h('div', { class: 'stack', style: 'gap:12px' }, legend, columns, note, table);
 }
+
+/* ------------------------------------- tek çubukta varlık sınıfları (Quant sepet çubuğu) */
+
+/**
+ * classes: [{ key: 'Fon'|'ETF'|..., value, rows? }] · total: portföy toplamı.
+ * Dilimlerin içinde "Fon %89" yazar; altındaki satırlarda tutar ve günlük/toplam K/Z.
+ */
+export function classBarCard(classes, total, { plOf } = {}) {
+  const parts = classes.filter((c) => c.value > 0)
+    .sort((a, b) => CLASS_ORDER.indexOf(a.key) - CLASS_ORDER.indexOf(b.key));
+  if (!parts.length || !(total > 0)) return h('p', { class: 'dim', style: 'margin:0' }, 'Değeri hesaplanan varlık yok.');
+  const clsName = (key) => `cls-${key === 'Diğer' ? 'diger' : key.toLowerCase()}`;
+  const bar = h('div', { class: 'class-bar' }, parts.map((c) => {
+    const share = c.value / total * 100;
+    const seg = h('span', { class: clsName(c.key), style: `flex:${share}` },
+      share >= 7 ? `${CLASS_LABELS[c.key] || c.key} ${pct(share, 1)}` : '');
+    return hoverable(seg, () => [CLASS_LABELS[c.key] || c.key, `${pct(share, 1)} · ${tl(c.value)}`]);
+  }));
+  const rows = h('div', { class: 'class-rows' }, parts.map((c) => {
+    const pl = plOf ? plOf(c) : null;
+    return h('div', { class: 'class-row' },
+      h('i', { class: clsName(c.key) }),
+      h('span', { class: 'class-name' }, CLASS_LABELS[c.key] || c.key),
+      h('b', {}, pct(c.value / total * 100, 1)),
+      h('span', { class: 'class-value' }, tl(c.value)),
+      pl || h('span', {}));
+  }));
+  return h('div', { class: 'stack', style: 'gap:12px' }, bar, rows);
+}

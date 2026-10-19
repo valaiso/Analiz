@@ -372,7 +372,7 @@ export function renderPanel(ctx) {
     : h('p', { class: 'dim', style: 'margin:0' },
       'Vergili fonlarda kâr oluştuğunda tahmini stopaj burada gösterilir.');
   const stopajSection = toneCard({
-    tone: 'amber', icon: '%', title: 'Stopaj Kesintileri',
+    tone: 'violet', icon: '%', title: 'Stopaj Kesintileri',
     sub: 'Hisse yoğun fonlar %0, ≥%51 BIST hisseli fonlar 1 yıl sonra %0, diğerleri %17,5 · portföy değerini etkilemez',
     figure: tl(stopajEstimate), figureSub: 'tahmini toplam',
   }, stopajContent);

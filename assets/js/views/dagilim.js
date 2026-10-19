@@ -8,7 +8,7 @@ import { transactions, getMidasAccountSnapshot, monthlySnapshots } from '../stor
 import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType, fundTypeLabel, assetLabel, midasStockAccountValue, groupFundsByType } from '../asset-groups.js';
 import { assetLogo } from '../logos.js';
 import { groupDistribution, plBadge } from './tiles.js';
-import { treemapCard, monthlyAllocationCard } from './allocation-charts.js';
+import { treemapCard, monthlyAllocationCard, classBarCard } from './allocation-charts.js';
 import { sectionCard, emptyState, toneCard, SECTION_TONES } from './common.js';
 
 const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
@@ -112,6 +112,20 @@ export function renderDagilim(ctx) {
       missingPositionValue.length
         ? `Dağılım grafiği bekletiliyor: Midas adedi/fiyatı okunamayan varlıklar: ${missingPositionValue.map((row) => row.code).join(', ')}. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`
         : `Dağılım grafiği bekletiliyor: pozisyon fiyatlarından hesaplanan ${tl(securitiesValue)} değeri Midas hesap toplamı ${tl(midasTotal)} ile uyuşmuyor. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`));
+    // Varlık sınıfları tek çubukta (Quant model sepeti gibi): Fon · ETF · Kripto · Nakit.
+    const sortedGroups = groupAssetRows(positions).map((group) => ({
+      ...group,
+      key: group.label,
+      value: group.rows.reduce((sum, row) => sum + (row.marketValueTRY || 0), 0),
+    }));
+    const classTotal = Number.isFinite(midasTotal) && midasTotal > 0
+      ? midasTotal : sortedGroups.reduce((sum, g) => sum + g.value, 0);
+    const classes = [...sortedGroups, ...(cashValue > 0.01 ? [{ key: 'Nakit', label: 'Nakit', value: cashValue, rows: [] }] : [])];
+    if (liveValuesReconcile) {
+      root.append(toneCard({ tone: 'blue', icon: '⊟', title: 'Varlık Sınıfları',
+        sub: 'Portföyün sınıflara göre payı · günlük ve toplam K/Z' },
+      classBarCard(classes, classTotal, { plOf: (c) => (c.rows?.length ? plBadge(c.rows) : null) })));
+    }
     if (valuesReconcile) {
       root.append(toneCard({ tone: 'indigo', icon: '⊞', title: 'Alan Haritası',
         sub: 'Kutu büyüklüğü varlığın değeri, rengi kâr/zararı · üzerine gel ya da dokun' }, treemapCard(live)));
@@ -120,20 +134,6 @@ export function renderDagilim(ctx) {
       .format(new Date()).slice(0, 7);
     root.append(toneCard({ tone: 'teal', icon: '≣', title: 'Ay Ay Dağılım',
       sub: 'Ay sonu kayıtlarından · varlık sınıflarının portföydeki payı' }, monthlyAllocationCard(monthlySnapshots(), currentMonth)));
-    const sortedGroups = groupAssetRows(positions).map((group) => ({
-      ...group,
-      groupValue: group.rows.reduce((sum, row) => sum + (row.marketValueTRY || 0), 0),
-    })).sort((a, b) => b.groupValue - a.groupValue);
-    for (const group of sortedGroups) {
-      const localOnly = group.label === 'Kripto';
-      root.append(toneCard({
-        ...(SECTION_TONES[group.label] || SECTION_TONES.Diğer),
-        title: localOnly ? 'Kripto' : group.label,
-        badge: liveValuesReconcile ? plBadge(group.rows) : null,
-        figure: liveValuesReconcile ? tl(group.groupValue) : null,
-        figureSub: liveValuesReconcile && midasTotal > 0 ? `portföyün ${pct(group.groupValue / midasTotal * 100, 1)}` : null,
-      }, groupDistribution(group)));
-    }
   } else {
     const byFund = open.filter((row) => row.value > 0)
       .map((row, i) => ({ label: row.code, value: row.value, color: colorAt(i) }));

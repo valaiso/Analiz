@@ -844,6 +844,24 @@ html[data-theme="dark"] .cls-fon { --cls: #3b7ddd; } html[data-theme="dark"] .cl
   .treemap-scale { width: 80px; }
 }
 
+/* Varlık sınıfları tek çubuk (TEFAS Quant model sepeti çubuğu) */
+.class-bar { display: flex; height: 30px; border-radius: 8px; overflow: hidden; gap: 2px; }
+.class-bar span { display: flex; align-items: center; justify-content: center; min-width: 4px; background: var(--cls); color: #fff;
+  font-size: .76rem; font-weight: 700; white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+.class-bar span:hover { filter: brightness(1.12); }
+.class-rows { display: grid; gap: 6px; }
+.class-row { display: grid; grid-template-columns: 12px minmax(70px, 120px) 64px minmax(90px, 140px) 1fr; align-items: center; gap: 10px;
+  padding: 7px 10px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: .86rem; }
+.class-row i { width: 12px; height: 12px; border-radius: 4px; background: var(--cls); }
+.class-name { font-weight: 700; }
+.class-row b, .class-value { font-variant-numeric: tabular-nums; }
+.class-value { color: var(--text-dim); }
+@media (max-width: 640px) {
+  .class-row { grid-template-columns: 12px 1fr auto; row-gap: 4px; }
+  .class-value { display: none; }
+  .class-row .pl-badges { grid-column: 2 / -1; margin-top: 0; }
+}
+
 /* Yazdırma / PDF: yalnızca rapor sayfaları, her biri bir A4 */
 @media print {
   @page { size: A4; margin: 0; }
