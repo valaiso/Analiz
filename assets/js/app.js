@@ -9,7 +9,7 @@ import {
   saveMidasLiveQuotes, ensureMidasPositionsSynced, cleanupStoredData, allTransactions,
 } from './store.js';
 import { requestMidasLiveQuotes } from './midas-import.js';
-import { syncPushSubscription } from './push.js';
+import { syncPushSubscription, initPushButton } from './push.js';
 import { needsIntradayQuote } from './asset-groups.js';
 import { supabase } from './supabase-client.js';
 import { renderPanel } from './views/panel.js';
@@ -555,6 +555,7 @@ async function boot() {
   if (footer) footer.hidden = true;
 
   $('#themeBtn').addEventListener('click', cycleTheme);
+  initPushButton($('#pushBtn'), toast);
   $('#refreshBtn').addEventListener('click', refresh);
   for (const tab of document.querySelectorAll('.tab')) {
     tab.addEventListener('click', () => navigate(tab.dataset.view));

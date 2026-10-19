@@ -892,3 +892,9 @@ html[data-theme="dark"] .cls-fon { --cls: #3b7ddd; } html[data-theme="dark"] .cl
 .aligned-cols th:nth-child(n+2), .aligned-cols td:nth-child(n+2) { width: 10%; }
 .aligned-cols th:nth-child(6), .aligned-cols td:nth-child(6),
 .aligned-cols th:nth-child(7), .aligned-cols td:nth-child(7) { width: 12%; white-space: normal; }
+
+/* Günlük bildirim zili: yalnızca telefonda, tema düğmesinin solunda; açıkken dolu ve renkli */
+.push-btn { display: none; color: var(--text-dim); }
+.push-btn.is-on { color: var(--accent); }
+.push-btn svg { display: block; }
+@media (max-width: 900px) { .push-btn { display: grid; } }

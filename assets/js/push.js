@@ -42,6 +42,7 @@ export async function enablePush() {
   const sub = await reg.pushManager.getSubscription()
     || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: keyToBytes(VAPID_PUBLIC_KEY) });
   await saveSubscription(sub);
+  window.dispatchEvent(new Event('pushchange'));
   return sub;
 }
 
@@ -88,6 +89,7 @@ export async function disablePush() {
   if (!sub) return;
   await supabase.from('push_subscriptions').delete().eq('endpoint', sub.endpoint);
   await sub.unsubscribe();
+  window.dispatchEvent(new Event('pushchange'));
 }
 
 /** İzin ve servis çalışanı doğru mu diye telefonda hemen bir deneme bildirimi gösterir. */
@@ -100,6 +102,60 @@ export async function testNotification() {
     // Aynı etiketli bildirim Chrome'da sessizce yer değiştirir; her denemeye yeni etiket.
     tag: `deneme-${Date.now()}`,
   });
+}
+
+const BELL = '<path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>';
+const bellIcon = (on) => `<svg viewBox="0 0 24 24" width="18" height="18" fill="${on ? 'currentColor' : 'none'}" stroke="currentColor"
+  stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${BELL}${on ? '' : '<path d="M3 3l18 18"/>'}</svg>`;
+
+/**
+ * Telefonda üst çubuktaki zil: günlük bildirimin açık olup olmadığını gösterir, dokununca açar/kapatır.
+ * Açılamıyorsa (ana ekran uygulaması değil, izin reddedilmiş) nedenini söyler ve Ayarlar'a götürür.
+ */
+export function initPushButton(btn, toast) {
+  if (!btn) return;
+  const paint = async () => {
+    const status = await pushStatus().catch(() => 'unsupported');
+    const on = status === 'on';
+    btn.innerHTML = bellIcon(on);
+    btn.classList.toggle('is-on', on);
+    const label = on ? 'Günlük bildirim açık' : 'Günlük bildirim kapalı';
+    btn.title = label;
+    btn.setAttribute('aria-label', label);
+    btn.setAttribute('aria-pressed', String(on));
+    return status;
+  };
+  btn.addEventListener('click', async () => {
+    // Durum eşzamanlı belirlenir: iPhone izin penceresini yalnızca dokunuşun hemen ardından açar
+    const status = isIOS() && !isStandaloneApp() ? 'needs-home-screen' : !pushSupported() ? 'unsupported'
+      : Notification.permission === 'denied' ? 'denied' : btn.classList.contains('is-on') ? 'on' : 'off';
+    if (status === 'needs-home-screen' || status === 'unsupported' || status === 'denied') {
+      toast({
+        'needs-home-screen': 'Bildirim için Analiz’i ana ekrandaki simgeden aç (Ayarlar’da adımlar var).',
+        unsupported: 'Bu cihaz bildirimleri desteklemiyor (iPhone’da iOS 16.4 veya üstü gerekir).',
+        denied: 'Bildirim izni kapalı: iPhone Ayarlar → Bildirimler → Analiz.',
+      }[status]);
+      location.hash = 'ayarlar';
+      return;
+    }
+    btn.disabled = true;
+    try {
+      if (status === 'on') {
+        await disablePush();
+        toast('Günlük bildirim kapatıldı');
+      } else {
+        await enablePush();
+        toast('Günlük bildirim açıldı · her işlem günü 18:00');
+      }
+    } catch (error) {
+      toast(error.message || 'Bildirim ayarlanamadı');
+    } finally {
+      btn.disabled = false;
+      await paint();
+    }
+  });
+  window.addEventListener('pushchange', paint);
+  void paint();
 }
 
 /** Sorun giderme için kısa tanı satırı: neden açılamadığını gösterir. */
