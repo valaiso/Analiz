@@ -51,12 +51,11 @@ function migrate(raw) {
     state.valueHistory[tradingDateFor(date)] = state.valueHistory[date];
     delete state.valueHistory[date];
   }
-  // Silinmiş profile bağlı işlemleri ilk profile taşı.
-  const ids = new Set(state.profiles.map((p) => p.id));
-  for (const t of state.tx) if (!ids.has(t.profile)) t.profile = state.profiles[0].id;
-  if (!ids.has(state.activeProfile) && state.activeProfile !== 'ALL') {
-    state.activeProfile = state.profiles[0].id;
-  }
+  // Profil sistemi kaldırıldı (hesap e-postayla eşitleniyor): tüm işlemler tek
+  // portföyde toplanır; eski ek profillerdeki kayıtlar silinmez, ana profile taşınır.
+  state.profiles = [state.profiles[0]];
+  state.activeProfile = state.profiles[0].id;
+  for (const t of state.tx) t.profile = state.activeProfile;
   return state;
 }
 
@@ -519,44 +518,6 @@ export function dividendsBetween(from, to) {
     .reduce((sum, item) => sum + item.amount, 0);
 }
 
-/* ------------------------------------------------------------------ profiller */
-
-export const profiles = () => state.profiles;
-export const activeProfileId = () => state.activeProfile;
-
-export function activeProfileName() {
-  if (state.activeProfile === 'ALL') return 'Tüm profiller';
-  return state.profiles.find((p) => p.id === state.activeProfile)?.name || 'Portföy';
-}
-
-export function setActiveProfile(id) {
-  state.activeProfile = id;
-  persist();
-}
-
-export function addProfile(name) {
-  const profile = { id: uid(), name: String(name || '').trim() || 'Yeni profil' };
-  state.profiles.push(profile);
-  state.activeProfile = profile.id;
-  persist();
-  return profile;
-}
-
-export function renameProfile(id, name) {
-  const p = state.profiles.find((x) => x.id === id);
-  if (p) { p.name = String(name || '').trim() || p.name; persist(); }
-}
-
-export function removeProfile(id) {
-  if (state.profiles.length <= 1) return false;
-  state.profiles = state.profiles.filter((p) => p.id !== id);
-  state.tx = state.tx.filter((t) => t.profile !== id);
-  midasTx = midasTx.filter((t) => t.profile !== id);
-  if (state.activeProfile === id) state.activeProfile = state.profiles[0].id;
-  persist();
-  persistMidasTransactions();
-  return true;
-}
 
 /* -------------------------------------------------------------------- işlemler */
 
@@ -607,13 +568,10 @@ export function cleanupStoredData() {
   return { phantomFills, staleQuotes };
 }
 
-/** Aktif profilin (veya 'ALL' ise tümünün) işlemleri, tarihe göre sıralı. */
-export function transactions(profileId = state.activeProfile) {
-  const all = [...state.tx, ...withoutPhantomFills(midasTx.filter((tx) => !GENERIC_CRYPTO_CODES.has(
+/** Portföyün tüm işlemleri (elle girilen + Midas), tarihe göre sıralı. */
+export function transactions() {
+  const list = [...state.tx, ...withoutPhantomFills(midasTx.filter((tx) => !GENERIC_CRYPTO_CODES.has(
     String(tx.code || '').toLocaleUpperCase('en-US'))))];
-  const list = profileId === 'ALL'
-    ? all
-    : all.filter((t) => t.profile === profileId);
   const byDate = new Map();
   for (const row of list) {
     const date = String(row.date || '');
@@ -656,7 +614,7 @@ export function addMidasTransactions(rows) {
   );
   const batchIds = new Set();
   const batchFingerprintsWithoutId = new Set();
-  const profile = state.activeProfile === 'ALL' ? state.profiles[0].id : state.activeProfile;
+  const profile = state.activeProfile;
   let added = 0, updated = 0, skipped = 0;
   const incomingSiblings = new Set((rows || []).filter((tx) => Number(tx.price) !== 1)
     .map((tx) => [String(tx.date || ''), String(tx.code || '').trim().toLocaleUpperCase('tr'), tx.type === 'SAT' ? 'SAT' : 'AL', Number(tx.units)].join('|')));
@@ -733,7 +691,7 @@ export function addMidasTransactions(rows) {
 export function addTransaction(tx) {
   const record = {
     id: uid(),
-    profile: state.activeProfile === 'ALL' ? state.profiles[0].id : state.activeProfile,
+    profile: state.activeProfile,
     ...tx,
     code: String(tx.code || '').trim().toLocaleUpperCase('tr'),
     units: Number(tx.units),
@@ -804,20 +762,10 @@ export function importJSON(text, mode = 'replace') {
 
   if (mode === 'merge') {
     const existing = new Set(state.tx.map((t) => t.id));
-    const nameToId = new Map(state.profiles.map((p) => [p.name, p.id]));
-    for (const p of parsed.profiles || []) {
-      if (!nameToId.has(p.name)) {
-        const created = { id: uid(), name: p.name };
-        state.profiles.push(created);
-        nameToId.set(p.name, created.id);
-      }
-    }
-    const oldIdToName = new Map((parsed.profiles || []).map((p) => [p.id, p.name]));
     let added = 0;
     for (const t of parsed.tx) {
       if (existing.has(t.id)) continue;
-      const name = oldIdToName.get(t.profile);
-      state.tx.push({ ...t, id: uid(), profile: nameToId.get(name) || state.profiles[0].id });
+      state.tx.push({ ...t, id: uid(), profile: state.activeProfile });
       added += 1;
     }
     const knownMidas = new Set(midasTx.map(transactionFingerprint));
@@ -825,7 +773,7 @@ export function importJSON(text, mode = 'replace') {
     for (const t of Array.isArray(parsed.midasTx) ? parsed.midasTx : []) {
       const fingerprint = transactionFingerprint(t);
       if (knownMidas.has(fingerprint)) continue;
-      midasTx.push({ ...t, id: `midas-${uid()}`, profile: nameToId.get(oldIdToName.get(t.profile)) || state.profiles[0].id, source: 'midas' });
+      midasTx.push({ ...t, id: `midas-${uid()}`, profile: state.activeProfile, source: 'midas' });
       knownMidas.add(fingerprint);
       midasAdded += 1;
     }

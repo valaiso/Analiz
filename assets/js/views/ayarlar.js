@@ -1,11 +1,10 @@
-/* Ayarlar: profiller, tema, yedekleme ve veri durumu. */
+/* Ayarlar: hesap, bildirim, tema, yedekleme ve veri durumu. */
 
 import {
   h, toast, confirmDialog, downloadText, fmtDate, isNum, openModal,
 } from '../util.js';
 import { DB } from '../data.js';
 import {
-  profiles, activeProfileId, addProfile, renameProfile, removeProfile,
   settings, setSetting, exportJSON, importJSON, resetAll, addTransaction,
   allTransactions, daysSinceBackup,
 } from '../store.js';
@@ -213,51 +212,6 @@ export function renderAyarlar(ctx) {
   root.append(sectionCard('Günlük Bildirim (18:00)',
     'Telefonuna her işlem günü portföyün günlük değişimi gelir', pushText, pushButtons, pushDiag));
   void showPush();
-
-  /* ------------------------------------------------------------------ profiller */
-
-  const profileRows = profiles().map((p) => {
-    const nameInput = h('input', { type: 'text', value: p.name, style: 'flex:1 1 160px' });
-    nameInput.addEventListener('change', () => {
-      renameProfile(p.id, nameInput.value);
-      toast('Profil adı güncellendi');
-      ctx.refresh();
-    });
-    const txCount = allTransactions().filter((t) => t.profile === p.id).length;
-    return h('div', {
-      style: 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:8px 0;'
-        + 'border-bottom:1px solid var(--border)',
-    },
-    nameInput,
-    h('span', { class: 'dim', style: 'font-size:.8rem' }, `${txCount} işlem`),
-    p.id === activeProfileId() ? h('span', { class: 'pill' }, 'aktif') : null,
-    h('button', {
-      class: 'btn btn-sm btn-danger', type: 'button',
-      disabled: profiles().length <= 1,
-      onclick: async () => {
-        const ok = await confirmDialog('Profili sil',
-          `"${p.name}" profili ve içindeki ${txCount} işlem kalıcı olarak silinecek.`,
-          { danger: true, okLabel: 'Sil' });
-        if (ok) { removeProfile(p.id); toast('Profil silindi'); ctx.refresh(); }
-      },
-    }, 'Sil'));
-  });
-
-  const newName = h('input', { type: 'text', placeholder: 'Örn. Annem', style: 'flex:1 1 160px' });
-  const addBtn = h('button', {
-    class: 'btn btn-primary', type: 'button',
-    onclick: () => {
-      if (!newName.value.trim()) { toast('Bir isim yaz'); return; }
-      addProfile(newName.value);
-      toast('Profil eklendi');
-      ctx.refresh();
-    },
-  }, 'Profil Ekle');
-
-  root.append(sectionCard('Profiller',
-    'Her aile bireyi için ayrı portföy tut; üstteki menüden geçiş yap',
-    h('div', {}, profileRows),
-    h('div', { style: 'display:flex;gap:8px;margin-top:12px;flex-wrap:wrap' }, newName, addBtn)));
 
   /* ---------------------------------------------------------------------- görünüm */
 

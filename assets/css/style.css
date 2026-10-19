@@ -144,7 +144,6 @@ button, select, input { font: inherit; color: inherit; }
 .page-heading { display: grid; gap: 1px; }
 .page-heading h1 { font-size: 1.14rem; font-weight: 680; letter-spacing: -.025em; }
 .topbar-actions { display: flex; align-items: center; gap: 9px; }
-.profile-picker select { min-width: 144px; }
 
 select, .input, input[type="text"], input[type="number"], input[type="date"], input[type="search"] {
   background: var(--surface);
@@ -432,7 +431,6 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
   .page-heading h1 { font-size: 1rem; }
   .page-eyebrow { font-size: .5rem; }
   .topbar-actions { gap: 6px; }
-  .profile-picker select { min-width: 0; max-width: 112px; padding: 6px 7px; font-size: .78rem; }
   .footer { padding: 0 12px calc(20px + env(safe-area-inset-bottom)); }
   /* Parmakla basılacak hedefler büyütülür (Apple önerisi ~44px). */
   .icon-btn { width: 42px; height: 42px; font-size: 1.05rem; }

@@ -1,10 +1,10 @@
-/* Uygulama çatısı: veri yükleme, sekme yönlendirme, profil/tema ve Supabase eşitlemesi. */
+/* Uygulama çatısı: veri yükleme, sekme yönlendirme, tema ve Supabase eşitlemesi. */
 
 import { $, h, fmtDate, toast } from './util.js';
 import { loadCore, loadHistories, refreshData, DB, cleanupLocalMarketAssets } from './data.js';
 import { analyze } from './portfolio.js';
 import {
-  transactions, profiles, activeProfileId, setActiveProfile, activeProfileName,
+  transactions,
   settings, setSetting, subscribe, getState, importJSON, getMidasAccountSnapshot,
   saveMidasLiveQuotes, ensureMidasPositionsSynced, cleanupStoredData, allTransactions,
 } from './store.js';
@@ -253,7 +253,6 @@ async function pullCloudChanges() {
     if (remote.updated_at && remote.updated_at !== lastCloudUpdatedAt) {
       lastCloudUpdatedAt = remote.updated_at;
       applyCloudState(remote.state_json);
-      renderProfileSelect();
       await render();
     }
   } catch (error) {
@@ -306,7 +305,6 @@ async function startAuthenticatedSession(user) {
       // Yayımlanmış veri yüklendikten sonra: kopya ve gereksiz kayıtlar silinir.
       runStorageCleanup();
       updateDataStatus();
-      renderProfileSelect();
       navigate(VIEWS[location.hash.slice(1)] ? location.hash.slice(1) : 'panel');
       clearInterval(pollTimer);
       pollTimer = setInterval(pullCloudChanges, 15000);
@@ -458,20 +456,6 @@ function cycleTheme() {
   toast({ auto: 'Tema: sistem ayarı', light: 'Tema: açık', dark: 'Tema: koyu' }[next]);
 }
 
-/* ------------------------------------------------------------------ profiller */
-
-function renderProfileSelect() {
-  const select = $('#profileSelect');
-  if (!select) return;
-  const options = profiles().map((profile) => h('option', {
-    value: profile.id, selected: profile.id === activeProfileId(),
-  }, profile.name));
-  if (profiles().length > 1) {
-    options.push(h('option', { value: 'ALL', selected: activeProfileId() === 'ALL' }, '★ Tüm profiller'));
-  }
-  select.replaceChildren(...options);
-}
-
 /* ------------------------------------------------------------------ yönlendirme */
 
 function setActiveTab(view) {
@@ -517,7 +501,6 @@ async function render({ preserveScroll = false } = {}) {
       applyTheme,
       showFund: (code) => showFundDetail(code, ctx),
       prefill: prefillCode,
-      profileName: activeProfileName(),
       accountEmail: sessionUser?.email || '',
       changeAccount: signOutFromAccount,
     };
@@ -573,10 +556,6 @@ async function boot() {
 
   $('#themeBtn').addEventListener('click', cycleTheme);
   $('#refreshBtn').addEventListener('click', refresh);
-  $('#profileSelect').addEventListener('change', (event) => {
-    setActiveProfile(event.target.value);
-    render();
-  });
   for (const tab of document.querySelectorAll('.tab')) {
     tab.addEventListener('click', () => navigate(tab.dataset.view));
   }
@@ -586,7 +565,6 @@ async function boot() {
   });
 
   subscribe(() => {
-    renderProfileSelect();
     scheduleCloudSave();
   });
   installAuthListener();

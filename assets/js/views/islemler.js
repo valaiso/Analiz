@@ -8,7 +8,7 @@ import {
 } from '../data.js';
 import {
   transactions, addTransaction, updateTransaction, removeTransaction,
-  activeProfileId, profiles, allTransactions, addMidasTransactions, saveMidasAccountSnapshot, getMidasAccountSnapshot,
+  allTransactions, addMidasTransactions, saveMidasAccountSnapshot, getMidasAccountSnapshot,
   pruneMidasHistory, dividends, addDividend, removeDividend,
 } from '../store.js';
 import { currentMidasPositions } from '../asset-groups.js';
@@ -690,17 +690,15 @@ function dividendSection(ctx) {
 export function renderIslemler(ctx) {
   const root = h('div', { class: 'stack' });
   const list = transactions();
-  const multiProfile = activeProfileId() === 'ALL';
-  const profileName = new Map(profiles().map((p) => [p.id, p.name]));
 
   const midasButton = h('button', {
-    class: 'btn btn-primary', type: 'button', disabled: multiProfile,
+    class: 'btn btn-primary', type: 'button',
     onclick: (event) => readMidas(ctx, event.currentTarget),
-  }, multiProfile ? 'Önce tek profil seç' : 'Midas’tan İşlemleri Oku');
+  }, 'Midas’tan İşlemleri Oku');
   const cryptoMidasButton = h('button', {
-    class: 'btn', type: 'button', disabled: multiProfile,
+    class: 'btn', type: 'button',
     onclick: (event) => readMidasCrypto(ctx, event.currentTarget),
-  }, multiProfile ? 'Önce tek profil seç' : 'Kripto Emirlerini Oku');
+  }, 'Kripto Emirlerini Oku');
   const copyLogButton = h('button', {
     class: 'btn', type: 'button', onclick: () => copyMidasLog(midasLogField),
   }, 'Yanıtı kopyala');
@@ -718,14 +716,8 @@ export function renderIslemler(ctx) {
 
   /* --------------------------------------------------------------- ekleme formu */
 
-  if (multiProfile) {
-    root.append(h('div', { class: 'notice' },
-      'Şu an tüm profiller birlikte görüntüleniyor. Yeni işlem eklemek için üstten '
-      + 'tek bir profil seç.'));
-  } else {
-    root.append(tonedSection('indigo', '+', 'Yeni İşlem', 'Varlık kodu ve tarihi seçince fiyat otomatik gelir',
-      transactionForm({ prefillCode: ctx.prefill, onDone: () => ctx.refresh() })));
-  }
+  root.append(tonedSection('indigo', '+', 'Yeni İşlem', 'Varlık kodu ve tarihi seçince fiyat otomatik gelir',
+    transactionForm({ prefillCode: ctx.prefill, onDone: () => ctx.refresh() })));
 
   /* ---------------------------------------------------------------- işlem listesi */
 
@@ -750,10 +742,6 @@ export function renderIslemler(ctx) {
           h('span', { class: 'code-chip' }, t.code),
           t.source === 'midas'
             ? h('span', { class: 'dim', style: 'margin-left:6px;font-size:.76rem' }, 'Midas')
-            : null,
-          multiProfile
-            ? h('span', { class: 'dim', style: 'margin-left:7px;font-size:.76rem' },
-              profileName.get(t.profile) || '')
             : null),
         h('td', { class: 'name', style: 'text-align:left' }, meta?.name || '—'),
         h('td', {}, h('span', { class: `pill ${t.type === 'SAT' ? 'down' : 'up'}` },
