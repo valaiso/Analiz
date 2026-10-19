@@ -12,6 +12,7 @@ from __future__ import annotations
 import datetime as dt
 import json
 import os
+from pathlib import Path
 import sys
 import tempfile
 import time
@@ -208,6 +209,9 @@ def main() -> int:
                     failed += 1
                     print(f"  gönderilemedi: {error}")
     print(f"{sent} bildirim gönderildi, {failed} hata")
+    if sent and not force:
+        # Yedek çalışmalar (iş akışındaki ek zamanlar) bugünün bildiriminin gönderildiğini bu işaretten anlar.
+        Path("push-sent.flag").write_text(dt.date.today().isoformat(), encoding="utf-8")
     return 1 if failed and not sent else 0
 
 

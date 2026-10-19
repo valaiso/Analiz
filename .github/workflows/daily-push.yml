@@ -1,10 +1,15 @@
 name: Günlük portföy bildirimi
 
 # Her işlem günü 18:00 (TR) portföyün günlük değişimini telefona gönderir.
-# GitHub zamanlayıcısı gecikebildiği için 17:45'te başlar; betik 18:00'i bekler.
+# GitHub zamanlayıcısı yoğunlukta çalışmayı geciktirebilir ya da hiç başlatmayabilir:
+# ana çalışma 17:45'te başlar (betik 18:00'i bekler); 18:20, 19:00 ve 19:45'teki yedek
+# çalışmalar bugünün bildirimi gönderilmediyse gönderir, gönderildiyse hiçbir şey yapmaz.
 on:
   schedule:
-    - cron: '45 14 * * 1-5'
+    - cron: '45 14 * * 1-5'   # ana: 17:45 TR
+    - cron: '20 15 * * 1-5'   # yedek: 18:20 TR
+    - cron: '0 16 * * 1-5'    # yedek: 19:00 TR
+    - cron: '45 16 * * 1-5'   # yedek: 19:45 TR
   workflow_dispatch:
     inputs:
       force:
@@ -15,17 +20,39 @@ on:
 permissions:
   contents: read
 
+# Aynı anda tek çalışma: yedek, ana çalışma bitene kadar sırada bekler ve
+# başladığında işareti görür.
+concurrency:
+  group: gunluk-bildirim
+  cancel-in-progress: false
+
 jobs:
   bildirim:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
+      - name: Bugünün tarihi (TR)
+        id: gun
+        run: echo "tarih=$(TZ=Europe/Istanbul date +%F)" >> "$GITHUB_OUTPUT"
+      - name: Bugün gönderildi mi?
+        id: isaret
+        uses: actions/cache/restore@v4
+        with:
+          path: push-sent.flag
+          key: push-sent-${{ steps.gun.outputs.tarih }}
+      - name: Zaten gönderildi
+        if: steps.isaret.outputs.cache-hit == 'true' && github.event_name == 'schedule'
+        run: echo "Bugünün bildirimi daha önce gönderildi; yedek çalışma bir şey yapmıyor."
       - uses: actions/checkout@v4
+        if: steps.isaret.outputs.cache-hit != 'true' || github.event_name != 'schedule'
       - uses: actions/setup-python@v5
+        if: steps.isaret.outputs.cache-hit != 'true' || github.event_name != 'schedule'
         with:
           python-version: '3.12'
       - run: pip install requests pywebpush
+        if: steps.isaret.outputs.cache-hit != 'true' || github.event_name != 'schedule'
       - name: Bildirimi gönder
+        if: steps.isaret.outputs.cache-hit != 'true' || github.event_name != 'schedule'
         env:
           SUPABASE_URL: https://jqmfvinbzgqyitqquzdc.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -33,3 +60,9 @@ jobs:
           FORCE_SEND: ${{ github.event.inputs.force || 'false' }}
           PYTHONIOENCODING: utf-8
         run: python scripts/daily_push.py
+      - name: Gönderildi işaretini kaydet
+        if: steps.isaret.outputs.cache-hit != 'true' && hashFiles('push-sent.flag') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: push-sent.flag
+          key: push-sent-${{ steps.gun.outputs.tarih }}
