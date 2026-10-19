@@ -163,6 +163,8 @@ def main() -> int:
     if not force:
         wait_until_send_time()
     subs = supabase_get("push_subscriptions", {"select": "user_id,endpoint,subscription"})
+    # TEFAS Quant uygulamasının aylık rapor abonelikleri aynı tabloda; günlük portföy bildirimi onlara gitmez
+    subs = [row for row in subs if (row.get("subscription") or {}).get("app") != "tefas-quant"]
     if not subs:
         print("Abonelik yok")
         return 0

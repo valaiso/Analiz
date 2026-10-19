@@ -76,7 +76,9 @@ export async function syncPushSubscription() {
 }
 
 export async function registeredDeviceCount() {
-  const { count, error } = await supabase.from('push_subscriptions').select('endpoint', { count: 'exact', head: true });
+  // TEFAS Quant'ın aylık rapor abonelikleri (subscription.app) sayılmaz
+  const { count, error } = await supabase.from('push_subscriptions').select('endpoint', { count: 'exact', head: true })
+    .is('subscription->>app', null);
   return error ? null : count;
 }
 

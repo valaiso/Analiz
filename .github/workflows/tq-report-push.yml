@@ -1,0 +1,97 @@
+name: TEFAS Quant aylık rapor bildirimi
+
+# TEFAS Quant ana ekran uygulamasına aylık bildirim (açılıp kapatılmaz):
+#   ayın 1'i 09:00 ve 18:00 (TR): raporlar bugün gönderilecek / gönderildi
+#   ayın son günü 09:00 ve 18:00 (TR): raporlar yarın gönderilecek
+# GitHub sırası yoğunken çalışma saatlerce gecikebilir ya da hiç başlamayabilir. Bu yüzden iş saatler önce
+# başlar ve hedef saate kadar hazır bekler (sabah 04:00, akşam 13:00; ilki başlamazsa 05:30 / 14:30 ve
+# 08:45 / 17:45 hazırlıkları devreye girer). Hedef saatten sonraki yedek çalışmalar o saatin bildirimi
+# gönderilmediyse gönderir, gönderildiyse hiçbir şey yapmaz (önbellekteki işaret).
+# Ayın son gününü cron ifade edemediği için 28-31 arası çalışır; betik yarının 1'i olup olmadığına bakar.
+# Secret'lar Analiz'in günlük bildirimiyle ortak: SUPABASE_SERVICE_ROLE_KEY, VAPID_PRIVATE_KEY.
+on:
+  schedule:
+    # sabah (09:00 TR)
+    - cron: '0 1 1,28-31 * *'     # hazırlık 04:00
+    - cron: '30 2 1,28-31 * *'    # hazırlık 05:30
+    - cron: '45 5 1,28-31 * *'    # hazırlık 08:45
+    - cron: '20 6 1,28-31 * *'    # yedek 09:20
+    - cron: '0 7 1,28-31 * *'     # yedek 10:00
+    - cron: '45 7 1,28-31 * *'    # yedek 10:45
+    # akşam (18:00 TR)
+    - cron: '0 10 1,28-31 * *'    # hazırlık 13:00
+    - cron: '30 11 1,28-31 * *'   # hazırlık 14:30
+    - cron: '45 14 1,28-31 * *'   # hazırlık 17:45
+    - cron: '20 15 1,28-31 * *'   # yedek 18:20
+    - cron: '0 16 1,28-31 * *'    # yedek 19:00
+    - cron: '45 16 1,28-31 * *'   # yedek 19:45
+  workflow_dispatch:
+    inputs:
+      kind:
+        description: 'Deneme bildirimi (hemen gönderilir, işaret bırakmaz)'
+        type: choice
+        options: [rapor-sabah, rapor-aksam, hatirlatma]
+        default: rapor-sabah
+
+permissions:
+  contents: read
+
+# Aynı anda tek çalışma: yedek, ana çalışma bitene kadar sırada bekler ve başladığında işareti görür.
+concurrency:
+  group: tq-rapor-bildirim
+  cancel-in-progress: false
+
+jobs:
+  bildirim:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350   # 04:00 / 13:00'te başlayıp hedef saate kadar bekleyebilmesi için
+    steps:
+      - name: Gün ve saat (TR)
+        id: gun
+        env:
+          SCHEDULE: ${{ github.event.schedule }}
+        run: |
+          hour=$(echo "$SCHEDULE" | awk '{print $2}')
+          if [ -n "$hour" ] && [ "$hour" -lt 9 ]; then slot=sabah; else slot=aksam; fi
+          echo "tarih=$(TZ=Europe/Istanbul date +%F)" >> "$GITHUB_OUTPUT"
+          echo "slot=$slot" >> "$GITHUB_OUTPUT"
+      - name: Bu bildirim gönderildi mi?
+        id: isaret
+        if: github.event_name == 'schedule'
+        uses: actions/cache/restore@v4
+        with:
+          path: tq-push-sent.flag
+          key: tq-push-sent-${{ steps.gun.outputs.tarih }}-${{ steps.gun.outputs.slot }}
+      - name: Zaten gönderildi
+        if: steps.isaret.outputs.cache-hit == 'true'
+        run: echo "Bu saatin bildirimi daha önce gönderildi; bu çalışma bir şey yapmıyor."
+      - uses: actions/checkout@v4
+        if: steps.isaret.outputs.cache-hit != 'true'
+      - uses: actions/setup-python@v5
+        if: steps.isaret.outputs.cache-hit != 'true'
+        with:
+          python-version: '3.12'
+      - run: pip install requests pywebpush
+        if: steps.isaret.outputs.cache-hit != 'true'
+      - name: Bildirimi gönder
+        if: steps.isaret.outputs.cache-hit != 'true'
+        env:
+          SUPABASE_URL: https://jqmfvinbzgqyitqquzdc.supabase.co
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
+          VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
+          KIND: ${{ inputs.kind }}
+          SLOT: ${{ steps.gun.outputs.slot }}
+          PYTHONIOENCODING: utf-8
+        run: |
+          case "$KIND" in
+            rapor-sabah) python scripts/tq_report_push.py --slot sabah --force rapor ;;
+            rapor-aksam) python scripts/tq_report_push.py --slot aksam --force rapor ;;
+            hatirlatma)  python scripts/tq_report_push.py --slot sabah --force hatirlatma ;;
+            *)           python scripts/tq_report_push.py --slot "$SLOT" ;;
+          esac
+      - name: Gönderildi işaretini kaydet
+        if: github.event_name == 'schedule' && steps.isaret.outputs.cache-hit != 'true' && hashFiles('tq-push-sent.flag') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: tq-push-sent.flag
+          key: tq-push-sent-${{ steps.gun.outputs.tarih }}-${{ steps.gun.outputs.slot }}
