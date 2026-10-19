@@ -228,6 +228,9 @@ export function monthlyAllocationCard(snapshots, currentMonth) {
 
 /* ------------------------------------- tek çubukta varlık sınıfları (Quant sepet çubuğu) */
 
+// Fon kategorileri için mavinin tonları (koyu → açık; beyaz yazı okunur kalır).
+const FUND_SHADES = ['#123f86', '#1f5fbf', '#3b7ddd', '#0b2a5b', '#2f6fd0', '#5a8fe0'];
+
 /**
  * classes: [{ key: 'Fon'|'ETF'|..., value, rows? }] · total: portföy toplamı.
  * Dilimlerin içinde "Fon %89" yazar; altındaki satırlarda tutar ve günlük/toplam K/Z.
@@ -237,20 +240,33 @@ export function classBarCard(classes, total, { plOf } = {}) {
     .sort((a, b) => CLASS_ORDER.indexOf(a.key) - CLASS_ORDER.indexOf(b.key));
   if (!parts.length || !(total > 0)) return h('p', { class: 'dim', style: 'margin:0' }, 'Değeri hesaplanan varlık yok.');
   const clsName = (key) => `cls-${key === 'Diğer' ? 'diger' : key.toLowerCase()}`;
-  const bar = h('div', { class: 'class-bar' }, parts.map((c) => {
-    const share = c.value / total * 100;
-    const seg = h('span', { class: clsName(c.key), style: `flex:${share}` },
-      share >= 7 ? `${CLASS_LABELS[c.key] || c.key} ${pct(share, 1)}` : '');
-    return hoverable(seg, () => [CLASS_LABELS[c.key] || c.key, `${pct(share, 1)} · ${tl(c.value)}`]);
+  // Alt kırılımı olan sınıf (Fon) çubukta kategorilerine bölünür; her kategori sınıf renginin bir tonu.
+  const segments = parts.flatMap((c) => (c.subs?.length
+    ? c.subs.filter((sub) => sub.value > 0).map((sub, index) => ({
+      parent: c, label: sub.label, value: sub.value, shade: FUND_SHADES[index % FUND_SHADES.length],
+    }))
+    : [{ parent: c, label: CLASS_LABELS[c.key] || c.key, value: c.value }]));
+  const bar = h('div', { class: 'class-bar' }, segments.map((seg) => {
+    const share = seg.value / total * 100;
+    const el = h('span', { class: clsName(seg.parent.key), style: `flex:${share}${seg.shade ? `;background:${seg.shade}` : ''}` },
+      share >= 7 ? `${seg.label} ${pct(share, 1)}` : '');
+    return hoverable(el, () => [seg.shade ? `${CLASS_LABELS[seg.parent.key]} · ${seg.label}` : seg.label, `${pct(share, 1)} · ${tl(seg.value)}`]);
   }));
-  const rows = h('div', { class: 'class-rows' }, parts.map((c) => {
+  const rows = h('div', { class: 'class-rows' }, parts.flatMap((c) => {
     const pl = plOf ? plOf(c) : null;
-    return h('div', { class: 'class-row' },
+    const main = h('div', { class: 'class-row' },
       h('i', { class: clsName(c.key) }),
       h('span', { class: 'class-name' }, CLASS_LABELS[c.key] || c.key),
       h('b', {}, pct(c.value / total * 100, 1)),
       h('span', { class: 'class-value' }, tl(c.value)),
       pl || h('span', {}));
+    const subs = (c.subs || []).filter((sub) => sub.value > 0).map((sub, index) => h('div', { class: 'class-row sub' },
+      h('i', { style: `background:${FUND_SHADES[index % FUND_SHADES.length]}` }),
+      h('span', { class: 'class-name' }, sub.label),
+      h('b', {}, pct(sub.value / total * 100, 1)),
+      h('span', { class: 'class-value' }, tl(sub.value)),
+      sub.pl || h('span', {})));
+    return [main, ...subs];
   }));
   return h('div', { class: 'stack', style: 'gap:12px' }, bar, rows);
 }

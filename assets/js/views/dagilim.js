@@ -117,6 +117,10 @@ export function renderDagilim(ctx) {
       ...group,
       key: group.label,
       value: group.rows.reduce((sum, row) => sum + (row.marketValueTRY || 0), 0),
+      subs: group.label === 'Fon'
+        ? groupFundsByType(group.rows).sort((a, b) => b.value - a.value)
+          .map((t) => ({ label: t.type, value: t.value, pl: plBadge(t.rows) }))
+        : null,
     }));
     const classTotal = Number.isFinite(midasTotal) && midasTotal > 0
       ? midasTotal : sortedGroups.reduce((sum, g) => sum + g.value, 0);

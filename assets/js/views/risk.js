@@ -118,6 +118,15 @@ export function renderRisk(ctx) {
         + 'getirinin gerçek karşılığıdır; varsayım yerine bunu kullanabilirsin.')
       : null));
 
+  /* ------------------------------------------------------- aylık getiri tablosu */
+
+  const aylik = monthlyReturns(series.dates, series.twr);
+  if (aylik.length >= 2) {
+    root.append(tonedSection('indigo', '▦', 'Aylık Getiriler',
+      'Zaman ağırlıklı (TWR) · yeşil kazanç, kırmızı kayıp',
+      monthlyReturnTable(aylik, yearlyFromMonthly(aylik))));
+  }
+
   /* ----------------------------------------------------------------- düşüş grafiği */
 
   const ddBox = h('div', { class: 'chart' });
@@ -158,15 +167,6 @@ export function renderRisk(ctx) {
           h('td', {}, d.recovered
             ? `${d.recoveryDays} günde toparladı`
             : h('span', { class: 'pill down' }, `${d.recoveryDays} gündür sürüyor`)))))))));
-  }
-
-  /* ------------------------------------------------------- aylık getiri tablosu */
-
-  const aylik = monthlyReturns(series.dates, series.twr);
-  if (aylik.length >= 2) {
-    root.append(tonedSection('indigo', '▦', 'Aylık Getiriler',
-      'Zaman ağırlıklı (TWR) · yeşil kazanç, kırmızı kayıp',
-      monthlyReturnTable(aylik, yearlyFromMonthly(aylik))));
   }
 
   /* ------------------------------------------------------- yuvarlanan getiriler */

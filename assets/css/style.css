@@ -854,12 +854,16 @@ html[data-theme="dark"] .cls-fon { --cls: #3b7ddd; } html[data-theme="dark"] .cl
   padding: 7px 10px; border-radius: var(--radius-sm); background: var(--surface-2); font-size: .86rem; }
 .class-row i { width: 12px; height: 12px; border-radius: 4px; background: var(--cls); }
 .class-name { font-weight: 700; }
+.class-row.sub { margin-left: 22px; background: transparent; border-left: 2px solid var(--border); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; padding-top: 4px; padding-bottom: 4px; }
+.class-row.sub .class-name { font-weight: 550; color: var(--text); }
+.class-row.sub b { font-weight: 600; }
 .class-row b, .class-value { font-variant-numeric: tabular-nums; }
 .class-value { color: var(--text-dim); }
 @media (max-width: 640px) {
   .class-row { grid-template-columns: 12px 1fr auto; row-gap: 4px; }
   .class-value { display: none; }
   .class-row .pl-badges { grid-column: 2 / -1; margin-top: 0; }
+  .class-row.sub { margin-left: 10px; }
 }
 
 /* Yazdırma / PDF: yalnızca rapor sayfaları, her biri bir A4 */
