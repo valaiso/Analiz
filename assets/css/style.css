@@ -866,6 +866,12 @@ html[data-theme="dark"] .cls-fon { --cls: #3b7ddd; } html[data-theme="dark"] .cl
   .class-row.sub { margin-left: 10px; }
 }
 
+.class-row.clickable { cursor: pointer; border: 0; width: 100%; text-align: left; font: inherit; color: inherit; }
+.class-row.clickable:hover { background: color-mix(in srgb, var(--accent) 8%, var(--surface-2)); }
+.class-row.clickable:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.class-caret { margin-left: 6px; color: var(--text-dim); font-size: .8rem; }
+.class-bar span.clickable { cursor: pointer; }
+
 /* Yazdırma / PDF: yalnızca rapor sayfaları, her biri bir A4 */
 @media print {
   @page { size: A4; margin: 0; }
