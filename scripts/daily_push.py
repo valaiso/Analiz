@@ -29,8 +29,12 @@ UA = {"User-Agent": "Mozilla/5.0 (Analiz daily push)"}
 SEND_AT_UTC = dt.time(15, 0)  # 18:00 Türkiye (UTC+3, yaz saati yok)
 
 
-def wait_until_send_time(max_wait_s: int = 30 * 60) -> None:
-    """GitHub zamanlayıcısı birkaç dakika erken/geç başlayabilir; 18:00'i bekle."""
+def wait_until_send_time(max_wait_s: int = 6 * 60 * 60) -> None:
+    """İş öğlen başlar ve hazır bekler; bildirim tam 18:00'de gönderilir.
+
+    GitHub sırası yoğunken iş saatlerce gecikebildiği için erken başlatılır;
+    18:00 geçtiyse (yedek çalışma) beklemeden hemen gönderilir.
+    """
     now = dt.datetime.now(dt.timezone.utc)
     target = now.replace(hour=SEND_AT_UTC.hour, minute=SEND_AT_UTC.minute, second=0, microsecond=0)
     wait = (target - now).total_seconds()

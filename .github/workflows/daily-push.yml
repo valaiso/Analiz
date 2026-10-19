@@ -1,12 +1,15 @@
 name: Günlük portföy bildirimi
 
 # Her işlem günü 18:00 (TR) portföyün günlük değişimini telefona gönderir.
-# GitHub zamanlayıcısı yoğunlukta çalışmayı geciktirebilir ya da hiç başlatmayabilir:
-# ana çalışma 17:45'te başlar (betik 18:00'i bekler); 18:20, 19:00 ve 19:45'teki yedek
+# GitHub sırası yoğunken çalışma saatlerce gecikebilir ya da hiç başlamayabilir.
+# Bu yüzden iş öğlen 13:00'te başlar ve 18:00'e kadar hazır bekler (14:30 ve 17:45
+# başlangıçları ilk çalışma kaçarsa devreye girer). 18:20, 19:00 ve 19:45'teki yedek
 # çalışmalar bugünün bildirimi gönderilmediyse gönderir, gönderildiyse hiçbir şey yapmaz.
 on:
   schedule:
-    - cron: '45 14 * * 1-5'   # ana: 17:45 TR
+    - cron: '0 10 * * 1-5'    # hazırlık: 13:00 TR, 18:00'e kadar bekler
+    - cron: '30 11 * * 1-5'   # hazırlık: 14:30 TR (ilki başlamazsa)
+    - cron: '45 14 * * 1-5'   # hazırlık: 17:45 TR
     - cron: '20 15 * * 1-5'   # yedek: 18:20 TR
     - cron: '0 16 * * 1-5'    # yedek: 19:00 TR
     - cron: '45 16 * * 1-5'   # yedek: 19:45 TR
@@ -29,7 +32,7 @@ concurrency:
 jobs:
   bildirim:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 350   # 13:00'te başlayıp 18:00'e kadar bekleyebilmesi için
     steps:
       - name: Bugünün tarihi (TR)
         id: gun
