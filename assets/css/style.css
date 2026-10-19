@@ -798,6 +798,52 @@ html[data-theme="dark"] .sec-slate, html[data-theme="dark"] .sec-indigo, html[da
   .type-dist .dist-item em { display: none; }
 }
 
+/* Alan haritası */
+.treemap { position: relative; width: 100%; min-height: 260px; border-radius: 10px; overflow: hidden; background: var(--surface); }
+.treemap-group { position: absolute; box-sizing: border-box; }
+.treemap-group-label { position: absolute; left: 6px; top: 1px; font-size: .68rem; font-weight: 800; letter-spacing: .05em;
+  text-transform: uppercase; color: var(--text-dim); white-space: nowrap; overflow: hidden; max-width: calc(100% - 12px); }
+.treemap-cell { position: absolute; box-sizing: border-box; border-radius: 4px; color: #fff; padding: 6px 7px; overflow: hidden;
+  display: flex; flex-direction: column; justify-content: flex-start; gap: 1px; cursor: default; transition: filter .12s; }
+.treemap-cell:hover { filter: brightness(1.12); }
+.treemap-cell b { font-family: var(--mono); font-size: .86rem; line-height: 1.1; }
+.treemap-cell span { font-size: .76rem; font-variant-numeric: tabular-nums; opacity: .95; }
+.treemap-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.treemap-legend { display: flex; align-items: center; gap: 8px; font-size: .74rem; color: var(--text-dim); flex-wrap: wrap; }
+.treemap-scale { width: 120px; height: 8px; border-radius: 99px; display: inline-block; }
+
+/* Ay ay %100 yığılmış sütunlar — sınıf renkleri (doğrulanmış palet) */
+.cls-fon { --cls: #1f5fbf; } .cls-hisse { --cls: #ea580c; } .cls-etf { --cls: #0891b2; }
+.cls-kripto { --cls: #7c3aed; } .cls-nakit { --cls: #c58b12; } .cls-diger { --cls: #64748b; }
+html[data-theme="dark"] .cls-fon { --cls: #3b7ddd; } html[data-theme="dark"] .cls-kripto { --cls: #8b5cf6; } html[data-theme="dark"] .cls-nakit { --cls: #b07a0e; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .cls-fon { --cls: #3b7ddd; }
+  :root:not([data-theme="light"]) .cls-kripto { --cls: #8b5cf6; }
+  :root:not([data-theme="light"]) .cls-nakit { --cls: #b07a0e; }
+}
+.stack-legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: .82rem; color: var(--text); }
+.stack-legend span { display: inline-flex; align-items: center; gap: 6px; }
+.stack-legend i { width: 10px; height: 10px; border-radius: 3px; background: var(--cls); }
+.stack-cols { display: grid; grid-template-columns: repeat(var(--cols), minmax(0, 84px)); gap: 12px; align-items: end; }
+.stack-col { display: grid; gap: 6px; min-width: 0; }
+.stack-bar { display: flex; flex-direction: column-reverse; height: 220px; gap: 2px; border-radius: 6px; overflow: hidden; }
+.stack-seg { background: var(--cls); min-height: 2px; display: grid; place-items: center; color: #fff; font-size: .72rem; font-weight: 700;
+  font-variant-numeric: tabular-nums; }
+.stack-seg:hover { filter: brightness(1.12); }
+.stack-label { text-align: center; font-size: .76rem; color: var(--text-dim); display: grid; align-content: start; min-height: 2.6em; }
+.stack-label small { font-size: .64rem; opacity: .8; }
+.stack-table summary { cursor: pointer; font-size: .8rem; color: var(--text-dim); }
+.stack-table table { margin-top: 8px; max-width: 560px; }
+
+.viz-tooltip { position: fixed; z-index: 90; pointer-events: none; background: var(--surface); color: var(--text); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: var(--shadow); padding: 7px 10px; font-size: .8rem; display: grid; gap: 2px; max-width: 260px;
+  font-variant-numeric: tabular-nums; }
+@media (max-width: 640px) {
+  .stack-bar { height: 180px; }
+  .stack-cols { gap: 6px; }
+  .treemap-scale { width: 80px; }
+}
+
 /* Yazdırma / PDF: yalnızca rapor sayfaları, her biri bir A4 */
 @media print {
   @page { size: A4; margin: 0; }

@@ -4,10 +4,11 @@ import { h, tl, tlSigned, pct, pctSigned, colorAt, isNum, units as fmtUnits } fr
 import { DB } from '../data.js';
 import { donutWithLegend, barChart, stackedAreaChart } from '../charts.js';
 import { weightHistory, attribution } from '../insights.js';
-import { transactions, getMidasAccountSnapshot } from '../store.js';
+import { transactions, getMidasAccountSnapshot, monthlySnapshots } from '../store.js';
 import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType, fundTypeLabel, assetLabel, midasStockAccountValue, groupFundsByType } from '../asset-groups.js';
 import { assetLogo } from '../logos.js';
 import { groupDistribution, plBadge } from './tiles.js';
+import { treemapCard, monthlyAllocationCard } from './allocation-charts.js';
 import { sectionCard, emptyState, toneCard, SECTION_TONES } from './common.js';
 
 const cls2 = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
@@ -111,6 +112,14 @@ export function renderDagilim(ctx) {
       missingPositionValue.length
         ? `Dağılım grafiği bekletiliyor: Midas adedi/fiyatı okunamayan varlıklar: ${missingPositionValue.map((row) => row.code).join(', ')}. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`
         : `Dağılım grafiği bekletiliyor: pozisyon fiyatlarından hesaplanan ${tl(securitiesValue)} değeri Midas hesap toplamı ${tl(midasTotal)} ile uyuşmuyor. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`));
+    if (valuesReconcile) {
+      root.append(toneCard({ tone: 'indigo', icon: '⊞', title: 'Alan Haritası',
+        sub: 'Kutu büyüklüğü varlığın değeri, rengi kâr/zararı · üzerine gel ya da dokun' }, treemapCard(live)));
+    }
+    const currentMonth = new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul', year: 'numeric', month: '2-digit' })
+      .format(new Date()).slice(0, 7);
+    root.append(toneCard({ tone: 'teal', icon: '≣', title: 'Ay Ay Dağılım',
+      sub: 'Ay sonu kayıtlarından · varlık sınıflarının portföydeki payı' }, monthlyAllocationCard(monthlySnapshots(), currentMonth)));
     const sortedGroups = groupAssetRows(positions).map((group) => ({
       ...group,
       groupValue: group.rows.reduce((sum, row) => sum + (row.marketValueTRY || 0), 0),
