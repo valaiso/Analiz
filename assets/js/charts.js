@@ -266,7 +266,7 @@ function renderDonut(container, cfg) {
       d: path, fill: 'none', stroke: 'var(--surface)', 'stroke-width': thickness + 3,
     });
     const title = svgEl('title');
-    title.textContent = `${it.label}: ${((it.value / total) * 100).toFixed(1)}%`;
+    title.textContent = `${it.label}: %${((it.value / total) * 100).toFixed(1).replace('.', ',')}`;
     arc.append(title);
     svg.append(separator);
     svg.append(arc);
@@ -303,7 +303,7 @@ export function donutWithLegend(items, { centerTop, centerBottom, format } = {})
         h('span', { class: 'swatch', style: `background:${it.color};width:10px;height:10px;border-radius:3px` }),
         h('span', { style: 'overflow:hidden;text-overflow:ellipsis;white-space:nowrap' }, it.label),
         h('span', { class: 'val' },
-          format ? format(it.value) : `%${((it.value / total) * 100).toFixed(1)}`)))));
+          format ? format(it.value) : `%${((it.value / total) * 100).toFixed(1).replace('.', ',')}`)))));
   donutChart(chart, { items: coloredItems, centerTop, centerBottom });
   return wrap;
 }
