@@ -52,7 +52,7 @@ function initials(code) {
   if (assetType(code, meta.kind) === 'Fon' && meta.name) {
     // Fonlarda portföy şirketinin baş harfleri (ör. ZİRAAT PORTFÖY → ZP).
     const words = String(meta.name).toLocaleUpperCase('tr').split(/\s+/).filter(Boolean);
-    const portfoy = words.indexOf('PORTFÖY');
+    const portfoy = words.findIndex((word) => word === 'PORTFÖY' || word === 'PYŞ');
     if (portfoy > 0) return (words[portfoy - 1][0] + 'P');
   }
   return code.replace(/[^A-Z0-9ÇĞİÖŞÜ]/gi, '').slice(0, 3);

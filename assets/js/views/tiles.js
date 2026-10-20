@@ -22,7 +22,8 @@ function signedMoney(value, currency) {
 /** "ZİRAAT PORTFÖY BAŞAK PARA PİYASASI (TL) FONU" → { issuer: "ZİRAAT PORTFÖY", name: "BAŞAK PARA PİYASASI" } */
 export function fundParts(code) {
   const full = String(DB.byCode.get(code)?.name || '').replace(/\s*YÖNETİMİ A\.Ş\.?/i, '');
-  const match = full.match(/^(.*?PORTFÖY)\s+(.*)$/);
+  // Azimut gibi bazı kurucular adlarında "PORTFÖY" yerine "PYŞ" kısaltmasını kullanır.
+  const match = full.match(/^(.*?(?:PORTFÖY|PYŞ))\s+(.*)$/);
   const clean = (text) => text.replace(/\s+FONU?\b/g, '').replace(/\s*\(.*?\)\s*/g, ' ').replace(/\s+/g, ' ').trim();
   return { issuer: match ? match[1] : '', name: clean(match ? match[2] : full) };
 }
