@@ -160,6 +160,13 @@ def main() -> int:
     if not force and dt.datetime.now(dt.timezone(dt.timedelta(hours=3))).weekday() >= 5:
         print("Hafta sonu; bildirim yok")
         return 0
+    # Gönderim penceresi 12:00–21:00 (TR). GitHub sırası saatlerce gecikip bir yedek
+    # çalışmayı gece yarısından sonra başlatırsa (19.10'da 00:15'te oldu) o iş bir önceki
+    # günün verisini "bugün" diye göndermesin ve bugünün işaretini almasın.
+    now_tr = dt.datetime.now(dt.timezone(dt.timedelta(hours=3)))
+    if not force and not 12 <= now_tr.hour < 21:
+        print(f"Gönderim penceresi dışında ({now_tr:%H:%M} TR); bildirim yok")
+        return 0
     if not force:
         wait_until_send_time()
     subs = supabase_get("push_subscriptions", {"select": "user_id,endpoint,subscription"})
