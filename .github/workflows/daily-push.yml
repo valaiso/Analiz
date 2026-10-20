@@ -1,18 +1,25 @@
 name: Günlük portföy bildirimi
 
 # Her işlem günü 18:00 (TR) portföyün günlük değişimini telefona gönderir.
-# GitHub sırası yoğunken çalışma saatlerce gecikebilir ya da hiç başlamayabilir.
-# Bu yüzden iş öğlen 13:00'te başlar ve 18:00'e kadar hazır bekler (14:30 ve 17:45
-# başlangıçları ilk çalışma kaçarsa devreye girer). 18:20, 19:00 ve 19:45'teki yedek
-# çalışmalar bugünün bildirimi gönderilmediyse gönderir, gönderildiyse hiçbir şey yapmaz.
+# GitHub sırası yoğunken çalışma saatlerce gecikebilir ya da hiç başlamayabilir; en çok
+# atlanan dakikalar saat başı ve buçuktur, bu yüzden saatler "tek" dakikalardadır.
+# İş öğlen başlar ve 18:00'e kadar hazır bekler; sonraki hazırlıklar ilki kaçarsa devreye
+# girer. 18:00'den sonraki yedekler bildirim gönderilmediyse gönderir, gönderildiyse hiçbir
+# şey yapmaz. Betik yalnızca 12:00-21:00 (TR) arasında gönderir: gece başlayan geciken bir
+# iş ertesi günün işaretini alamaz. 21:37'deki bekçi, o gün bildirim gitmediyse işi
+# başarısız sayar; GitHub bunu e-postayla haber verir.
 on:
   schedule:
-    - cron: '0 10 * * 1-5'    # hazırlık: 13:00 TR, 18:00'e kadar bekler
-    - cron: '30 11 * * 1-5'   # hazırlık: 14:30 TR (ilki başlamazsa)
-    - cron: '45 14 * * 1-5'   # hazırlık: 17:45 TR
-    - cron: '20 15 * * 1-5'   # yedek: 18:20 TR
-    - cron: '0 16 * * 1-5'    # yedek: 19:00 TR
-    - cron: '45 16 * * 1-5'   # yedek: 19:45 TR
+    - cron: '7 10 * * 1-5'    # hazırlık: 13:07 TR, 18:00'e kadar bekler
+    - cron: '41 11 * * 1-5'   # hazırlık: 14:41 TR
+    - cron: '17 13 * * 1-5'   # hazırlık: 16:17 TR
+    - cron: '47 14 * * 1-5'   # hazırlık: 17:47 TR
+    - cron: '13 15 * * 1-5'   # yedek: 18:13 TR
+    - cron: '43 15 * * 1-5'   # yedek: 18:43 TR
+    - cron: '19 16 * * 1-5'   # yedek: 19:19 TR
+    - cron: '53 16 * * 1-5'   # yedek: 19:53 TR
+    - cron: '29 17 * * 1-5'   # yedek: 20:29 TR
+    - cron: '37 18 * * 1-5'   # bekçi: 21:37 TR, göndermez; bildirim gitmediyse uyarır
   workflow_dispatch:
     inputs:
       force:
@@ -46,16 +53,24 @@ jobs:
       - name: Zaten gönderildi
         if: steps.isaret.outputs.cache-hit == 'true' && github.event_name == 'schedule'
         run: echo "Bugünün bildirimi daha önce gönderildi; yedek çalışma bir şey yapmıyor."
+      - name: Bekçi
+        if: github.event.schedule == '37 18 * * 1-5'
+        env:
+          GONDERILDI: ${{ steps.isaret.outputs.cache-hit }}
+        run: |
+          if [ "$GONDERILDI" = "true" ]; then echo "Bugünün bildirimi gönderilmiş."; exit 0; fi
+          echo "::error::Bugünün günlük portföy bildirimi gönderilemedi (GitHub çalışmaları atlamış ya da hata olmuş). Actions > Günlük portföy bildirimi > Run workflow ile elle gönderilebilir."
+          exit 1
       - uses: actions/checkout@v4
-        if: steps.isaret.outputs.cache-hit != 'true' || github.event_name != 'schedule'
+        if: (steps.isaret.outputs.cache-hit != 'true' && github.event.schedule != '37 18 * * 1-5') || github.event_name != 'schedule'
       - uses: actions/setup-python@v5
-        if: steps.isaret.outputs.cache-hit != 'true' || github.event_name != 'schedule'
+        if: (steps.isaret.outputs.cache-hit != 'true' && github.event.schedule != '37 18 * * 1-5') || github.event_name != 'schedule'
         with:
           python-version: '3.12'
       - run: pip install requests pywebpush
-        if: steps.isaret.outputs.cache-hit != 'true' || github.event_name != 'schedule'
+        if: (steps.isaret.outputs.cache-hit != 'true' && github.event.schedule != '37 18 * * 1-5') || github.event_name != 'schedule'
       - name: Bildirimi gönder
-        if: steps.isaret.outputs.cache-hit != 'true' || github.event_name != 'schedule'
+        if: (steps.isaret.outputs.cache-hit != 'true' && github.event.schedule != '37 18 * * 1-5') || github.event_name != 'schedule'
         env:
           SUPABASE_URL: https://jqmfvinbzgqyitqquzdc.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

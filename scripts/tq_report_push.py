@@ -101,7 +101,15 @@ def main() -> int:
         print(f"{today}: bildirim günü değil")
         return 0
     if not a.force:
-        wait_until(dt.datetime.combine(today, dt.time(TARGET_HOUR[a.slot]), TR))
+        target = dt.datetime.combine(today, dt.time(TARGET_HOUR[a.slot]), TR)
+        now = dt.datetime.now(TR)
+        # Gönderim penceresi: hedeften 6 saat önce (hazırlık) ile 3 saat sonra (yedek) arası.
+        # GitHub sırası bir yedeği gece yarısından sonra başlatırsa (Analiz'de 19-20.10'da oldu)
+        # ertesi günün bildirimi gece gönderilip asıl saatteki bildirim engellenmesin.
+        if not target - dt.timedelta(hours=6) <= now <= target + dt.timedelta(hours=3):
+            print(f"Gönderim penceresi dışında ({now:%d.%m %H:%M} TR, hedef {target:%H:%M}); bildirim yok")
+            return 0
+        wait_until(target)
 
     subs = [r for r in supabase("GET", {"select": "endpoint,subscription"}).json()
             if (r.get("subscription") or {}).get("app") == APP]
