@@ -1,4 +1,17 @@
+import { supabase } from './supabase-client.js';
+
 const CHANNEL = 'ANALIZ_MIDAS_EXTENSION';
+
+/**
+ * Eklentisiz cihazlar (telefon) için canlı fiyat: Supabase Edge Function "live-quotes" Yahoo Finance'ten
+ * eklentiyle aynı biçimde fiyat döndürür. Yalnızca oturum açmış kullanıcı çağırabilir.
+ */
+export async function requestServerLiveQuotes(codes = [], cryptoCodes = []) {
+  const { data, error } = await supabase.functions.invoke('live-quotes', { body: { codes, cryptoCodes } });
+  if (error) throw new Error(`Canlı fiyat sunucusu: ${error.message || error}`);
+  if (!data?.ok) throw new Error(data?.error || 'Canlı fiyatlar alınamadı.');
+  return data.quotes || {};
+}
 const REQUIRED_READER_VERSION = '0.28.6';
 
 function compareVersions(left, right) {

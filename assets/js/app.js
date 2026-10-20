@@ -8,7 +8,7 @@ import {
   settings, setSetting, subscribe, getState, importJSON, getMidasAccountSnapshot,
   saveMidasLiveQuotes, ensureMidasPositionsSynced, cleanupStoredData, allTransactions,
 } from './store.js';
-import { requestMidasLiveQuotes } from './midas-import.js';
+import { requestMidasLiveQuotes, requestServerLiveQuotes } from './midas-import.js';
 import { syncPushSubscription, initPushButton } from './push.js';
 import { needsIntradayQuote } from './asset-groups.js';
 import { supabase } from './supabase-client.js';
@@ -409,16 +409,28 @@ async function refreshIntradayQuotes() {
   if (!codes.length && !cryptoCodes.length) return;
   intradayQuoteBusy = true;
   try {
-    const received = await requestMidasLiveQuotes(codes, 20_000, cryptoCodes);
+    // Önce bilgisayardaki Midas eklentisi; telefonda eklenti olmadığı için doğrudan sunucu (live-quotes).
+    let received = {};
+    if (!/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) {
+      received = await requestMidasLiveQuotes(codes, 20_000, cryptoCodes).catch(() => ({}));
+    }
+    if (!Object.keys(received).length) {
+      received = await requestServerLiveQuotes(codes, cryptoCodes).catch((error) => {
+        console.warn(error);
+        return {};
+      });
+    }
     if (Object.keys(received).length && saveMidasLiveQuotes(received)) {
       updateQuoteTimestamp();
       await render({ preserveScroll: true });
+      return true;
     }
   } catch {
-    // Keep the last site prices when the optional browser extension is unavailable.
+    // Keep the last site prices when live quotes are unavailable.
   } finally {
     intradayQuoteBusy = false;
   }
+  return false;
 }
 
 /* ------------------------------------------------------------------ yenileme */
@@ -432,11 +444,13 @@ async function refresh() {
     const { oncekiGun, yeniGun } = await refreshData();
     updateDataStatus();
     await render();
+    // Yenile canlı hisse / ETF / kripto fiyatlarını da çeker (telefonda sunucudan)
+    const gotQuotes = await refreshIntradayQuotes();
     if (yeniGun && oncekiGun && yeniGun > oncekiGun) toast(`Yeni veriler yüklendi: ${fmtDate(yeniGun)}`);
     else toast(`Veriler güncel: ${fmtDate(yeniGun)}`);
-    // Yenile yalnızca TEFAS verisini getirir; canlı fiyat saati eskiyse nedenini söyle
-    if ($('#quoteTime')?.classList.contains('is-stale')) {
-      setTimeout(() => toast('Canlı hisse/kripto fiyatları bilgisayardaki Midas eklentisiyle güncellenir'), 2700);
+    // Canlı fiyat alınamadıysa söyle (piyasa kapalıyken son işlem saatinde kalması normaldir)
+    if (!gotQuotes && $('#quoteTime')?.classList.contains('is-stale')) {
+      setTimeout(() => toast('Canlı fiyat alınamadı; gösterilen son alınan fiyat'), 2700);
     }
   } catch (error) {
     console.error(error);
