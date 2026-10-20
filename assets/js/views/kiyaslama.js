@@ -40,7 +40,7 @@ export function renderKiyaslama(ctx) {
   const { analysis, navigate } = ctx;
   const { series } = analysis;
 
-  if (!series.dates.length) {
+  if (!series.dates.length && !Object.keys(valueHistory()).length) {
     return emptyState('Kıyaslama için işlem geçmişi gerekiyor',
       'En az bir alım işlemi girdiğinde portföyünün getirisi endekslerle karşılaştırılır.',
       'İşlem ekle', () => navigate('islemler'));

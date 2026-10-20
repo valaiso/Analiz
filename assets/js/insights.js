@@ -404,6 +404,25 @@ export function consistencyChecks(txs) {
  * ayrılır (zaman ağırlıklı getiri): her gün r = (V_t − F_t) / V_{t−1} − 1.
  * history: { 'YYYY-AA-GG': ₺ }, flows: [{ date, amount }] (+ yatırma, − çekme)
  */
+/**
+ * Hesaba kaydedilen günlük toplamlardan zaman ağırlıklı endeks (ilk gün 100).
+ * Para yatırma/çekme getiri sayılmaz. Risk ve Kıyaslama bu seriyi kullanır.
+ */
+export function recordedSeries(history, flows) {
+  const dates = Object.keys(history || {}).filter((date) => Number(history[date]) > 0).sort();
+  let level = 100;
+  const twr = dates.map((date, i) => {
+    if (i > 0) {
+      const flow = (flows || []).filter((item) => item.date > dates[i - 1] && item.date <= date)
+        .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+      const previous = history[dates[i - 1]];
+      if (previous > 0) level *= (history[date] - flow) / previous;
+    }
+    return level;
+  });
+  return { dates, twr };
+}
+
 export function realReturn(history, flows) {
   const dates = Object.keys(history || {}).filter((date) => Number(history[date]) > 0).sort();
   if (!dates.length) return null;

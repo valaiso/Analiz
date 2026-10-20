@@ -96,7 +96,7 @@ export function renderDagilim(ctx) {
     const bistSlices = bistRows.filter((row) => row.pieValue > 0)
       .sort((a, b) => b.pieValue - a.pieValue)
       .map((row, index) => ({ label: row.code, value: row.pieValue, color: colorAt(index) }));
-    if (valuesReconcile) root.append(h('div', { class: 'grid grid-2' },
+    if (valuesReconcile) root.append(h('div', { class: bistSlices.length ? 'grid grid-2' : 'stack' },
       toneCard({ tone: 'blue', icon: '◔', title: 'Portföy Dağılımı', sub: 'ETF · Fon türleri · BIST hissesi · yabancı hisse · Kripto · Nakit' }, donutWithLegend(byType, {
         centerTop: tl(Number.isFinite(midasTotal)
           ? midasTotal
@@ -104,10 +104,10 @@ export function renderDagilim(ctx) {
         centerBottom: cryptoSnapshotStale ? 'Kripto verisi eski'
           : cryptoNotIncluded ? 'Kripto hariç' : 'Midas toplamı',
       })),
-      toneCard({ ...SECTION_TONES.Hisse, title: 'BIST Hisseleri', sub: 'BIST hisselerinin kendi içindeki dağılımı' }, donutWithLegend(bistSlices, {
+      bistSlices.length ? toneCard({ ...SECTION_TONES.Hisse, title: 'BIST Hisseleri', sub: 'BIST hisselerinin kendi içindeki dağılımı' }, donutWithLegend(bistSlices, {
         centerTop: tl(bistRows.reduce((sum, row) => sum + (row.pieValue || 0), 0), { compact: true }),
         centerBottom: 'BIST toplamı',
-      }))));
+      })) : null));
     else root.append(h('div', { class: 'notice warn' },
       missingPositionValue.length
         ? `Dağılım grafiği bekletiliyor: Midas adedi/fiyatı okunamayan varlıklar: ${missingPositionValue.map((row) => row.code).join(', ')}. Eklentiyi yenileyip Midas aktarımını tekrar çalıştır.`

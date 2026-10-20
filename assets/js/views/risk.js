@@ -5,9 +5,10 @@ import { DB } from '../data.js';
 import { lineChart, monthlyReturnTable } from '../charts.js';
 import { riskSummary } from '../portfolio.js';
 import {
-  monthlyReturns, yearlyFromMonthly, drawdownEpisodes, rollingReturns, diversification,
+  monthlyReturns, yearlyFromMonthly, drawdownEpisodes, rollingReturns, diversification, recordedSeries,
 } from '../insights.js';
-import { settings, setSetting } from '../store.js';
+import { settings, setSetting, valueHistory, cashflows } from '../store.js';
+import { indexForDate } from '../data.js';
 import { kpiCard, sectionCard, emptyState, tonedSection } from './common.js';
 
 /** Seriden düşüş (drawdown) yüzdeleri üretir. */
@@ -22,13 +23,23 @@ function drawdownSeries(values) {
 
 export function renderRisk(ctx) {
   const { analysis, navigate } = ctx;
-  const { series, open } = analysis;
+  const { open } = analysis;
+  // Risk, hesaba kaydedilen gerçek günlük değerlerden hesaplanır (ilk kayıt 16.10.2026);
+  // kayıt yoksa eski işlem kayıtlarından modellenen seri kullanılır.
+  const recorded = recordedSeries(valueHistory(), cashflows());
+  const series = recorded.dates.length >= 2
+    ? { ...recorded, start: Math.max(0, indexForDate(recorded.dates[0])) }
+    : analysis.series;
+  const MIN_DAYS = 10;
 
-  if (series.dates.length < 10) {
-    return emptyState('Risk analizi için daha fazla geçmiş gerekiyor',
-      'En az birkaç haftalık işlem geçmişi oluştuğunda oynaklık, Sharpe oranı ve '
-      + 'maksimum düşüş burada hesaplanır.',
-      'İşlem ekle', () => navigate('islemler'));
+  if (series.dates.length < MIN_DAYS) {
+    return recorded.dates.length
+      ? emptyState('Risk ölçüleri için birkaç hafta daha gerekiyor',
+        `Oynaklık, Sharpe oranı ve düşüşler kayıtlı günlük portföy değerlerinden hesaplanır. Kayıt ${fmtDate(recorded.dates[0])} tarihinde başladı; `
+        + `şu an ${recorded.dates.length} işlem günü var, en az ${MIN_DAYS} gün gerekiyor.`)
+      : emptyState('Risk analizi için daha fazla geçmiş gerekiyor',
+        'Portföy değeri birkaç hafta kaydedildiğinde oynaklık, Sharpe oranı ve maksimum düşüş burada hesaplanır.',
+        'İşlem ekle', () => navigate('islemler'));
   }
 
   const root = h('div', { class: 'stack' });
@@ -84,7 +95,7 @@ export function renderRisk(ctx) {
   const ppSerisi = DB.benchmarks?.PARAPIYASASI?.values;
   let ppYillik = null;
   if (ppSerisi?.length) {
-    const dilim = ppSerisi.slice(series.start, series.start + series.dates.length)
+    const dilim = ppSerisi.slice(series.start, Math.max(0, indexForDate(series.dates.at(-1))) + 1)
       .filter((v) => isNum(v) && v > 0);
     if (dilim.length > 30 && summary.days > 0) {
       ppYillik = ((dilim[dilim.length - 1] / dilim[0]) ** (365.25 / summary.days) - 1) * 100;
