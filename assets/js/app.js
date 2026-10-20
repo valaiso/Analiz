@@ -389,7 +389,11 @@ function updateQuoteTimestamp() {
       day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
     }).format(new Date(timestamp))}`
     : '—';
-  label.title = quoteTimes.length ? 'Son canlı fiyatın tarih ve saati' : 'Son Midas taramasının tarih ve saati';
+  // Canlı fiyatları bilgisayardaki Midas eklentisi çeker; telefonda eklenti yoktur, saat son PC güncellemesinde kalır.
+  const stale = Number.isFinite(timestamp) && Date.now() - timestamp > 15 * 60 * 1000;
+  label.classList.toggle('is-stale', stale);
+  label.title = (quoteTimes.length ? 'Son canlı fiyatın tarih ve saati' : 'Son Midas taramasının tarih ve saati')
+    + (stale ? ' · canlı hisse/ETF/kripto fiyatları bilgisayardaki Midas eklentisiyle güncellenir; telefonda bu saat değişmez' : '');
 }
 
 async function refreshIntradayQuotes() {
@@ -430,6 +434,10 @@ async function refresh() {
     await render();
     if (yeniGun && oncekiGun && yeniGun > oncekiGun) toast(`Yeni veriler yüklendi: ${fmtDate(yeniGun)}`);
     else toast(`Veriler güncel: ${fmtDate(yeniGun)}`);
+    // Yenile yalnızca TEFAS verisini getirir; canlı fiyat saati eskiyse nedenini söyle
+    if ($('#quoteTime')?.classList.contains('is-stale')) {
+      setTimeout(() => toast('Canlı hisse/kripto fiyatları bilgisayardaki Midas eklentisiyle güncellenir'), 2700);
+    }
   } catch (error) {
     console.error(error);
     toast('Yenilenemedi - internet bağlantını kontrol et');

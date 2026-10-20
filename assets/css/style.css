@@ -406,8 +406,11 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
 
 @media (max-width: 900px) {
   .app-shell, .app-shell:has(.sidebar[hidden]) { grid-template-columns: minmax(0, 1fr); }
+  /* Alt menü sayfa akışında en sonda durur ve ekranın altına yapışır (sticky). position: fixed iPhone ana ekran
+     uygulamasında (özellikle seçici / klavye kapandıktan sonra) kaydırırken ekranın ortasında kalabiliyordu. */
+  .app-shell { grid-template-rows: 1fr auto; }
   .sidebar:not([hidden]) {
-    position: fixed; inset: auto 0 0; width: 100%; height: auto; height: auto;
+    position: sticky; top: auto; bottom: 0; order: 2; align-self: end; width: 100%; height: auto;
     padding: 0 8px env(safe-area-inset-bottom); border: 0; border-top: 1px solid var(--border);
     background: color-mix(in srgb, var(--surface) 94%, transparent); backdrop-filter: blur(16px);
   }
@@ -422,7 +425,6 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
   .tab { width: auto; min-width: 0; min-height: 56px; flex: 1 1 0; flex-direction: column; justify-content: center; gap: 3px; padding: 5px 4px; border: 0; border-radius: 8px; font-size: .68rem; }
   .tab[aria-selected="true"] { border: 0; }
   .nav-icon { flex: 0 0 auto; font-size: 1.05rem; }
-  .main-column { padding-bottom: calc(66px + env(safe-area-inset-bottom)); }
 }
 
 @media (max-width: 640px) {
@@ -898,3 +900,6 @@ html[data-theme="dark"] .cls-fon { --cls: #3b7ddd; } html[data-theme="dark"] .cl
 .push-btn.is-on { color: var(--accent); }
 .push-btn svg { display: block; }
 @media (max-width: 900px) { .push-btn { display: grid; } }
+
+/* Canlı fiyat saati 15 dakikadan eskiyse soluk gösterilir (telefonda eklenti yok) */
+.quote-time.is-stale { opacity: .6; }
