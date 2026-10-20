@@ -373,11 +373,25 @@ export function recordPortfolioValue(calendarDate, value) {
  */
 export const monthlySnapshots = () => state.monthlySnapshots || {};
 
+/** Ayın son iş günü (hafta sonuna denk gelirse önceki cuma). */
+function lastWeekdayOfMonth(month) {
+  const [year, mon] = month.split('-').map(Number);
+  const last = new Date(Date.UTC(year, mon, 0)).toISOString().slice(0, 10);
+  return tradingDateFor(last);
+}
+
+/**
+ * Aylık rapor için pozisyon fotoğrafı (yalnızca Midas taramasından).
+ * Her cuma ve ayın son iş günü güncellenir; hafta sonu açılışı cuma sayılır.
+ * O ay için hiç kayıt yoksa ilk açılışta bir kez yazılır ki rapor boş kalmasın.
+ */
 export function recordMonthlySnapshot(calendarDate, snapshot) {
   if (!snapshot || !Array.isArray(snapshot.rows)) return false;
   const date = tradingDateFor(calendarDate);
   const month = date.slice(0, 7);
   const previous = state.monthlySnapshots?.[month];
+  const isFriday = new Date(`${date}T12:00:00Z`).getUTCDay() === 5;
+  if (previous && !isFriday && date !== lastWeekdayOfMonth(month)) return false;
   const lastAt = Date.parse(previous?.savedAt || '') || 0;
   if (previous && previous.date === date && Date.now() - lastAt < VALUE_RECORD_INTERVAL_MS) return false;
   state.monthlySnapshots = {

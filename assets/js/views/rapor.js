@@ -208,7 +208,9 @@ export function renderRapor() {
   const snapshots = monthlySnapshots();
   const months = reportMonths(history, snapshots);
   const input = (month) => ({
-    month, history, flows: cashflows(), dividends: dividends(), snapshots, transactions: transactions(),
+    // Rapor yalnızca Midas verisiyle hazırlanır; elle girilen eski işlemler kullanılmaz.
+    month, history, flows: cashflows(), dividends: dividends(), snapshots,
+    transactions: transactions().filter((tx) => tx.source === 'midas'),
   });
 
   const holder = h('div');
