@@ -9,7 +9,7 @@ import { cashflowCalendar, realReturn } from '../insights.js';
 import {
   transactions, daysSinceBackup, getMidasAccountSnapshot,
   valueHistory, recordPortfolioValue, recordMonthlySnapshot, setPortfolioValue, removePortfolioValue, cashflows, midasBaselineState, pendingCashflow,
-  updateMidasBaseline, confirmPendingCashflow, rejectPendingCashflow, removeCashflow, dividends, dividendsBetween,
+  updateMidasBaseline, confirmPendingCashflow, rejectPendingCashflow, removeCashflow, dividends, dividendsBetween, manualCashflowsBetween,
 } from '../store.js';
 import {
   currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics,
@@ -245,10 +245,12 @@ export function renderPanel(ctx) {
     const cryptoNewlyCaptured = !previousBaseline?.key?.split('|')[1] && currentBaseline.key.split('|')[1];
     const rawChange = previousBaseline && !cryptoNewlyCaptured
       ? unexplainedChange(previousBaseline, currentBaseline) : null;
-    // Bu aralıkta girilmiş temettüler para girişi değildir; tespitten düşülür.
+    // Bu aralıkta girilmiş temettüler para girişi değildir; elle girilen nakit zaten
+    // kayıtlıdır. İkisi de tespitten düşülür ki aynı para ikinci kez sorulmasın.
     const change = rawChange ? (() => {
-      const amount = rawChange.amount - dividendsBetween(String(previousBaseline.at || '').slice(0, 10),
-        String(currentBaseline.at || '').slice(0, 10));
+      const from = String(previousBaseline.at || '').slice(0, 10);
+      const to = String(currentBaseline.at || '').slice(0, 10);
+      const amount = rawChange.amount - dividendsBetween(from, to) - manualCashflowsBetween(from, to);
       return { ...rawChange, amount, significant: Math.abs(amount) >= Math.max(1000, Math.abs(previousBaseline.total) * 0.01) };
     })() : null;
     updateMidasBaseline(currentBaseline, change?.significant ? change : null);

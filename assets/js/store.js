@@ -476,8 +476,50 @@ export function rejectPendingCashflow() {
 }
 
 export function removeCashflow(id) {
-  state.cashflows = cashflows().filter((flow) => flow.id !== id);
+  const record = cashflows().find((flow) => flow.id === id);
+  // Elle girilen kayıt silinirse, ondan düşülen Midas tespitleri eski tutarına döner.
+  const restore = new Map((record?.adjustments || []).map((item) => [item.flowId, item.amount]));
+  state.cashflows = cashflows().filter((flow) => flow.id !== id).map((flow) => (restore.has(flow.id)
+    ? { ...flow, amount: Math.round((flow.amount + restore.get(flow.id)) * 100) / 100 } : flow));
   persist();
+}
+
+/**
+ * Elle nakit ekleme/çekme. Para hareketidir, kâr sayılmaz: gerçek getiriden düşülür,
+ * yatırılan paraya eklenir. Aynı dönemi Midas taraması zaten tespit ettiyse (bekleyen soru
+ * ya da onaylanmış tespit) aynı yöndeki tutar ondan düşülür ki para iki kez sayılmasın.
+ */
+export function addManualCashflow({ date, amount, note }) {
+  const value = Math.round(Number(amount) * 100) / 100;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date)) || !value) return null;
+  const sign = Math.sign(value);
+  let remaining = Math.abs(value);
+  const record = { id: uid(), date, amount: value, source: 'elle', note: String(note || '').trim().slice(0, 80), adjustments: [] };
+  const pending = state.pendingCashflow;
+  if (pending && Math.sign(pending.amount) === sign
+    && inWindow(date, pending.from && String(pending.from).slice(0, 10), pending.date)) {
+    const used = Math.min(remaining, Math.abs(pending.amount));
+    const left = Math.round((Math.abs(pending.amount) - used) * 100) / 100;
+    state.pendingCashflow = left < 1 ? null : { ...pending, amount: left * sign };
+    remaining -= used;
+  }
+  state.cashflows = cashflows().map((flow) => {
+    if (!(remaining > 0) || flow.source !== 'midas-tespit' || Math.sign(flow.amount) !== sign
+      || !inWindow(date, flow.from, flow.to)) return flow;
+    const used = Math.min(remaining, Math.abs(flow.amount));
+    remaining -= used;
+    record.adjustments.push({ flowId: flow.id, amount: used * sign });
+    return { ...flow, amount: Math.round((flow.amount - used * sign) * 100) / 100 };
+  });
+  state.cashflows = [...state.cashflows, record].sort((a, b) => a.date.localeCompare(b.date));
+  persist();
+  return record;
+}
+
+/** İki Midas taraması arasında elle girilen nakit hareketlerinin toplamı (tespitten düşülür). */
+export function manualCashflowsBetween(from, to) {
+  return cashflows().filter((flow) => flow.source === 'elle' && inWindow(flow.date, from, to))
+    .reduce((sum, flow) => sum + flow.amount, 0);
 }
 
 /* --------------------------------------------------------------- temettüler */

@@ -9,7 +9,7 @@ import {
 import {
   transactions, addTransaction, updateTransaction, removeTransaction,
   allTransactions, addMidasTransactions, saveMidasAccountSnapshot, getMidasAccountSnapshot,
-  pruneMidasHistory, dividends, addDividend, removeDividend,
+  pruneMidasHistory, dividends, addDividend, removeDividend, cashflows, addManualCashflow, removeCashflow,
 } from '../store.js';
 import { currentMidasPositions } from '../asset-groups.js';
 import { sectionCard, fundPicker, tonedSection } from './common.js';
@@ -687,6 +687,59 @@ function dividendSection(ctx) {
     table);
 }
 
+/** Elle nakit ekleme/çekme: para hareketi olarak kaydedilir, kâr sayılmaz. */
+function cashSection(ctx) {
+  const dateInput = h('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
+  const typeInput = h('select', {}, h('option', { value: 'ekle' }, 'Nakit ekleme (yatırma)'), h('option', { value: 'cek' }, 'Nakit çekme'));
+  const amountInput = h('input', { type: 'number', step: 'any', min: '0', placeholder: '0,00' });
+  const noteInput = h('input', { type: 'text', maxlength: 80, placeholder: 'Örn. maaş' });
+  const error = h('div', { class: 'hint', style: 'color:var(--down)' });
+  const field = (label, control, hint) => h('div', { class: 'field' },
+    h('label', { text: label }), control, hint ? h('div', { class: 'hint', text: hint }) : null);
+  const submit = () => {
+    const amount = Number(amountInput.value);
+    if (!(amount > 0)) { error.textContent = 'Tarih ve 0’dan büyük bir tutar gir.'; return; }
+    const record = addManualCashflow({ date: dateInput.value, amount: typeInput.value === 'cek' ? -amount : amount, note: noteInput.value });
+    if (!record) { error.textContent = 'Tarih ve 0’dan büyük bir tutar gir.'; return; }
+    toast(record.adjustments.length
+      ? `${tl(Math.abs(record.amount))} ${record.amount > 0 ? 'nakit ekleme' : 'nakit çekme'} kaydedildi; Midas tespitiyle çakışan kısım düşüldü`
+      : `${tl(Math.abs(record.amount))} ${record.amount > 0 ? 'nakit ekleme' : 'nakit çekme'} kaydedildi`);
+    ctx.refresh();
+  };
+  const list = cashflows().slice().reverse();
+  const net = list.reduce((sum, flow) => sum + flow.amount, 0);
+  const sourceLabel = (flow) => (flow.source === 'elle' ? 'Elle' : flow.source === 'midas-tespit' ? 'Midas tespiti' : '—');
+  const table = list.length ? h('div', { class: 'table-wrap cash-table' }, h('table', {},
+    h('thead', {}, h('tr', {}, h('th', {}, 'Tarih'), h('th', {}, 'Tür'), h('th', {}, 'Tutar'), h('th', {}, 'Kaynak'), h('th', {}, 'Not'), h('th', {}, ''))),
+    h('tbody', {}, list.map((flow) => h('tr', {},
+      h('td', {}, fmtDate(flow.date)),
+      h('td', {}, flow.amount >= 0 ? 'Ekleme' : 'Çekme'),
+      h('td', { class: flow.amount >= 0 ? 'up' : 'down' }, `${flow.amount >= 0 ? '+' : '−'}${tl(Math.abs(flow.amount))}`),
+      h('td', { class: 'dim' }, sourceLabel(flow)),
+      h('td', { class: 'dim' }, flow.note || ''),
+      h('td', {}, h('button', {
+        class: 'btn btn-sm', type: 'button',
+        onclick: async () => {
+          if (await confirmDialog('Nakit kaydını sil', `${fmtDate(flow.date)} ${tl(Math.abs(flow.amount))} ${flow.amount >= 0 ? 'ekleme' : 'çekme'} kaydı silinsin mi? Gerçek getiri yeniden hesaplanır.`)) {
+            removeCashflow(flow.id);
+            ctx.refresh();
+          }
+        },
+      }, 'Sil'))))))) : null;
+  return tonedSection('blue', '₺', 'Nakit Eklenmesi',
+    'Hesaba kendin para eklediğinde ya da çektiğinde gir. Kâr sayılmaz: gerçek getiriden düşülür, yatırılan paraya eklenir. Midas taraması aynı parayı tespit ederse tekrar sorulmaz.',
+    h('div', { class: 'form-grid' },
+      field('Tarih', dateInput),
+      field('İşlem', typeInput),
+      field('Tutar (₺)', amountInput),
+      field('Not', noteInput, 'İsteğe bağlı')),
+    error,
+    h('div', { class: 'btn-row', style: 'justify-content:flex-end' },
+      h('button', { class: 'btn btn-primary', type: 'button', onclick: submit }, 'Kaydet')),
+    list.length ? h('p', { class: 'dim', style: 'margin:0' }, `Net para girişi ${net >= 0 ? '+' : '−'}${tl(Math.abs(net))} · ${list.length} kayıt`) : null,
+    table);
+}
+
 export function renderIslemler(ctx) {
   const root = h('div', { class: 'stack' });
   const list = transactions();
@@ -713,6 +766,7 @@ export function renderIslemler(ctx) {
     midasLogField));
 
   root.append(dividendSection(ctx));
+  root.append(cashSection(ctx));
 
   /* --------------------------------------------------------------- ekleme formu */
 

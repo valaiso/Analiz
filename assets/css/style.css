@@ -872,6 +872,11 @@ html[data-theme="dark"] .cls-fon { --cls: #3b7ddd; } html[data-theme="dark"] .cl
 .class-caret { margin-left: 6px; color: var(--text-dim); font-size: .8rem; }
 .class-bar span.clickable { cursor: pointer; }
 
+/* Nakit kayıtları: telefonda Kaynak ve Not sütunları gizlenir, tablo ekrana sığar */
+@media (max-width: 640px) {
+  .cash-table th:nth-child(4), .cash-table td:nth-child(4), .cash-table th:nth-child(5), .cash-table td:nth-child(5) { display: none; }
+}
+
 /* Yazdırma / PDF: yalnızca rapor sayfaları, her biri bir A4 */
 @media print {
   @page { size: A4; margin: 0; }
