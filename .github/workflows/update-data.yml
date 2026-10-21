@@ -27,10 +27,21 @@ on:
     # 16:00 UTC = 19:00 TR - doğrulama turu: TEFAS gün içinde fiyat düzeltmesi
     # yayımlarsa ya da sabahki tur tümüyle atlandıysa aynı gün yakalanır.
     - cron: '0 16 * * 1-5'
+  # GitHub zamanlayıcısı 19.10.2026'dan beri çalışmaların çoğunu düşürdüğü için sabah
+  # yoklamaları Supabase'deki zamanlayıcıdan da (supabase/github-cron.sql) "yoklama: true"
+  # ile tetiklenir; bu çalışmalar zamanlanmış tur gibi yalnızca yeni fiyat varsa derler.
   workflow_dispatch:
     inputs:
       full:
         description: 'Veriyi baştan çek (cache yok sayılır)'
+        type: boolean
+        default: false
+      yoklama:
+        description: 'Zamanlanmış tur gibi: yalnızca yeni fiyat varsa derle (dış zamanlayıcı)'
+        type: boolean
+        default: false
+      dogrulama:
+        description: 'Akşam doğrulama turu gibi: fiyat düzeltmesi için yeniden derle'
         type: boolean
         default: false
       years:
@@ -80,7 +91,7 @@ jobs:
         run: |
           python scripts/check_fresh.py \
             --site-url "${SITE_URL}" \
-            ${{ github.event.schedule == '0 16 * * 1-5' && '--force-refresh' || '' }}
+            ${{ (github.event.schedule == '0 16 * * 1-5' || github.event.inputs.dogrulama == 'true') && '--force-refresh' || '' }}
       - name: Kararı özete yaz
         env:
           REASON: ${{ steps.karar.outputs.reason }}
@@ -90,7 +101,7 @@ jobs:
     needs: kontrol
     # Zamanlanmış turlarda yalnızca yeni fiyat varsa derle; elle tetikleme ve
     # kod değişikliği (push) her hâlükârda yayınlanmalı.
-    if: ${{ github.event_name != 'schedule' || needs.kontrol.outputs.run == 'true' }}
+    if: ${{ (github.event_name != 'schedule' && github.event.inputs.yoklama != 'true' && github.event.inputs.dogrulama != 'true') || needs.kontrol.outputs.run == 'true' }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:

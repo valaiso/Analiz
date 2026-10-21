@@ -30,9 +30,9 @@ on:
   workflow_dispatch:
     inputs:
       kind:
-        description: 'Deneme bildirimi (hemen gönderilir, işaret bırakmaz)'
+        description: 'Deneme (hemen gönderilir, işaret bırakmaz) ya da otomatik-sabah/otomatik-aksam (dış zamanlayıcı; zamanlanmış gibi)'
         type: choice
-        options: [rapor-sabah, rapor-aksam, hatirlatma]
+        options: [rapor-sabah, rapor-aksam, hatirlatma, otomatik-sabah, otomatik-aksam]
         default: rapor-sabah
 
 permissions:
@@ -52,14 +52,22 @@ jobs:
         id: gun
         env:
           SCHEDULE: ${{ github.event.schedule }}
+          KIND: ${{ inputs.kind }}
         run: |
           hour=$(echo "$SCHEDULE" | awk '{print $2}')
           if [ -n "$hour" ] && [ "$hour" -lt 9 ]; then slot=sabah; else slot=aksam; fi
+          otomatik=false
+          if [ -n "$SCHEDULE" ]; then otomatik=true; fi
+          case "$KIND" in
+            otomatik-sabah) slot=sabah; otomatik=true ;;
+            otomatik-aksam) slot=aksam; otomatik=true ;;
+          esac
           echo "tarih=$(TZ=Europe/Istanbul date +%F)" >> "$GITHUB_OUTPUT"
           echo "slot=$slot" >> "$GITHUB_OUTPUT"
+          echo "otomatik=$otomatik" >> "$GITHUB_OUTPUT"
       - name: Bu bildirim gönderildi mi?
         id: isaret
-        if: github.event_name == 'schedule'
+        if: steps.gun.outputs.otomatik == 'true'
         uses: actions/cache/restore@v4
         with:
           path: tq-push-sent.flag
@@ -89,10 +97,11 @@ jobs:
             rapor-sabah) python scripts/tq_report_push.py --slot sabah --force rapor ;;
             rapor-aksam) python scripts/tq_report_push.py --slot aksam --force rapor ;;
             hatirlatma)  python scripts/tq_report_push.py --slot sabah --force hatirlatma ;;
+            otomatik-*)  python scripts/tq_report_push.py --slot "$SLOT" ;;
             *)           python scripts/tq_report_push.py --slot "$SLOT" ;;
           esac
       - name: Gönderildi işaretini kaydet
-        if: github.event_name == 'schedule' && steps.isaret.outputs.cache-hit != 'true' && hashFiles('tq-push-sent.flag') != ''
+        if: steps.gun.outputs.otomatik == 'true' && steps.isaret.outputs.cache-hit != 'true' && hashFiles('tq-push-sent.flag') != ''
         uses: actions/cache/save@v4
         with:
           path: tq-push-sent.flag

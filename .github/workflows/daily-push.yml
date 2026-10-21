@@ -1,13 +1,15 @@
 name: Günlük portföy bildirimi
 
 # Her işlem günü 18:00 (TR) portföyün günlük değişimini telefona gönderir.
-# GitHub sırası yoğunken çalışma saatlerce gecikebilir ya da hiç başlamayabilir; en çok
-# atlanan dakikalar saat başı ve buçuktur, bu yüzden saatler "tek" dakikalardadır.
-# İş öğlen başlar ve 18:00'e kadar hazır bekler; sonraki hazırlıklar ilki kaçarsa devreye
-# girer. 18:00'den sonraki yedekler bildirim gönderilmediyse gönderir, gönderildiyse hiçbir
-# şey yapmaz. Betik yalnızca 12:00-21:00 (TR) arasında gönderir: gece başlayan geciken bir
-# iş ertesi günün işaretini alamaz. 21:37'deki bekçi, o gün bildirim gitmediyse işi
-# başarısız sayar; GitHub bunu e-postayla haber verir.
+# GitHub'ın kendi zamanlayıcısı 19.10.2026'dan beri çalışmaların çoğunu düşürüyor; bu yüzden
+# iş ayrıca Supabase'deki zamanlayıcıdan (supabase/github-cron.sql) "mod: otomatik" ile
+# tetiklenir. İki kaynak da aynı kuralları izler:
+# - İş öğlen başlar ve 18:00'e kadar hazır bekler; sonraki hazırlıklar ilki kaçarsa devreye girer.
+# - 18:00'den sonraki yedekler bildirim gönderilmediyse gönderir, gönderildiyse hiçbir şey yapmaz.
+# - Betik yalnızca 12:00-21:00 (TR) arasında gönderir: gece başlayan geciken bir iş ertesi günün
+#   işaretini alamaz.
+# - 21:37'deki bekçi, o gün bildirim gitmediyse işi başarısız sayar; GitHub bunu e-postayla bildirir.
+# Saatler saat başı/buçuk yerine "tek" dakikalardadır (en çok atlanan dakikalar onlar).
 on:
   schedule:
     - cron: '7 10 * * 1-5'    # hazırlık: 13:07 TR, 18:00'e kadar bekler
@@ -22,10 +24,11 @@ on:
     - cron: '37 18 * * 1-5'   # bekçi: 21:37 TR, göndermez; bildirim gitmediyse uyarır
   workflow_dispatch:
     inputs:
-      force:
-        description: 'Hemen gönder (hafta sonu / saat beklemeden deneme)'
-        type: boolean
-        default: true
+      mod:
+        description: 'deneme = hemen gönder (işaret bırakmaz) · otomatik = zamanlanmış gibi · bekci = yalnızca kontrol'
+        type: choice
+        options: [deneme, otomatik, bekci]
+        default: deneme
 
 permissions:
   contents: read
@@ -41,9 +44,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 350   # 13:00'te başlayıp 18:00'e kadar bekleyebilmesi için
     steps:
-      - name: Bugünün tarihi (TR)
+      - name: Çalışma türü ve bugünün tarihi (TR)
         id: gun
-        run: echo "tarih=$(TZ=Europe/Istanbul date +%F)" >> "$GITHUB_OUTPUT"
+        env:
+          OLAY: ${{ github.event_name }}
+          ZAMAN: ${{ github.event.schedule }}
+          MOD: ${{ github.event.inputs.mod }}
+        run: |
+          # otomatik: GitHub zamanlayıcısı ya da dış zamanlayıcı; deneme: elle, hemen gönder
+          if [ "$OLAY" = "schedule" ] || [ "$MOD" = "otomatik" ] || [ "$MOD" = "bekci" ]; then otomatik=true; else otomatik=false; fi
+          if [ "$ZAMAN" = "37 18 * * 1-5" ] || [ "$MOD" = "bekci" ]; then bekci=true; else bekci=false; fi
+          echo "otomatik=$otomatik" >> "$GITHUB_OUTPUT"
+          echo "bekci=$bekci" >> "$GITHUB_OUTPUT"
+          echo "tarih=$(TZ=Europe/Istanbul date +%F)" >> "$GITHUB_OUTPUT"
+          echo "tür: otomatik=$otomatik bekçi=$bekci"
       - name: Bugün gönderildi mi?
         id: isaret
         uses: actions/cache/restore@v4
@@ -51,35 +65,47 @@ jobs:
           path: push-sent.flag
           key: push-sent-${{ steps.gun.outputs.tarih }}
       - name: Zaten gönderildi
-        if: steps.isaret.outputs.cache-hit == 'true' && github.event_name == 'schedule'
-        run: echo "Bugünün bildirimi daha önce gönderildi; yedek çalışma bir şey yapmıyor."
+        if: steps.isaret.outputs.cache-hit == 'true' && steps.gun.outputs.otomatik == 'true'
+        run: echo "Bugünün bildirimi daha önce gönderildi; bu çalışma bir şey yapmıyor."
       - name: Bekçi
-        if: github.event.schedule == '37 18 * * 1-5'
+        if: steps.gun.outputs.bekci == 'true'
         env:
           GONDERILDI: ${{ steps.isaret.outputs.cache-hit }}
         run: |
           if [ "$GONDERILDI" = "true" ]; then echo "Bugünün bildirimi gönderilmiş."; exit 0; fi
-          echo "::error::Bugünün günlük portföy bildirimi gönderilemedi (GitHub çalışmaları atlamış ya da hata olmuş). Actions > Günlük portföy bildirimi > Run workflow ile elle gönderilebilir."
+          if [ "$(TZ=Europe/Istanbul date +%u)" -ge 6 ]; then echo "Hafta sonu; bildirim beklenmiyor."; exit 0; fi
+          echo "::error::Bugünün günlük portföy bildirimi gönderilemedi (çalışmalar atlanmış ya da hata olmuş). Actions > Günlük portföy bildirimi > Run workflow ile elle gönderilebilir."
           exit 1
+      - name: Gönderim gerekli mi?
+        id: gerek
+        env:
+          OTOMATIK: ${{ steps.gun.outputs.otomatik }}
+          BEKCI: ${{ steps.gun.outputs.bekci }}
+          GONDERILDI: ${{ steps.isaret.outputs.cache-hit }}
+        run: |
+          if [ "$OTOMATIK" != "true" ]; then gonder=true
+          elif [ "$BEKCI" = "true" ] || [ "$GONDERILDI" = "true" ]; then gonder=false
+          else gonder=true; fi
+          echo "gonder=$gonder" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
-        if: (steps.isaret.outputs.cache-hit != 'true' && github.event.schedule != '37 18 * * 1-5') || github.event_name != 'schedule'
+        if: steps.gerek.outputs.gonder == 'true'
       - uses: actions/setup-python@v5
-        if: (steps.isaret.outputs.cache-hit != 'true' && github.event.schedule != '37 18 * * 1-5') || github.event_name != 'schedule'
+        if: steps.gerek.outputs.gonder == 'true'
         with:
           python-version: '3.12'
       - run: pip install requests pywebpush
-        if: (steps.isaret.outputs.cache-hit != 'true' && github.event.schedule != '37 18 * * 1-5') || github.event_name != 'schedule'
+        if: steps.gerek.outputs.gonder == 'true'
       - name: Bildirimi gönder
-        if: (steps.isaret.outputs.cache-hit != 'true' && github.event.schedule != '37 18 * * 1-5') || github.event_name != 'schedule'
+        if: steps.gerek.outputs.gonder == 'true'
         env:
           SUPABASE_URL: https://jqmfvinbzgqyitqquzdc.supabase.co
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           VAPID_PRIVATE_KEY: ${{ secrets.VAPID_PRIVATE_KEY }}
-          FORCE_SEND: ${{ github.event.inputs.force || 'false' }}
+          FORCE_SEND: ${{ steps.gun.outputs.otomatik == 'true' && 'false' || 'true' }}
           PYTHONIOENCODING: utf-8
         run: python scripts/daily_push.py
       - name: Gönderildi işaretini kaydet
-        if: steps.isaret.outputs.cache-hit != 'true' && hashFiles('push-sent.flag') != ''
+        if: steps.gerek.outputs.gonder == 'true' && hashFiles('push-sent.flag') != ''
         uses: actions/cache/save@v4
         with:
           path: push-sent.flag
