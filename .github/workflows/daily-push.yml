@@ -54,10 +54,20 @@ jobs:
           # otomatik: GitHub zamanlayıcısı ya da dış zamanlayıcı; deneme: elle, hemen gönder
           if [ "$OLAY" = "schedule" ] || [ "$MOD" = "otomatik" ] || [ "$MOD" = "bekci" ]; then otomatik=true; else otomatik=false; fi
           if [ "$ZAMAN" = "37 18 * * 1-5" ] || [ "$MOD" = "bekci" ]; then bekci=true; else bekci=false; fi
+          tarih=$(TZ=Europe/Istanbul date +%F)
+          saat=$(TZ=Europe/Istanbul date +%-H)
+          erken=false
+          if [ "$bekci" = "true" ]; then
+            # Bekçi gecikip gece yarısından sonra başlarsa (20.10'da 00:50'de oldu) dünü denetler;
+            # 21:00'den önce başlarsa gönderim hâlâ sürüyor olabilir, hüküm vermez.
+            if [ "$saat" -lt 12 ]; then tarih=$(TZ=Europe/Istanbul date -d 'yesterday' +%F)
+            elif [ "$saat" -lt 21 ]; then erken=true; fi
+          fi
           echo "otomatik=$otomatik" >> "$GITHUB_OUTPUT"
           echo "bekci=$bekci" >> "$GITHUB_OUTPUT"
-          echo "tarih=$(TZ=Europe/Istanbul date +%F)" >> "$GITHUB_OUTPUT"
-          echo "tür: otomatik=$otomatik bekçi=$bekci"
+          echo "erken=$erken" >> "$GITHUB_OUTPUT"
+          echo "tarih=$tarih" >> "$GITHUB_OUTPUT"
+          echo "tür: otomatik=$otomatik bekçi=$bekci denetlenen gün=$tarih erken=$erken"
       - name: Bugün gönderildi mi?
         id: isaret
         uses: actions/cache/restore@v4
@@ -71,9 +81,12 @@ jobs:
         if: steps.gun.outputs.bekci == 'true'
         env:
           GONDERILDI: ${{ steps.isaret.outputs.cache-hit }}
+          ERKEN: ${{ steps.gun.outputs.erken }}
+          TARIH: ${{ steps.gun.outputs.tarih }}
         run: |
-          if [ "$GONDERILDI" = "true" ]; then echo "Bugünün bildirimi gönderilmiş."; exit 0; fi
-          if [ "$(TZ=Europe/Istanbul date +%u)" -ge 6 ]; then echo "Hafta sonu; bildirim beklenmiyor."; exit 0; fi
+          if [ "$ERKEN" = "true" ]; then echo "21:00'den önce; gönderim sürüyor olabilir, denetim yapılmadı."; exit 0; fi
+          if [ "$GONDERILDI" = "true" ]; then echo "$TARIH bildirimi gönderilmiş."; exit 0; fi
+          if [ "$(date -d "$TARIH" +%u)" -ge 6 ]; then echo "Hafta sonu; bildirim beklenmiyor."; exit 0; fi
           echo "::error::Bugünün günlük portföy bildirimi gönderilemedi (çalışmalar atlanmış ya da hata olmuş). Actions > Günlük portföy bildirimi > Run workflow ile elle gönderilebilir."
           exit 1
       - name: Gönderim gerekli mi?
