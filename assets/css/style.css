@@ -877,6 +877,14 @@ html[data-theme="dark"] .cls-fon { --cls: #3b7ddd; } html[data-theme="dark"] .cl
   .cash-table th:nth-child(4), .cash-table td:nth-child(4), .cash-table th:nth-child(5), .cash-table td:nth-child(5) { display: none; }
 }
 
+/* Açılır bölüm kartları (Panel: Fonlar, ETF'ler, Kripto) */
+.sec-toggle { cursor: pointer; user-select: none; }
+.sec-toggle:hover { background: linear-gradient(90deg, color-mix(in srgb, var(--sec) 16%, var(--surface)), var(--surface) 75%); }
+.sec-toggle:focus-visible { outline: 2px solid var(--sec); outline-offset: -2px; }
+.sec-caret { flex: none; margin-left: 4px; color: var(--sec); font-size: 1rem; transition: transform .18s; }
+.sec-closed .sec-caret { transform: rotate(-90deg); }
+.sec-closed .sec-head { border-bottom: 0; }
+
 /* Yazdırma / PDF: yalnızca rapor sayfaları, her biri bir A4 */
 @media print {
   @page { size: A4; margin: 0; }

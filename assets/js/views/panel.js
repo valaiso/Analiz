@@ -514,6 +514,8 @@ export function renderPanel(ctx) {
       badge: positionSnapshotConsistent ? plBadge(group.rows) : null,
       figure: tl(group.groupValue),
       figureSub: isNum(share(group.groupValue)) ? `portföyün ${pct(share(group.groupValue), 1)}` : `${group.rows.length} varlık`,
+      // Kapalı başlar: başlığa basınca türler ve kutucuklar açılır.
+      collapsible: `panel-${group.label}`,
     }, ...children);
     // Quant "kategori liderleri" düzeni: her varlık bir kutucuk; fonlar türe göre (PPF'ler yan yana).
     for (const group of positionGroups) {

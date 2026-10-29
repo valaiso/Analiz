@@ -131,6 +131,7 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
   const unknownCodes = [...new Set(ready.filter((row) => !DB.byCode.has(row.code)).map((row) => row.code))];
   // Fiyat geçmişi eksik semboller beklenmeden atlanır; diğer işlemler aktarılır.
   const importable = ready.filter((row) => DB.byCode.has(row.code));
+  const reusedCount = importable.filter((row) => row.fromStore).length;
   const line = (row) => h('tr', {},
     h('td', {}, row.date || '—'),
     h('td', {}, row.code || '—'),
@@ -182,11 +183,13 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
           logMidas(`Kapalı dönem temizliği: ${lifecycleResult.removedTransactions} Midas işlem kaydı, ${lifecycleResult.pruned.removed} fiyat geçmişi silindi; ${lifecycleResult.pruned.trimmed} açık varlığın geçmişi alış tarihinden başlatıldı.`);
         }
         const result = addMidasTransactions(importable);
-        logMidas(`${result.added} yeni işlem eklendi, ${result.updated} mevcut Midas işlemi güncellendi, ${result.skipped} kayıt atlandı.`);
+        // Erken durulan okumada kayıtlı eski işlemler silinip aynen geri yazılır; yeni sayılmaz.
+        const added = Math.max(0, result.added - reusedCount);
+        logMidas(`${added} yeni işlem eklendi, ${result.updated} mevcut Midas işlemi güncellendi, ${result.skipped} kayıt atlandı${reusedCount ? `, ${reusedCount} kayıtlı işlem korundu` : ''}.`);
         close();
-        toast(result.added || result.updated
-          ? `${result.added} yeni, ${result.updated} güncellenmiş Midas işlemi kaydedildi`
-          : 'Bu işlemler zaten kayıtlı');
+        toast(added || result.updated
+          ? `${added} yeni, ${result.updated} güncellenmiş Midas işlemi kaydedildi`
+          : 'Yeni işlem yok; kayıtlar güncel');
         ctx.refresh();
       },
     }, unknownCodes.length
@@ -195,7 +198,8 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
 
   const body = h('div', { class: 'stack' },
     h('p', { class: 'dim' },
-      `${candidates.length} satır okundu (${scanInfo.scannedPages} sayfa). ${ready.length} satır işlem bilgisi açısından tam; `
+      `${candidates.length - candidates.filter((row) => row.fromStore).length} satır okundu (${scanInfo.scannedPages} sayfa)`
+      + `${reusedCount ? `; ${reusedCount} kayıtlı eski işlem korunuyor` : ''}. ${ready.length} satır işlem bilgisi açısından tam; `
       + `${unknownCodes.length} kodda alış tarihinden itibaren fiyat geçmişi hâlâ eksik, ${unmatched.length} satırda işlem bilgisi eksik. `
       + 'Aktarım için sembollerin fiyat geçmişi gerekir. Midas’a hiçbir emir gönderilmez; ek fiyat geçmişleri hesabının ortak havuzuna eşitlenir, işlemler bu tarayıcıda kalır.'),
     quoteNotice,
@@ -204,6 +208,28 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
     actions);
   close = openModal('Midas işlem aktarımı · önizleme', body, { wide: true });
 }
+/**
+ * Midas okumasında eski sayfaları atlamak için durma tarihi: bu hesap türündeki (yatırım ya da
+ * kripto) kayıtlı en son Midas işleminden 3 gün öncesi. Güvenlik payı aynı gün/yakın günlerde
+ * gecikmeli görünen emirleri de yeniden okutur; kayıt yoksa tamamı okunur.
+ */
+function midasStopBefore(crypto) {
+  const dates = allTransactions().filter((tx) => tx.source === 'midas'
+    && (DB.byCode.get(tx.code)?.kind === 'CRYPTO') === crypto && /^\d{4}-\d{2}-\d{2}/.test(tx.date || ''))
+    .map((tx) => tx.date.slice(0, 10)).sort();
+  if (!dates.length) return '';
+  const last = new Date(`${dates.at(-1)}T12:00:00Z`);
+  last.setUTCDate(last.getUTCDate() - 3);
+  return last.toISOString().slice(0, 10);
+}
+
+/** Kayıtlı Midas işlemini eklentinin satır biçimine çevirir (erken durulan okumada birleştirmek için). */
+const storedAsRow = (tx) => ({
+  date: tx.date, time: tx.time || '', type: tx.type, code: tx.code, units: tx.units, price: tx.price,
+  fee: tx.fee || 0, withholdingTax: tx.withholdingTax || 0, currency: tx.currency || '', sourceId: tx.sourceId || '',
+  missing: [], fromStore: true,
+});
+
 async function readMidas(ctx, button) {
   button.disabled = true;
   button.textContent = 'Midas ve fiyat verileri okunuyor…';
@@ -211,13 +237,25 @@ async function readMidas(ctx, button) {
   logMidas('Fiyat havuzunda olmayan semboller için Midas işlem geçmişindeki açık alış döneminden başlayan fiyat geçmişi aranacak; mevcut ek varlıkların fiyatları da yenilenecek.');
   let accountLogged = false;
   try {
+    const stopBefore = midasStopBefore(false);
+    if (stopBefore) logMidas(`${stopBefore} öncesindeki işlemler zaten kayıtlı; okuyucu oraya gelince eski sayfaları atlayacak.`);
     const result = await requestMidasHistory(
       DB.funds.map((fund) => fund.code),
       DB.funds.filter((fund) => fund.localMarketData)
         .map((fund) => ({ code: fund.code, source: fund.catSrc, kind: fund.kind, startDate: fund.startDate })),
       DB.funds.filter((fund) => ['YAT', 'EMK', 'GYF', 'GSYF'].includes(fund.kind))
         .map((fund) => fund.code),
+      600_000, { stopBefore },
     );
+    if (result.stoppedEarly) {
+      // Yalnızca yeni sayfalar okundu: durma tarihinden önceki kısım kayıtlı işlemlerden tamamlanır.
+      // Sınır net bölünür (okunan satırlardan durma tarihinden öncekiler atılır) ki hiçbir emir iki kez sayılmasın.
+      const older = allTransactions().filter((tx) => tx.source === 'midas'
+        && DB.byCode.get(tx.code)?.kind !== 'CRYPTO' && tx.date < result.stopBefore).map(storedAsRow);
+      const fresh = result.rows.filter((row) => !row.date || row.date >= result.stopBefore);
+      logMidas(`${result.scannedPages} sayfa okundu, kayıtlı son işlemlere ulaşılınca durdu; ${result.stopBefore} öncesindeki ${older.length} kayıtlı işlem korunarak birleştirildi.`);
+      result.rows = [...older, ...fresh];
+    }
     logMidas(`Midas okuyucu sürümü: ${result.extensionVersion}.`);
     saveMidasAccountSnapshot({
       capturedAt: new Date().toISOString(),
@@ -357,10 +395,15 @@ async function readMidasCrypto(ctx, button) {
   button.textContent = 'Kripto emir geçmişi okunuyor…';
   logMidas('Midas kripto emir geçmişi taraması başlatıldı.');
   try {
+    const stopBefore = midasStopBefore(true);
+    if (stopBefore) logMidas(`${stopBefore} öncesindeki kripto emirleri zaten kayıtlı; okuyucu oraya gelince eski sayfaları atlayacak.`);
     const result = await requestMidasHistory([], DB.funds.filter((fund) => fund.localMarketData
       && fund.kind === 'CRYPTO' && !['USDT', 'USDC'].includes(String(fund.code).toUpperCase()))
       .map((fund) => ({ code: fund.code, source: fund.catSrc, kind: fund.kind, startDate: fund.startDate })),
-    [], 600_000, { cryptoOnly: true });
+    [], 600_000, { cryptoOnly: true, stopBefore });
+    if (result.stoppedEarly) {
+      logMidas(`${result.scannedPages} sayfa okundu, kayıtlı son kripto emirlerine ulaşılınca durdu.`);
+    }
     logMidas(`Midas okuyucu sürümü: ${result.extensionVersion}.`);
     const cryptoPositionValue = (result.cryptoPositions || []).reduce((sum, position) => {
       const nativeValue = Number.isFinite(position.marketValue) ? position.marketValue

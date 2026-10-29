@@ -89,6 +89,8 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
         cryptoPositionsDiagnostic: data.response.cryptoPositionsDiagnostic || null,
         duplicateOrdersRemoved: Number(data.response.duplicateOrdersRemoved) || 0,
         ignoredStablecoinCount: Number(data.response.ignoredStablecoinCount) || 0,
+        stoppedEarly: data.response.stoppedEarly === true,
+        stopBefore: data.response.stopBefore || '',
         extensionVersion,
         marketData: data.response.marketData || {},
         marketErrors: data.response.marketErrors || {},
@@ -99,6 +101,8 @@ export function requestMidasHistory(knownCodes = [], localAssets = [], fundCodes
     window.postMessage({
       channel: CHANNEL, type: 'READ', requestId, knownCodes, localAssets, fundCodes,
       cryptoOnly: options.cryptoOnly === true,
+      // Bu tarihten önceki işlemler Analiz'de kayıtlı: eklenti oraya gelince sayfalamayı durdurur.
+      stopBefore: options.stopBefore || '',
     }, location.origin);
   }));
 }

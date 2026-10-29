@@ -64,15 +64,39 @@ export const SECTION_TONES = {
  * Renkli başlık bantlı bölüm kartı: simge rozeti, başlık/açıklama ve sağda
  * isteğe bağlı özet rakam (ör. grup toplamı ve portföydeki payı).
  */
-export function toneCard({ tone = 'blue', icon = '•', title, sub, badge, figure, figureSub }, ...children) {
-  return h('section', { class: `card sec sec-${tone}` },
-    h('div', { class: 'sec-head' },
-      h('span', { class: 'sec-icon', 'aria-hidden': 'true' }, icon),
-      h('div', { class: 'sec-title' }, h('h2', { text: title }),
-        sub || badge ? h('span', { class: 'sub' }, sub || '', badge || null) : null),
-      figure != null ? h('div', { class: 'sec-figure' },
-        h('strong', {}, figure), figureSub ? h('span', {}, figureSub) : null) : null),
-    h('div', { class: 'sec-body' }, ...children));
+// Açılır kartların durumu: panel her dakika yeniden çizilse de açılan kart açık kalır.
+const openCards = new Set();
+
+export function toneCard({ tone = 'blue', icon = '•', title, sub, badge, figure, figureSub, collapsible }, ...children) {
+  const open = !collapsible || openCards.has(collapsible);
+  const body = h('div', { class: 'sec-body', hidden: !open }, ...children);
+  const head = h('div', {
+    class: `sec-head${collapsible ? ' sec-toggle' : ''}`,
+    role: collapsible ? 'button' : null,
+    tabindex: collapsible ? '0' : null,
+    'aria-expanded': collapsible ? String(open) : null,
+  },
+  h('span', { class: 'sec-icon', 'aria-hidden': 'true' }, icon),
+  h('div', { class: 'sec-title' }, h('h2', { text: title }),
+    sub || badge ? h('span', { class: 'sub' }, sub || '', badge || null) : null),
+  figure != null ? h('div', { class: 'sec-figure' },
+    h('strong', {}, figure), figureSub ? h('span', {}, figureSub) : null) : null,
+  collapsible ? h('span', { class: 'sec-caret', 'aria-hidden': 'true' }, '▾') : null);
+  const card = h('section', { class: `card sec sec-${tone}${collapsible && !open ? ' sec-closed' : ''}` }, head, body);
+  if (collapsible) {
+    const toggle = () => {
+      const next = body.hidden;
+      body.hidden = !next;
+      if (next) openCards.add(collapsible); else openCards.delete(collapsible);
+      head.setAttribute('aria-expanded', String(next));
+      card.classList.toggle('sec-closed', !next);
+    };
+    head.addEventListener('click', toggle);
+    head.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); toggle(); }
+    });
+  }
+  return card;
 }
 
 /** sectionCard ile aynı imza, renkli başlık bandıyla. */
