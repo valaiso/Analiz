@@ -21,6 +21,7 @@ window.addEventListener('message', async (event) => {
       cryptoCodes: request.cryptoCodes || [],
       localAssets: request.localAssets || [], fundCodes: request.fundCodes || [],
       cryptoOnly: request.cryptoOnly === true,
+      stopBefore: typeof request.stopBefore === 'string' ? request.stopBefore : '',
     });
     window.postMessage({
       channel: 'ANALIZ_MIDAS_EXTENSION',

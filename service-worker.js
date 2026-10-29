@@ -29,6 +29,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       const cryptoOnly = message.cryptoOnly === true;
       const result = await chrome.tabs.sendMessage(tabs[0].id, {
         type: 'ANALIZ_SCAN_VISIBLE_HISTORY', cryptoOnly,
+        stopBefore: /^\d{4}-\d{2}-\d{2}$/.test(message.stopBefore || '') ? message.stopBefore : '',
       });
       if (!result?.ok) {
         sendResponse({ ...result, extensionVersion: chrome.runtime.getManifest().version });

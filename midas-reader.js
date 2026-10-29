@@ -919,7 +919,12 @@ function paginationState(direction, root) {
 
 const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
-async function collectCompletedHistory(cryptoOnly = false) {
+/**
+ * Emir geçmişini sayfa sayfa okur. `stopBefore` (YYYY-AA-GG) verilirse, Analiz'de o tarihten
+ * önceki işlemler zaten kayıtlı demektir: tablo en yeniden eskiye sıralıysa ve bir sayfanın tüm
+ * işlemleri o tarihten eskiyse kalan sayfalar okunmaz. Sıralama anlaşılamazsa tamamı okunur.
+ */
+async function collectCompletedHistory(cryptoOnly = false, stopBefore = '') {
   const collected = new Map();
   const scanStats = { headers: [], rowNodes: 0, cellCountMatches: 0, tradeDateMatches: 0,
     completedStatuses: 0, geometryTextTokens: 0, geometrySideTokens: 0, geometryDateTokens: 0, statuses: {} };
@@ -957,10 +962,38 @@ async function collectCompletedHistory(cryptoOnly = false) {
 
   // Midas bazı hesaplarda yüzlerce emri 5'li sayfalarda gösteriyor. Yalnızca
   // emir tablosunun sayfa okunu kullanarak ilerle; alım/satım kontrollerine dokunma.
+  let newestFirst = null;
+  let previousPage = null;
+  let stoppedEarly = false;
   while (pageCount < 300) {
-    for (const row of candidateElements(root, scanStats, cryptoOnly)) {
+    const pageRows = candidateElements(root, scanStats, cryptoOnly);
+    for (const row of pageRows) {
       const key = row.sourceId || row.text.replace(/\s+/g, ' ').trim();
       if (key) collected.set(key, row);
+    }
+
+    if (stopBefore) {
+      const dates = pageRows.map((row) => normalizeRow(row, cryptoOnly).date)
+        .filter((date) => /^\d{4}-\d{2}-\d{2}$/.test(date || ''));
+      if (dates.length) {
+        const max = dates.reduce((a, b) => (a > b ? a : b));
+        const min = dates.reduce((a, b) => (a < b ? a : b));
+        // Sıralamayı sayfa içinden ve sayfalar arasından anla.
+        for (let i = 1; i < dates.length; i += 1) {
+          if (dates[i - 1] > dates[i]) newestFirst = newestFirst === false ? false : true;
+          if (dates[i - 1] < dates[i]) newestFirst = false;
+        }
+        if (previousPage) {
+          if (max <= previousPage.min && previousPage.max > min) newestFirst = newestFirst === false ? false : true;
+          if (min > previousPage.max) newestFirst = false;
+        }
+        previousPage = { min, max };
+        if (newestFirst === true && max < stopBefore) {
+          stoppedEarly = true;
+          paginationStop = `Analiz'de kayıtlı son işlemlere (${stopBefore} öncesi) ulaşıldı; kalan eski sayfalar okunmadı.`;
+          break;
+        }
+      }
     }
 
     const next = paginationState('next', root);
@@ -1000,7 +1033,7 @@ async function collectCompletedHistory(cryptoOnly = false) {
   }
   if (paginationStop && initialBackCount) paginationStop = `${paginationStop} Başlangıç sayfasına dönmek için ${initialBackCount} önceki sayfa geçildi.`;
   scanStats.pages = pageCount + 1;
-  return { rows: [...collected.values()].slice(0, 500), pageCount, paginationStop, labels: historyDiagnostics(root), start, accountSummary: readAccountSummary(), scanStats };
+  return { rows: [...collected.values()].slice(0, 500), pageCount, paginationStop, labels: historyDiagnostics(root), start, accountSummary: readAccountSummary(), scanStats, stoppedEarly, stopBefore: stoppedEarly ? stopBefore : '' };
 }
 
 function parseLocaleNumber(value) {
@@ -1253,7 +1286,8 @@ function deduplicateOrders(rows) {
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message?.type !== 'ANALIZ_SCAN_VISIBLE_HISTORY') return undefined;
   const cryptoOnly = message.cryptoOnly === true;
-  collectCompletedHistory(cryptoOnly).then(({ rows, pageCount, paginationStop, labels, start, scanStats }) => {
+  const stopBefore = /^\d{4}-\d{2}-\d{2}$/.test(message.stopBefore || '') ? message.stopBefore : '';
+  collectCompletedHistory(cryptoOnly, stopBefore).then(({ rows, pageCount, paginationStop, labels, start, scanStats, stoppedEarly, stopBefore: stoppedAt }) => {
     const normalizedCandidates = rows.map((row) => normalizeRow(row, cryptoOnly));
     const uniqueRows = deduplicateOrders(normalizedCandidates);
     const duplicateOrdersRemoved = normalizedCandidates.length - uniqueRows.length;
@@ -1285,7 +1319,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     }
     sendResponse({ ok: true, rows: normalized, scannedPages: pageCount + 1,
       unmatchedCount: normalized.length - ready.length, accountSummary: cryptoOnly ? null : readAccountSummary(),
-      duplicateOrdersRemoved, ignoredStablecoinCount,
+      duplicateOrdersRemoved, ignoredStablecoinCount, stoppedEarly: stoppedEarly === true, stopBefore: stoppedAt || '',
       positions, positionsCaptured, positionsDiagnostic, cryptoPositions, cryptoPositionsCaptured, cryptoPositionsDiagnostic });
   }).catch((error) => {
     sendResponse({ ok: false, error: error.message || 'Midas emir geçmişi okunamadı.' });
