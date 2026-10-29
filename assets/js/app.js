@@ -9,6 +9,7 @@ import {
   saveMidasLiveQuotes, ensureMidasPositionsSynced, cleanupStoredData, allTransactions,
 } from './store.js';
 import { requestMidasLiveQuotes, requestServerLiveQuotes } from './midas-import.js';
+import { holidayName } from './holidays.js';
 import { syncPushSubscription, initPushButton } from './push.js';
 import { needsIntradayQuote } from './asset-groups.js';
 import { supabase } from './supabase-client.js';
@@ -355,6 +356,13 @@ function stalenessNotice() {
   if (last >= date) return null;
   const isWeekday = weekday >= 1 && weekday <= 5;
   if (!isWeekday || minutes < 10 * 60) return null;
+  const holiday = holidayName(date);
+  if (holiday) {
+    return h('div', { class: 'notice', style: 'margin-bottom:14px' },
+      h('b', {}, `Bugün resmî tatil (${holiday}). `),
+      `TEFAS tatillerde fiyat yayımlamaz; gösterilen değerler ${fmtDate(last)} kapanışına ait. `
+      + 'İlk iş günü sabahı fiyatlar kendiliğinden güncellenir.');
+  }
   return h('div', { class: 'notice warn', style: 'margin-bottom:14px' },
     h('b', {}, 'Bugünün fiyatları henüz yansımadı. '),
     `Gösterilen değerler ${fmtDate(last)} kapanışına ait. `,

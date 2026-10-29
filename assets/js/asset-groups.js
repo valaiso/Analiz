@@ -1,3 +1,4 @@
+import { isTurkishMarketClosed } from './holidays.js';
 import {
   DB, cachedHistory, exactPriceAtIndex, lastIndex, indexForDate, usdTryAtIndex,
 } from './data.js';
@@ -577,7 +578,10 @@ export function addSiteMarketMetrics(positions) {
     // son kapanış arasındaki küçük farklar "bugünkü hareket" sayılmaz. Bu fark
     // yalnızca taramayı yapan cihazda oluştuğu için PC ve telefon farklı
     // günlük kazanç gösteriyordu; hafta sonu her cihaz son işlem gününü gösterir.
-    const weekendToday = [0, 6].includes(new Date(`${marketToday}T12:00:00Z`).getUTCDay());
+    // Resmî tatillerde (Türkiye piyasası) de aynı: o günkü tarama farkı hareket sayılmaz.
+    // ABD varlıkları için yalnızca hafta sonu kapalıdır; Türkiye tatilinde onlar işlem görür.
+    const weekendToday = [0, 6].includes(new Date(`${marketToday}T12:00:00Z`).getUTCDay())
+      || (marketTimezone === 'Europe/Istanbul' && isTurkishMarketClosed(marketToday));
     const snapshotPriceIsToday = position.midasStockSnapshot && !weekendToday
       && dateInTimezone(position.midasSnapshotCapturedAt, marketTimezone) === marketToday;
     const historyPriceIsToday = quoteIndex >= 0 && quoteDate === marketToday;
