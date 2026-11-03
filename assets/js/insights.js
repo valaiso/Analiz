@@ -129,6 +129,7 @@ export function attribution(holdings, netInvested) {
 export function cashflowCalendar(txs) {
   const aylik = new Map();
   const gerceklesenYil = new Map();
+  const satislar = [];                        // satış başına gerçekleşen kâr/zarar
   const pozisyon = new Map();                 // ortalama maliyet takibi
 
   // The store supplies a stable chronological sequence (including same-day
@@ -147,7 +148,10 @@ export function cashflowCalendar(txs) {
       const miktar = Math.min(t.units, p.adet);
       const ortalama = p.adet > EPS ? p.maliyet / p.adet : 0;
       const kar = miktar * t.price * fx - masraf - miktar * ortalama;
-      if (!excludeProfit) gerceklesenYil.set(yil, (gerceklesenYil.get(yil) || 0) + kar);
+      if (!excludeProfit) {
+        gerceklesenYil.set(yil, (gerceklesenYil.get(yil) || 0) + kar);
+        satislar.push({ date: t.date, code: t.code, amount: kar, unmatched: t.units > p.adet + EPS });
+      }
       p.maliyet = Math.max(0, p.maliyet - miktar * ortalama);
       p.adet = Math.max(0, p.adet - miktar);
       aylik.set(ay, (aylik.get(ay) || 0) - (miktar * t.price * fx - masraf));
@@ -162,6 +166,7 @@ export function cashflowCalendar(txs) {
   return {
     monthly: [...aylik.entries()].sort().map(([month, amount]) => ({ month, amount })),
     realizedByYear: [...gerceklesenYil.entries()].sort().map(([year, amount]) => ({ year, amount })),
+    realizedSales: satislar,
   };
 }
 

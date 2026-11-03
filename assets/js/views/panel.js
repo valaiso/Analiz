@@ -611,15 +611,39 @@ export function renderPanel(ctx) {
   else root.append(stopajSection);
 
   if (nakit.realizedByYear.length) {
-    // Her yıl ayrı kutucuk: üst çizgi kâr/zarar rengini taşır.
+    // Portföy kaydı 16.10.2026'da başladı: başlıktaki rakam o günden beri gerçekleşen kâr/zarar.
+    // Yıl kutucukları o yılın tamamıdır (kayıt öncesi satışlar da dahil).
+    const startDate = Object.keys(valueHistory()).sort()[0] || null;
+    const sinceSales = startDate ? nakit.realizedSales.filter((sale) => sale.date >= startDate) : [];
+    const sinceTotal = sinceSales.reduce((sum, sale) => sum + sale.amount, 0);
+    const byCode = new Map();
+    for (const sale of sinceSales) byCode.set(sale.code, (byCode.get(sale.code) || 0) + sale.amount);
+    const codeRows = [...byCode.entries()].sort((x, y) => x[1] - y[1]);
     root.append(toneCard({
-      tone: 'slate', icon: '∑', title: 'Yıllara Göre Gerçekleşen Kâr/Zarar',
-      sub: 'Yalnızca satılan pozisyonlardan; açık pozisyonlar dahil değil',
-      figure: tlSigned(yearlyRealizedTotal), figureSub: 'toplam',
-    }, h('div', { class: 'year-tiles' }, nakit.realizedByYear.map((y) => h('div', { class: `year-tile ${cls(y.amount)}` },
-      h('span', {}, String(y.year)),
-      h('strong', { class: cls(y.amount) }, tlSigned(y.amount)))))));
+      tone: 'slate', icon: '∑', title: 'Gerçekleşen Kâr/Zarar',
+      sub: startDate
+        ? `Yalnızca satılan pozisyonlardan · ${fmtDate(startDate)}’den beri ve yıllara göre; açık pozisyonlar dahil değil`
+        : 'Yalnızca satılan pozisyonlardan; açık pozisyonlar dahil değil',
+      figure: tlSigned(startDate ? sinceTotal : yearlyRealizedTotal),
+      figureSub: startDate ? `${fmtDate(startDate)}’den beri` : 'toplam',
+    },
+    h('div', { class: 'year-tiles' },
+      startDate ? h('div', { class: `year-tile ${cls(sinceTotal)}` },
+        h('span', {}, `${fmtDate(startDate)}’DEN BERİ`),
+        h('strong', { class: cls(sinceTotal) }, tlSigned(sinceTotal))) : null,
+      nakit.realizedByYear.map((y) => h('div', { class: `year-tile ${cls(y.amount)}` },
+        h('span', {}, `${y.year} (TÜM YIL)`),
+        h('strong', { class: cls(y.amount) }, tlSigned(y.amount))))),
+    codeRows.length ? h('div', { class: 'table-wrap' }, h('table', {},
+      h('thead', {}, h('tr', {}, h('th', {}, `${fmtDate(startDate)}’den beri satılan`), h('th', {}, 'Gerçekleşen K/Z'))),
+      h('tbody', {}, codeRows.map(([code, amount]) => h('tr', {},
+        h('td', {}, h('span', { class: 'code-chip' }, code)),
+        h('td', { class: cls(amount) }, tlSigned(amount))))))) : null,
+    sinceSales.some((sale) => sale.unmatched)
+      ? h('p', { class: 'dim', style: 'margin:0;font-size:.8rem' },
+        'Bazı satışların alış kaydı eksik (yukarıdaki uyarı); onların eşleşmeyen kısmı hesaba katılmadı.') : null));
   }
+
 
 
   if (analysis.preRange) {
