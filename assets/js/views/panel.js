@@ -9,7 +9,7 @@ import { cashflowCalendar, realReturn } from '../insights.js';
 import {
   transactions, removeTransaction, daysSinceBackup, getMidasAccountSnapshot,
   valueHistory, recordPortfolioValue, recordMonthlySnapshot, setPortfolioValue, removePortfolioValue, cashflows, midasBaselineState, pendingCashflow,
-  updateMidasBaseline, confirmPendingCashflow, rejectPendingCashflow, removeCashflow, dividends, dividendsBetween, manualCashflowsBetween,
+  updateMidasBaseline, realizedSummaryCloud, syncRealizedSummary, confirmPendingCashflow, rejectPendingCashflow, removeCashflow, dividends, dividendsBetween, manualCashflowsBetween,
 } from '../store.js';
 import {
   currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics,
@@ -354,7 +354,11 @@ export function renderPanel(ctx) {
   // eldeki hisse/fon/ETF/kripto'nun maliyete göre K/Z'si + alınan bütün temettüler.
   const openPL = groupPL(displayPositions);
   const allDividends = dividends().reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-  const allTimePL = isNum(openPL.totalPct) ? yearlyRealizedTotal + openPL.total + allDividends : null;
+  const hasMidasHistory = txs.some((tx) => tx.source === 'midas');
+  if (hasMidasHistory) syncRealizedSummary(yearlyRealizedTotal, nakit.realizedByYear);
+  const realizedAll = hasMidasHistory ? yearlyRealizedTotal
+    : (isNum(realizedSummaryCloud()?.total) ? realizedSummaryCloud().total : yearlyRealizedTotal);
+  const allTimePL = isNum(openPL.totalPct) ? realizedAll + openPL.total + allDividends : null;
   const heroGainBox = () => {
     const box = h('div', { class: 'hero-toggle', role: 'button', tabindex: '0', title: 'Dokun: günlük ⇄ toplam kazanç' });
     const paint = () => {
@@ -384,14 +388,14 @@ export function renderPanel(ctx) {
     h('div', { class: 'hero-figures' },
       heroGainBox(),
       h('div', { title: isNum(allTimePL)
-        ? `Gerçekleşen (satılanlar, bütün yıllar) ${tlSigned(yearlyRealizedTotal)} + eldekiler ${tlSigned(openPL.total)}`
+        ? `Gerçekleşen (satılanlar, bütün yıllar) ${tlSigned(realizedAll)} + eldekiler ${tlSigned(openPL.total)}`
           + `${allDividends ? ` + temettü ${tl(allDividends)}` : ''}`
           + `${real && isNum(real.twr) ? ` · ${fmtDate(real.startDate)}’den beri gerçek getiri ${pctSigned(real.twr)}` : ''}`
         : '' },
         h('span', {}, 'Toplam kâr/zarar'),
         h('strong', { class: heroTrend(allTimePL) }, isNum(allTimePL) ? tlSigned(allTimePL) : '—'),
         h('em', {}, isNum(allTimePL)
-          ? `başlangıçtan beri · satılanlar ${tlSigned(yearlyRealizedTotal)} + eldekiler ${tlSigned(openPL.total)}${allDividends ? ` + temettü ${tl(allDividends)}` : ''}`
+          ? `başlangıçtan beri · satılanlar ${tlSigned(realizedAll)} + eldekiler ${tlSigned(openPL.total)}${allDividends ? ` + temettü ${tl(allDividends)}` : ''}`
           : 'pozisyonlar doğrulanınca hesaplanır')),
       h('div', {},
         h('span', {}, 'Stopaj (tahmini)'),
