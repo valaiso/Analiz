@@ -461,10 +461,20 @@ export function midasStockAccountValue(measuredStockRows) {
   let positions = 0;
   let capturedPositions = 0;
   let capturedComplete = true;
+  // Nakit = Midas toplamı − taramadaki pozisyon değerleri. Midas fon fiyatını kuruşa yuvarlar
+  // (ör. 0,11559 → 0,12); yuvarlamayla uyumlu TEFAS fiyatı varsa tam fiyat kullanılır,
+  // döviz de tarama gününün kuruyla çevrilir. Aksi halde nakit ve toplam birkaç yüz TL kayar.
+  const scanDay = dateInTimezone(snapshot?.stockCapturedAt || snapshot?.capturedAt, 'Europe/Istanbul');
+  const scanIndex = scanDay ? indexForDate(scanDay) : -1;
   for (const row of measuredStockRows || []) {
-    const fx = currencyFxToTRY(row.code, row.currency, latestIndex);
-    const capturedValue = row.units > 0 && row.midasPrice > 0 && Number.isFinite(fx)
-      ? row.units * row.midasPrice * fx : null;
+    const fx = currencyFxToTRY(row.code, row.currency, scanIndex >= 0 ? scanIndex : latestIndex);
+    let unitPrice = row.midasPrice;
+    if (row.currency !== 'USD' && unitPrice > 0 && scanIndex >= 0) {
+      const exact = exactPriceAtIndex(cachedHistory(row.code), scanIndex);
+      if (exact && Math.abs(exact - unitPrice) <= 0.005 + 1e-9) unitPrice = exact;
+    }
+    const capturedValue = row.units > 0 && unitPrice > 0 && Number.isFinite(fx)
+      ? row.units * unitPrice * fx : null;
     if (capturedValue === null) capturedComplete = false;
     else capturedPositions += capturedValue;
     positions += Number.isFinite(row.marketValueTRY) ? row.marketValueTRY : capturedValue ?? 0;
