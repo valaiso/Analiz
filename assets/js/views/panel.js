@@ -17,7 +17,7 @@ import {
   midasBaseline, unexplainedChange,
 } from '../asset-groups.js';
 import { assetLogo } from '../logos.js';
-import { tile, fundParts, groupTiles, plBadge, groupPL } from './tiles.js';
+import { tile, fundParts, groupTiles, plBadge } from './tiles.js';
 import { kpiCard, plCard, sectionCard, toneCard, groupStrip, SECTION_TONES, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
 /**
@@ -339,9 +339,12 @@ export function renderPanel(ctx) {
       ? 'Midas pozisyonları doğrulanana kadar günlük değişim hesaplanmıyor'
       : `${fmtDate(totals.prevDate)} kapanışına göre`;
   const heroTrend = (value) => (value > 0 ? 'hero-up' : value < 0 ? 'hero-down' : '');
-  // Toplam kazanç: açık pozisyonların maliyete göre kâr/zararı (temerrüt fonları hariç),
-  // Fonlar/ETF/Kripto kartlarındaki "Toplam" rozetiyle aynı hesap.
-  const totalGain = positionSnapshotConsistent ? groupPL(displayPositions) : { total: null, totalPct: null };
+  // Toplam kazanç: grafikteki "portföy değeri − yatırılan anapara" farkıyla aynı hesap
+  // (ilk kayıttan beri, para giriş/çıkışı hariç; yüzde zaman ağırlıklı). Maliyete göre
+  // kâr/zarar Fonlar/ETF/Kripto kartlarındaki "Toplam" rozetlerinde kalır.
+  const totalGain = real && isNum(real.twr)
+    ? { total: real.profit, totalPct: real.twr }
+    : { total: null, totalPct: null };
   const heroGainBox = () => {
     const box = h('div', { class: 'hero-toggle', role: 'button', tabindex: '0', title: 'Dokun: günlük ⇄ toplam kazanç' });
     const paint = () => {
