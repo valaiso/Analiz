@@ -1,8 +1,7 @@
 /* Fonlar: arama, risk-getiri haritası, karşılaştırma ve fon detayı. */
 
 import {
-  h, bigTL, pct, pctSigned, money, num, cls, isNum, colorAt, debounce, openModal,
-  fmtDate, addDays, toast,
+  h, bigTL, pct, pctSigned, money, num, cls, isNum, colorAt, debounce, openModal, fmtDate, addDays, toast,
 } from '../util.js';
 import {
   DB, loadHistory, loadHistories, cachedHistory, priceAtIndex, lastIndex, indexForDate,
@@ -10,7 +9,7 @@ import {
 import { lineChart, donutWithLegend, scatterChart, correlationTable } from '../charts.js';
 import { dailyReturns, correlation } from '../portfolio.js';
 import { rollingReturns } from '../insights.js';
-import { sectionCard, sortableTable, RANGES, rangeSelector, tonedSection } from './common.js';
+import { sortableTable, RANGES, rangeSelector, tonedSection } from './common.js';
 
 const PAGE_SIZE = 60;
 const MAX_KARSILASTIRMA = 5;

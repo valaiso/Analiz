@@ -7,12 +7,12 @@ import {
   DB, priceOnDate, lastDate, indexForDate, addLocalMarketAssets, pruneLocalMarketAssets, usdTryAtIndex,
 } from '../data.js';
 import {
-  transactions, addTransaction, updateTransaction, removeTransaction,
-  allTransactions, addMidasTransactions, isStoredMidasTransaction, saveMidasAccountSnapshot, getMidasAccountSnapshot,
-  pruneMidasHistory, trackingStart, afterTrackingStart, dividends, addDividend, removeDividend, cashflows, addManualCashflow, removeCashflow,
+  transactions, addTransaction, updateTransaction, removeTransaction, allTransactions, addMidasTransactions,
+  isStoredMidasTransaction, saveMidasAccountSnapshot, pruneMidasHistory, trackingStart, afterTrackingStart,
+  dividends, addDividend, removeDividend, cashflows, addManualCashflow, removeCashflow,
 } from '../store.js';
 import { currentMidasPositions } from '../asset-groups.js';
-import { sectionCard, fundPicker, tonedSection } from './common.js';
+import { fundPicker, tonedSection } from './common.js';
 import { requestMidasHistory } from '../midas-import.js';
 
 function transactionCycles(rows) {

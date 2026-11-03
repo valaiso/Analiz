@@ -1,13 +1,12 @@
 /* Dağılım: Midas canlı pozisyonları veya manuel işlem kayıtlarından türetilir. */
 
-import { h, tl, tlSigned, pct, pctSigned, colorAt, isNum, units as fmtUnits } from '../util.js';
-import { DB } from '../data.js';
+import { h, tl, tlSigned, pct, pctSigned, colorAt, isNum } from '../util.js';
 import { donutWithLegend, barChart, stackedAreaChart } from '../charts.js';
 import { weightHistory, attribution } from '../insights.js';
 import { transactions, getMidasAccountSnapshot, monthlySnapshots } from '../store.js';
-import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType, fundTypeLabel, assetLabel, midasStockAccountValue, groupFundsByType } from '../asset-groups.js';
+import { currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, groupAssetRows, assetType, fundTypeLabel, midasStockAccountValue, groupFundsByType } from '../asset-groups.js';
 import { assetLogo } from '../logos.js';
-import { groupDistribution, plBadge } from './tiles.js';
+import { plBadge } from './tiles.js';
 import { treemapCard, monthlyAllocationCard, classBarCard } from './allocation-charts.js';
 import { sectionCard, emptyState, toneCard, SECTION_TONES } from './common.js';
 

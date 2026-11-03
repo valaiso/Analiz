@@ -1,6 +1,6 @@
 /* Görünümlerin paylaştığı küçük bileşenler. */
 
-import { h, cls, isNum } from '../util.js';
+import { h, isNum } from '../util.js';
 import { searchFunds } from '../data.js';
 
 /* Telefonda pozisyon tablolarında yalnızca Varlık, Adet ve Günlük görünür.
@@ -25,19 +25,6 @@ export function kpiCard({ label, value, sub, subClass, valueClass, hint, tone })
     h('div', { class: `kpi-value ${valueClass || ''}`, text: value }),
     sub != null ? h('div', { class: `kpi-sub ${subClass || ''}`, text: sub }) : null,
     hint ? h('div', { class: 'kpi-hint', text: hint }) : null);
-}
-
-/** Kâr/zarar için otomatik renklendiren kart. */
-export function plCard({ label, amount, pct, hint, formatMoney, formatPct, tone }) {
-  return kpiCard({
-    label,
-    value: formatMoney(amount),
-    valueClass: cls(amount),
-    sub: isNum(pct) ? formatPct(pct) : null,
-    subClass: cls(pct),
-    hint,
-    tone,
-  });
 }
 
 export function sectionCard(title, sub, ...children) {
@@ -101,14 +88,6 @@ export function toneCard({ tone = 'blue', icon = '•', title, sub, badge, figur
 
 /** sectionCard ile aynı imza, renkli başlık bandıyla. */
 export const tonedSection = (tone, icon, title, sub, ...children) => toneCard({ tone, icon, title, sub }, ...children);
-
-/** Alt grup şeridi: renkli işaret, ad, tutar ve portföy payı çubuğu. */
-export function groupStrip({ label, value, share }) {
-  return h('div', { class: 'sec-strip' },
-    h('span', { class: 'sec-strip-name' }, label),
-    h('span', { class: 'sec-strip-bar' }, isNum(share) ? h('i', { style: `width:${Math.min(100, Math.max(1, share)).toFixed(1)}%` }) : null),
-    h('span', { class: 'sec-strip-value' }, value));
-}
 
 export function emptyState(title, message, actionLabel, onAction) {
   return h('div', { class: 'card empty' },

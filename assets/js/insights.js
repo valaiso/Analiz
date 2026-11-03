@@ -6,7 +6,7 @@
    portfolio.js pozisyon ve getiri çekirdeğini tutar; bu modül onun üzerine
    kurulan ikincil analizleri barındırır. */
 
-import { DB, cachedHistory, priceAtIndex, exactPriceAtIndex, indexForDate, lastIndex, fxToTRY }
+import { cachedHistory, priceAtIndex, indexForDate, lastIndex, fxToTRY }
   from './data.js';
 import { isNum } from './util.js';
 import { correlation, dailyReturns } from './portfolio.js';
@@ -354,56 +354,6 @@ export function counterfactual(txs, benchValues) {
     gain: deger - yatirilan,
     gainPct: yatirilan > EPS ? ((deger - yatirilan) / yatirilan) * 100 : null,
   };
-}
-
-/* --------------------------------------------------------- tutarlılık denetimi */
-
-/** Girilen fiyatın TEFAS fiyatından bu orandan fazla sapması şüpheli sayılır. */
-const FIYAT_SAPMA_ESIGI = 0.05;
-
-/**
- * İşlem kayıtlarındaki olası hataları bulur: yazım yanlışı, mükerrer kayıt,
- * fon kurulmadan önceki tarih. Hiçbiri veriyi değiştirmez, yalnızca uyarır.
- */
-export function consistencyChecks(txs) {
-  const uyarilar = [];
-  const gorulen = new Map();
-
-  for (const t of txs) {
-    if (!t.code || !isNum(t.units) || !isNum(t.price)) continue;
-
-    // 1) Mükerrer kayıt: aynı fon, tarih, adet ve fiyat
-    const anahtar = `${t.code}|${t.date}|${t.units}|${t.price}`;
-    if (gorulen.has(anahtar)) {
-      uyarilar.push({ type: 'mukerrer', code: t.code, date: t.date,
-        message: `${t.code} · ${t.date}: birebir aynı işlem iki kez girilmiş olabilir.` });
-    }
-    gorulen.set(anahtar, true);
-
-    const idx = indexForDate(t.date);
-    const hist = cachedHistory(t.code);
-    if (!hist) continue;
-
-    // 2) Fonun verisi başlamadan önceki tarih
-    if (idx >= 0 && idx < hist.i) {
-      uyarilar.push({ type: 'erken', code: t.code, date: t.date,
-        message: `${t.code} · ${t.date}: bu tarihte fonun TEFAS'ta fiyatı yok.` });
-      continue;
-    }
-
-    // 3) Girilen fiyat, o günün gerçek fiyatından belirgin sapıyor
-    const gercek = idx >= 0 ? exactPriceAtIndex(hist, idx) : null;
-    if (isNum(gercek) && gercek > 0) {
-      const sapma = Math.abs(t.price / gercek - 1);
-      if (sapma > FIYAT_SAPMA_ESIGI) {
-        uyarilar.push({ type: 'fiyat', code: t.code, date: t.date, entered: t.price,
-          actual: gercek, deviation: sapma * 100,
-        message: `${t.code} · ${t.date}: girdiğin işlem fiyatı ${t.price}, ${DB.byCode.get(t.code)?.catSrc === 'Yahoo Finance' || DB.byCode.get(t.code)?.catSrc === 'ekstra' ? 'piyasa' : 'TEFAS'} fiyatı `
-            + `${gercek}. Yazım hatası olabilir.` });
-      }
-    }
-  }
-  return uyarilar;
 }
 
 /**

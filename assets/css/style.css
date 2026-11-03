@@ -81,11 +81,6 @@ h3 { font-size: .95rem; }
 
 button, select, input { font: inherit; color: inherit; }
 
-.sr-only {
-  position: absolute; width: 1px; height: 1px; overflow: hidden;
-  clip: rect(0 0 0 0); white-space: nowrap;
-}
-
 /* -------------------------------------------------------- uygulama kabuğu */
 
 .app-shell { min-height: 100vh; display: grid; grid-template-columns: 232px minmax(0, 1fr); }
@@ -544,7 +539,6 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
 .rp-empty { padding: 8px 10px; border-radius: 6px; border: 1px dashed var(--rp-line); color: var(--rp-dim); font-size: 9.5px; }
 .rp-list { margin: 0; padding-left: 15px; display: grid; gap: 3px; font-size: 9.5px; }
 .rp-alert { margin-top: 6px; padding: 6px 9px; border-radius: 6px; background: #fdf3e1; border-left: 3px solid #b7791f; font-size: 9.5px; }
-.rp-page .chart .axis { font-size: 9px; }
 
 .rp-table { width: 100%; border-collapse: collapse; font-size: 9.5px; table-layout: fixed; }
 .rp-table th { position: static; background: #0b2a5b; color: #fff; font-size: 7.5px; letter-spacing: .06em; padding: 4px 5px;
@@ -663,13 +657,6 @@ html[data-theme="dark"] .sec-slate, html[data-theme="dark"] .sec-indigo, html[da
 /* Fon türü şeridi: ad, portföy payı çubuğu, tutar */
 .sec-group { display: grid; gap: 6px; }
 .sec-group + .sec-group { padding-top: 6px; border-top: 1px dashed var(--border); }
-.sec-strip { display: grid; grid-template-columns: minmax(120px, auto) 1fr auto; align-items: center; gap: 12px;
-  padding: 7px 10px; border-radius: 8px; background: color-mix(in srgb, var(--sec) 7%, var(--surface)); }
-.sec-strip-name { font-weight: 700; font-size: .88rem; display: flex; align-items: center; gap: 8px; }
-.sec-strip-name::before { content: ""; width: 8px; height: 8px; border-radius: 2px; background: var(--sec); }
-.sec-strip-bar { height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--sec) 12%, var(--surface)); overflow: hidden; }
-.sec-strip-bar i { display: block; height: 100%; border-radius: 99px; background: var(--sec); }
-.sec-strip-value { font-size: .84rem; font-weight: 600; font-variant-numeric: tabular-nums; white-space: nowrap; }
 
 /* Yıllık gerçekleşen K/Z kutucukları */
 .year-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
@@ -683,17 +670,15 @@ html[data-theme="dark"] .sec-slate, html[data-theme="dark"] .sec-indigo, html[da
   .sec-head { padding: 12px 13px; flex-wrap: wrap; }
   .sec-figure { flex-basis: 100%; justify-items: start; text-align: left; padding-left: 46px; }
   .sec-body { padding: 12px 13px 14px; }
-  .sec-strip { grid-template-columns: 1fr auto; }
-  .sec-strip-bar { grid-column: 1 / -1; grid-row: 2; }
 }
 
 /* Telefonda pozisyon tabloları ekrana sığar: Varlık · Adet · Günlük (dokununca Toplam K/Z).
    Yatay kaydırma olmaz; uzun açıklamalar alt satıra iner. */
 @media (max-width: 640px) {
   .pos-table { overflow-x: visible; }
-  .pos-table table, .aligned-cols.pos-table table { min-width: 0 !important; width: 100%; table-layout: fixed; }
+  .pos-table table { min-width: 0 !important; width: 100%; table-layout: fixed; }
   .pos-table th, .pos-table td { width: auto !important; padding: 8px 5px; white-space: normal; overflow-wrap: anywhere; }
-  .pos-table .col-m-hide, .pos-table .col-total { display: none; }
+  .pos-table .col-total { display: none; }
   body.pos-show-total .pos-table .col-total { display: table-cell; }
   body.pos-show-total .pos-table .col-daily { display: none; }
   .pos-table th:first-child, .pos-table td:first-child { width: 46% !important; }
@@ -712,7 +697,6 @@ html[data-theme="dark"] .sec-slate, html[data-theme="dark"] .sec-indigo, html[da
 
 /* Varlık logosu: kodun solunda yuvarlak */
 .asset-cell { display: inline-flex; align-items: center; gap: 9px; min-width: 0; vertical-align: middle; }
-.asset-names { display: inline-flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
 .asset-logo {
   position: relative; flex: 0 0 28px; width: 28px; height: 28px; border-radius: 50%; overflow: hidden;
   display: grid; place-items: center; background: var(--logo-bg, #64748b); color: #fff;
@@ -733,7 +717,7 @@ html[data-theme="dark"] .sec-slate, html[data-theme="dark"] .sec-indigo, html[da
 
 @media (max-width: 640px) {
   /* Telefonda yalnızca logo + kod: açıklama (PPF, ETF adı vb.) gizlenir */
-  .pos-table .asset-label, .pos-table td:first-child .pill { display: none !important; }
+  .pos-table td:first-child .pill { display: none !important; }
   .asset-logo { flex-basis: 32px; width: 32px; height: 32px; }
   .pos-table .asset-cell .code-chip { background: none; border: 0; padding: 0; font-size: .92rem; }
 }
@@ -915,13 +899,6 @@ html[data-theme="dark"] .cls-fon { --cls: #3b7ddd; } html[data-theme="dark"] .cl
     break-after: page; page-break-after: always; margin: 0; }
   .rp-page:last-child { break-after: auto; page-break-after: auto; }
 }
-/* Alt alta duran pozisyon tablolarında sütunlar aynı hizada */
-.aligned-cols table { table-layout: fixed; min-width: 860px; }
-.aligned-cols th, .aligned-cols td { overflow: hidden; text-overflow: ellipsis; }
-.aligned-cols th:nth-child(1), .aligned-cols td:nth-child(1) { width: 26%; text-align: left; white-space: normal; }
-.aligned-cols th:nth-child(n+2), .aligned-cols td:nth-child(n+2) { width: 10%; }
-.aligned-cols th:nth-child(6), .aligned-cols td:nth-child(6),
-.aligned-cols th:nth-child(7), .aligned-cols td:nth-child(7) { width: 12%; white-space: normal; }
 
 /* Günlük bildirim zili: yalnızca telefonda, tema düğmesinin solunda; açıkken dolu ve renkli */
 .push-btn { display: none; color: var(--text-dim); }

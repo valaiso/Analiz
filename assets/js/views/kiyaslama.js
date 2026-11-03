@@ -5,8 +5,7 @@ import { counterfactual } from '../insights.js';
 import { transactions, valueHistory, cashflows, trackingStart, afterTrackingStart } from '../store.js';
 import { DB, indexForDate } from '../data.js';
 import { lineChart } from '../charts.js';
-import { sliceLastDays } from '../portfolio.js';
-import { sectionCard, emptyState, rangeSelector, RANGES, tonedSection } from './common.js';
+import { emptyState, rangeSelector, tonedSection } from './common.js';
 
 const BENCH_STYLES = {
   BIST100: { color: 'var(--c2)' },
@@ -28,12 +27,6 @@ function normalize(values) {
   const base = values.find((v) => isNum(v) && v > 0);
   if (!isNum(base)) return values.map(() => null);
   return values.map((v) => (isNum(v) && v > 0 ? (v / base) * 100 : null));
-}
-
-function totalReturn(values) {
-  const clean = values.filter((v) => isNum(v) && v > 0);
-  if (clean.length < 2) return null;
-  return (clean[clean.length - 1] / clean[0] - 1) * 100;
 }
 
 export function renderKiyaslama(ctx) {

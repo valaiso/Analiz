@@ -61,6 +61,7 @@ permissions:
   contents: read
   pages: write
   id-token: write
+  actions: write   # eski veri önbelleklerini silmek için
 
 # Aynı anda tek yayın çalışsın; sıradaki çalışma öncekini iptal etmesin.
 concurrency:
@@ -174,6 +175,17 @@ jobs:
           path: data
           key: tefas-db-${{ github.run_id }}
 
+      # Her çalışma yeni bir 19 MB'lık kopya bırakır; yalnızca en sonuncusu kullanılır.
+      # En yeni 3 kopya kalır, eskileri silinir (hata olursa yayını durdurmaz).
+      - name: Eski veri önbelleklerini temizle
+        if: success()
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ids=$(gh cache list --repo "${{ github.repository }}" --key tefas-db- --sort created_at --order desc --limit 100 --json id --jq '.[3:][].id')
+          for id in $ids; do gh cache delete "$id" --repo "${{ github.repository }}" || true; done
+          echo "$(echo "$ids" | grep -c . || true) eski önbellek silindi"
 
       - uses: actions/configure-pages@v5
 

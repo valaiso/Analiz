@@ -71,29 +71,9 @@ export const fmtDateShort = (iso) => (iso ? DATE_SHORT.format(new Date(iso + 'T0
 
 export const cls = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
 
-export const todayISO = () => new Date().toISOString().slice(0, 10);
-
-/** ISO tarihe gün ekler/çıkarır. */
-export function addDays(iso, days) {
-  const d = new Date(iso + 'T00:00:00');
-  d.setDate(d.getDate() + days);
-  return d.toISOString().slice(0, 10);
-}
-
-export function daysBetween(a, b) {
-  return Math.round((new Date(b + 'T00:00:00') - new Date(a + 'T00:00:00')) / 86400000);
-}
-
-export function escapeHtml(s) {
-  return String(s ?? '').replace(/[&<>"']/g, (c) => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
-  ));
-}
-
 /* ------------------------------------------------------------------ DOM */
 
 export const $ = (sel, root = document) => root.querySelector(sel);
-export const $$ = (sel, root = document) => Array.from(root.querySelectorAll(sel));
 
 /** Etiket + öznitelik + çocuklardan element üretir. */
 export function h(tag, attrs = {}, ...children) {
@@ -112,13 +92,6 @@ export function h(tag, attrs = {}, ...children) {
     el.append(child instanceof Node ? child : document.createTextNode(String(child)));
   }
   return el;
-}
-
-/** HTML metninden element üretir (tek kök). */
-export function fromHTML(html) {
-  const t = document.createElement('template');
-  t.innerHTML = html.trim();
-  return t.content.firstElementChild;
 }
 
 export function toast(message) {

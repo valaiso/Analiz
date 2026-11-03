@@ -1,11 +1,11 @@
 /* Rapor: aylık portföy raporu - TEFAS Quant rapor düzeni (2 sayfa A4, PDF olarak kaydedilebilir).
    Sayfa 1: getiri, kıyaslama ve değer köprüsü. Sayfa 2: dağılım, pozisyonlar, risk ve notlar. */
 
-import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, cls, isNum, fmtDate, colorAt } from '../util.js';
+import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, isNum, fmtDate, colorAt } from '../util.js';
 import { lineChart } from '../charts.js';
 import { valueHistory, cashflows, dividends, monthlySnapshots, transactions, afterTrackingStart } from '../store.js';
 import { buildMonthlyReport, reportMonths, monthLabel, FIRST_REPORT_MONTH } from '../report.js';
-import { sectionCard, tonedSection } from './common.js';
+import { tonedSection } from './common.js';
 
 const LINE_COLORS = {
   PORTFOY: '#1f5fbf', BIST100: 'var(--c2)', SP500TL: 'var(--c3)', GRAMALTIN: 'var(--c7)',

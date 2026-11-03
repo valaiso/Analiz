@@ -1,25 +1,24 @@
 /* Panel: portföyün özeti - toplam değer, günlük ve toplam kazanç, pozisyonlar. */
 
-import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, money, cls, isNum, fmtDate, toast, confirmDialog }
-  from '../util.js';
+import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, money, cls, isNum, fmtDate, toast, confirmDialog } from '../util.js';
 import { DB } from '../data.js';
 import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
 import { cashflowCalendar, realReturn } from '../insights.js';
 import { runDataChecks } from '../verify.js';
 import {
-  transactions, removeTransaction, daysSinceBackup, getMidasAccountSnapshot,
-  valueHistory, recordPortfolioValue, recordMonthlySnapshot, setPortfolioValue, removePortfolioValue, cashflows, midasBaselineState, pendingCashflow,
-  updateMidasBaseline, trackingStart, trackingBaseline, confirmPendingCashflow, rejectPendingCashflow, removeCashflow, dividends, dividendsBetween, manualCashflowsBetween,
+  transactions, removeTransaction, daysSinceBackup, getMidasAccountSnapshot, valueHistory,
+  recordPortfolioValue, recordMonthlySnapshot, setPortfolioValue, removePortfolioValue, cashflows,
+  midasBaselineState, pendingCashflow, updateMidasBaseline, trackingStart, trackingBaseline,
+  confirmPendingCashflow, rejectPendingCashflow, dividends, dividendsBetween, manualCashflowsBetween,
 } from '../store.js';
 import {
-  currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics,
-  applyDailyMarketTransactions, groupAssetRows, assetType, midasStockAccountValue, assetLabel, groupFundsByType, fundStopajRate,
-  midasBaseline, unexplainedChange,
+  currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, applyDailyMarketTransactions,
+  groupAssetRows, assetType, midasStockAccountValue, assetLabel, fundStopajRate, midasBaseline,
+  unexplainedChange,
 } from '../asset-groups.js';
-import { assetLogo } from '../logos.js';
 import { tile, fundParts, groupTiles, plBadge } from './tiles.js';
-import { kpiCard, plCard, sectionCard, toneCard, groupStrip, SECTION_TONES, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
+import { sectionCard, toneCard, SECTION_TONES, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
 /**
  * Fon TEFAS'ta fiyat yayımlamayı bırakmış mı?
