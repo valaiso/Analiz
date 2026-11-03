@@ -17,7 +17,7 @@ import {
   midasBaseline, unexplainedChange,
 } from '../asset-groups.js';
 import { assetLogo } from '../logos.js';
-import { tile, fundParts, groupTiles, plBadge, groupPL } from './tiles.js';
+import { tile, fundParts, groupTiles, plBadge } from './tiles.js';
 import { kpiCard, plCard, sectionCard, toneCard, groupStrip, SECTION_TONES, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
 /**
@@ -282,10 +282,10 @@ export function renderPanel(ctx) {
       }, 'Hayır, Midas’ı yeniden eşitle')));
   }
   const real = hasMidasTotal ? realReturn(valueHistory(), cashflows()) : null;
+  const realDividends = real ? dividends().filter((item) => item.date > real.startDate)
+    .reduce((sum, item) => sum + item.amount, 0) : 0;
 
   const txs = ctx.analysisTransactions || transactions();
-  const nakit = cashflowCalendar(txs);
-  const yearlyRealizedTotal = nakit.realizedByYear.reduce((sum, year) => sum + year.amount, 0);
   const taxableFundPL = new Map(analysis.holdings
     .filter((holding) => !holding.closed && assetType(holding.code, holding.kind, holding.cat) === 'Fon'
       && !['THF', 'TP2'].includes(holding.code))
@@ -350,11 +350,6 @@ export function renderPanel(ctx) {
   const totalGain = real && isNum(real.twr)
     ? { total: real.profit, totalPct: real.twr }
     : { total: null, totalPct: null };
-  // Başlangıçtan beri toplam kâr/zarar (bütün yıllar): satılanlardan gerçekleşen K/Z +
-  // eldeki hisse/fon/ETF/kripto'nun maliyete göre K/Z'si + alınan bütün temettüler.
-  const openPL = groupPL(displayPositions);
-  const allDividends = dividends().reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-  const allTimePL = isNum(openPL.totalPct) ? yearlyRealizedTotal + openPL.total + allDividends : null;
   const heroGainBox = () => {
     const box = h('div', { class: 'hero-toggle', role: 'button', tabindex: '0', title: 'Dokun: günlük ⇄ toplam kazanç' });
     const paint = () => {
@@ -383,16 +378,12 @@ export function renderPanel(ctx) {
       h('p', {}, totalValueSub)),
     h('div', { class: 'hero-figures' },
       heroGainBox(),
-      h('div', { title: isNum(allTimePL)
-        ? `Gerçekleşen (satılanlar, bütün yıllar) ${tlSigned(yearlyRealizedTotal)} + eldekiler ${tlSigned(openPL.total)}`
-          + `${allDividends ? ` + temettü ${tl(allDividends)}` : ''}`
-          + `${real && isNum(real.twr) ? ` · ${fmtDate(real.startDate)}’den beri gerçek getiri ${pctSigned(real.twr)}` : ''}`
-        : '' },
-        h('span', {}, 'Toplam kâr/zarar'),
-        h('strong', { class: heroTrend(allTimePL) }, isNum(allTimePL) ? tlSigned(allTimePL) : '—'),
-        h('em', {}, isNum(allTimePL)
-          ? `başlangıçtan beri · satılanlar ${tlSigned(yearlyRealizedTotal)} + eldekiler ${tlSigned(openPL.total)}${allDividends ? ` + temettü ${tl(allDividends)}` : ''}`
-          : 'pozisyonlar doğrulanınca hesaplanır')),
+      h('div', {},
+        h('span', {}, 'Gerçek getiri'),
+        h('strong', { class: heroTrend(real?.twr) }, isNum(real?.twr) ? pctSigned(real.twr) : '—'),
+        h('em', {}, real && isNum(real.twr)
+          ? `${fmtDate(real.startDate)}’den beri${realDividends > 0 ? ` · ${tl(realDividends)} temettü dahil` : ''}`
+          : 'ikinci kayıt gününden itibaren')),
       h('div', {},
         h('span', {}, 'Stopaj (tahmini)'),
         h('strong', {}, tl(stopajEstimate)),
@@ -601,6 +592,8 @@ export function renderPanel(ctx) {
 
   /* --------------------------------------------------------------- nakit akışı */
 
+  const nakit = cashflowCalendar(txs);
+  const yearlyRealizedTotal = nakit.realizedByYear.reduce((sum, year) => sum + year.amount, 0);
   const realizedDifference = Math.round((totals.realized - yearlyRealizedTotal) * 100) / 100;
   if (nakit.realizedByYear.length && Math.abs(realizedDifference) > 0.01) {
     root.append(h('div', { class: 'notice warn' },
