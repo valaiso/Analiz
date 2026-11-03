@@ -448,13 +448,18 @@ export function updateMidasBaseline(baseline, detected) {
   return true;
 }
 
-/** Kullanıcı "Evet" dedi: tespit edilen tutar para hareketi olarak kaydedilir. */
-export function confirmPendingCashflow() {
+/**
+ * Kullanıcı "Evet" dedi: tespit edilen tutar para hareketi olarak kaydedilir.
+ * kind === 'kripto': yeni para değil, kripto hesabında bekleyen (sitenin saymadığı
+ * USDT/TL) paranın yatırım hesabına geçişi. Kâr sayılmasın diye yine girişten düşülür.
+ */
+export function confirmPendingCashflow(kind) {
   const pending = state.pendingCashflow;
   if (!pending) return false;
   state.cashflows = [...cashflows(), {
     id: uid(), date: pending.date, amount: pending.amount, source: 'midas-tespit',
     from: pending.from ? String(pending.from).slice(0, 10) : null, to: pending.date,
+    ...(kind === 'kripto' ? { kind: 'kripto', note: 'kripto bakiyesinin yatırım hesabına geçişi (yeni para değil)' } : {}),
   }].sort((a, b) => a.date.localeCompare(b.date));
   state.pendingCashflow = null;
   state.rejectedBaselineKey = null;
@@ -490,12 +495,13 @@ export function removeCashflow(id) {
  * yatırılan paraya eklenir. Aynı dönemi Midas taraması zaten tespit ettiyse (bekleyen soru
  * ya da onaylanmış tespit) aynı yöndeki tutar ondan düşülür ki para iki kez sayılmasın.
  */
-export function addManualCashflow({ date, amount, note }) {
+export function addManualCashflow({ date, amount, note, kind }) {
   const value = Math.round(Number(amount) * 100) / 100;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date)) || !value) return null;
   const sign = Math.sign(value);
   let remaining = Math.abs(value);
   const record = { id: uid(), date, amount: value, source: 'elle', note: String(note || '').trim().slice(0, 80), adjustments: [] };
+  if (kind === 'kripto') record.kind = 'kripto';
   const pending = state.pendingCashflow;
   if (pending && Math.sign(pending.amount) === sign
     && inWindow(date, pending.from && String(pending.from).slice(0, 10), pending.date)) {

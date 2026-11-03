@@ -733,7 +733,8 @@ function dividendSection(ctx) {
 /** Elle nakit ekleme/çekme: para hareketi olarak kaydedilir, kâr sayılmaz. */
 function cashSection(ctx) {
   const dateInput = h('input', { type: 'date', value: new Date().toISOString().slice(0, 10) });
-  const typeInput = h('select', {}, h('option', { value: 'ekle' }, 'Nakit ekleme (yatırma)'), h('option', { value: 'cek' }, 'Nakit çekme'));
+  const typeInput = h('select', {}, h('option', { value: 'ekle' }, 'Nakit ekleme (yatırma)'),
+    h('option', { value: 'kripto' }, 'Kripto parası aktarımı (yeni para değil)'), h('option', { value: 'cek' }, 'Nakit çekme'));
   const amountInput = h('input', { type: 'number', step: 'any', min: '0', placeholder: '0,00' });
   const noteInput = h('input', { type: 'text', maxlength: 80, placeholder: 'Örn. maaş' });
   const error = h('div', { class: 'hint', style: 'color:var(--down)' });
@@ -742,7 +743,7 @@ function cashSection(ctx) {
   const submit = () => {
     const amount = Number(amountInput.value);
     if (!(amount > 0)) { error.textContent = 'Tarih ve 0’dan büyük bir tutar gir.'; return; }
-    const record = addManualCashflow({ date: dateInput.value, amount: typeInput.value === 'cek' ? -amount : amount, note: noteInput.value });
+    const record = addManualCashflow({ date: dateInput.value, amount: typeInput.value === 'cek' ? -amount : amount, note: noteInput.value || (typeInput.value === 'kripto' ? 'kripto bakiyesinin yatırım hesabına geçişi' : ''), kind: typeInput.value === 'kripto' ? 'kripto' : undefined });
     if (!record) { error.textContent = 'Tarih ve 0’dan büyük bir tutar gir.'; return; }
     toast(record.adjustments.length
       ? `${tl(Math.abs(record.amount))} ${record.amount > 0 ? 'nakit ekleme' : 'nakit çekme'} kaydedildi; Midas tespitiyle çakışan kısım düşüldü`
@@ -756,7 +757,7 @@ function cashSection(ctx) {
     h('thead', {}, h('tr', {}, h('th', {}, 'Tarih'), h('th', {}, 'Tür'), h('th', {}, 'Tutar'), h('th', {}, 'Kaynak'), h('th', {}, 'Not'), h('th', {}, ''))),
     h('tbody', {}, list.map((flow) => h('tr', {},
       h('td', {}, fmtDate(flow.date)),
-      h('td', {}, flow.amount >= 0 ? 'Ekleme' : 'Çekme'),
+      h('td', {}, flow.kind === 'kripto' ? 'Kripto aktarımı' : flow.amount >= 0 ? 'Ekleme' : 'Çekme'),
       h('td', { class: flow.amount >= 0 ? 'up' : 'down' }, `${flow.amount >= 0 ? '+' : '−'}${tl(Math.abs(flow.amount))}`),
       h('td', { class: 'dim' }, sourceLabel(flow)),
       h('td', { class: 'dim' }, flow.note || ''),

@@ -271,6 +271,11 @@ export function renderPanel(ctx) {
         class: 'btn btn-sm btn-primary', type: 'button', style: 'margin-left:6px',
         onclick: () => { confirmPendingCashflow(); ctx.refresh(); },
       }, deposit ? 'Evet, para ekledim' : 'Evet, para çektim'),
+      deposit ? h('button', {
+        class: 'btn btn-sm', type: 'button', style: 'margin-left:6px',
+        title: 'Kripto satıp parayı yatırım hesabına aktardıysan seç: yeni para sayılmaz, kâr gibi de görünmez',
+        onclick: () => { confirmPendingCashflow('kripto'); toast('Kripto aktarımı olarak kaydedildi; yeni para sayılmadı'); ctx.refresh(); },
+      }, 'Hayır, kripto parası aktarıldı') : null,
       h('button', {
         class: 'btn btn-sm', type: 'button', style: 'margin-left:6px',
         onclick: () => { rejectPendingCashflow(); navigate('islemler'); },
