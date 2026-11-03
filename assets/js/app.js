@@ -391,17 +391,29 @@ function updateQuoteTimestamp() {
     .map(([, quote]) => Number(quote?.timestamp))
     .filter((timestamp) => Number.isFinite(timestamp) && timestamp > 0);
   const timestamp = quoteTimes.length ? Math.max(...quoteTimes) : Date.parse(snapshot?.capturedAt || '');
-  // Canlı fiyat varsa onun saati, yoksa son Midas taramasının saati gösterilir.
-  label.textContent = Number.isFinite(timestamp)
-    ? `${quoteTimes.length ? 'Fiyat' : 'Midas'} ${new Intl.DateTimeFormat('tr-TR', {
-      day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-    }).format(new Date(timestamp))}`
-    : '—';
-  // Canlı fiyatları bilgisayardaki Midas eklentisi çeker; telefonda eklenti yoktur, saat son PC güncellemesinde kalır.
-  const stale = Number.isFinite(timestamp) && Date.now() - timestamp > 15 * 60 * 1000;
+  const fmt = (value) => new Intl.DateTimeFormat('tr-TR', {
+    day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+  }).format(new Date(value));
+  const clock = (value) => new Intl.DateTimeFormat('tr-TR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(value));
+  // Fiyatların en son ne zaman kontrol edildiği (eklenti veya sunucu). Piyasa kapalıyken fiyatın
+  // kendi saati kapanışta kalır; bu durumda etiket "Kapanış" der ve kontrol saatini gösterir.
+  const checkedAt = Date.parse(snapshot?.liveQuotesCapturedAt || '');
+  const checkedRecently = Number.isFinite(checkedAt) && Date.now() - checkedAt <= 15 * 60 * 1000;
+  const closed = quoteTimes.length && checkedRecently && checkedAt - timestamp > 30 * 60 * 1000;
+  if (!Number.isFinite(timestamp)) {
+    label.textContent = '—';
+  } else if (closed) {
+    label.textContent = `Kapanış ${fmt(timestamp)}`;
+  } else {
+    label.textContent = `${quoteTimes.length ? 'Fiyat' : 'Midas'} ${fmt(timestamp)}`;
+  }
+  const lastFresh = quoteTimes.length ? Math.max(timestamp, Number.isFinite(checkedAt) ? checkedAt : 0) : timestamp;
+  const stale = Number.isFinite(lastFresh) && Date.now() - lastFresh > 15 * 60 * 1000;
   label.classList.toggle('is-stale', stale);
-  label.title = (quoteTimes.length ? 'Son canlı fiyatın tarih ve saati' : 'Son Midas taramasının tarih ve saati')
-    + (stale ? ' · canlı hisse/ETF/kripto fiyatları bilgisayardaki Midas eklentisiyle güncellenir; telefonda bu saat değişmez' : '');
+  label.title = closed
+    ? `Piyasa kapalı: gösterilen son işlem (kapanış) fiyatı. Fiyatlar en son ${clock(checkedAt)}’de kontrol edildi; piyasa açılınca güncellenir.`
+    : (quoteTimes.length ? 'Son canlı fiyatın tarih ve saati' : 'Son Midas taramasının tarih ve saati')
+      + (stale ? ' · fiyatlar bir süredir kontrol edilemedi; Yenile ile tekrar dene' : '');
 }
 
 async function refreshIntradayQuotes() {

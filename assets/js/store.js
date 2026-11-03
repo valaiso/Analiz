@@ -270,7 +270,8 @@ function adoptCloudLiveQuotes() {
   const newer = Object.entries(cloud).filter(([code, quote]) =>
     Number(quote?.timestamp) > (Number(local[code]?.timestamp) || 0));
   if (!newer.length) return false;
-  midasSnapshot = { ...midasSnapshot, liveQuotes: { ...local, ...Object.fromEntries(newer) } };
+  const at = [midasSnapshot.liveQuotesCapturedAt, state.midasLiveQuotesCloud?.at].filter(Boolean).sort().at(-1);
+  midasSnapshot = { ...midasSnapshot, liveQuotes: { ...local, ...Object.fromEntries(newer) }, liveQuotesCapturedAt: at };
   try { localStorage.setItem(MIDAS_SNAPSHOT_KEY, JSON.stringify(midasSnapshot)); } catch { /* bellekteki kopya yeterli */ }
   return true;
 }
