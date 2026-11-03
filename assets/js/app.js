@@ -394,34 +394,18 @@ function updateQuoteTimestamp() {
   const fmt = (value) => new Intl.DateTimeFormat('tr-TR', {
     day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
   }).format(new Date(value));
-  const clock = (value) => new Intl.DateTimeFormat('tr-TR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(new Date(value));
-  // Fiyatların en son ne zaman kontrol edildiği (eklenti veya sunucu). Piyasa kapalıyken fiyatın
-  // kendi saati kapanışta kalır; bu durumda etiket "Kapanış" der ve kontrol saatini gösterir.
+  // Etiket fiyatların en son güncellendiği (eklenti/sunucudan çekildiği) saati gösterir.
+  // Piyasa kapalıyken fiyatın kendisi kapanışta kalır; bu bilgi üzerine gelince görünür.
   const checkedAt = Date.parse(snapshot?.liveQuotesCapturedAt || '');
-  const checkedRecently = Number.isFinite(checkedAt) && Date.now() - checkedAt <= 15 * 60 * 1000;
-  // ABD borsası (New York saatiyle hafta içi 09:30–16:00) şu an kapalı mı?
-  const nyParts = Object.fromEntries(new Intl.DateTimeFormat('en-US', {
-    timeZone: 'America/New_York', weekday: 'short', hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
-  }).formatToParts(new Date()).map((part) => [part.type, part.value]));
-  const nyMinutes = Number(nyParts.hour) * 60 + Number(nyParts.minute);
-  const usClosed = ['Sat', 'Sun'].includes(nyParts.weekday) || nyMinutes < 570 || nyMinutes >= 960;
-  const quoteOld = Date.now() - timestamp > 30 * 60 * 1000;
-  const closed = quoteTimes.length && quoteOld
-    && (usClosed || (checkedRecently && checkedAt - timestamp > 30 * 60 * 1000));
-  if (!Number.isFinite(timestamp)) {
-    label.textContent = '—';
-  } else if (closed) {
-    label.textContent = `Kapanış ${fmt(timestamp)}`;
-  } else {
-    label.textContent = `${quoteTimes.length ? 'Fiyat' : 'Midas'} ${fmt(timestamp)}`;
-  }
-  const lastFresh = closed ? Date.now() : quoteTimes.length ? Math.max(timestamp, Number.isFinite(checkedAt) ? checkedAt : 0) : timestamp;
-  const stale = Number.isFinite(lastFresh) && Date.now() - lastFresh > 15 * 60 * 1000;
+  const shown = quoteTimes.length && Number.isFinite(checkedAt) ? Math.max(timestamp, checkedAt) : timestamp;
+  label.textContent = Number.isFinite(shown) ? `${quoteTimes.length ? 'Fiyat' : 'Midas'} ${fmt(shown)}` : '—';
+  const stale = Number.isFinite(shown) && Date.now() - shown > 15 * 60 * 1000;
   label.classList.toggle('is-stale', stale);
-  label.title = closed
-    ? `Piyasa kapalı: gösterilen son işlem (kapanış) fiyatı. ${Number.isFinite(checkedAt) ? `Son kontrol: ${clock(checkedAt)}. ` : ''}Piyasa açılınca güncellenir.`
-    : (quoteTimes.length ? 'Son canlı fiyatın tarih ve saati' : 'Son Midas taramasının tarih ve saati')
-      + (stale ? ' · fiyatlar bir süredir kontrol edilemedi; Yenile ile tekrar dene' : '');
+  label.title = quoteTimes.length
+    ? `Fiyatlar en son ${fmt(shown)} itibarıyla güncellendi. Son işlem fiyatının saati: ${fmt(timestamp)}`
+      + (shown - timestamp > 30 * 60 * 1000 ? ' (piyasa kapalı, kapanış fiyatı)' : '')
+      + (stale ? ' · fiyatlar bir süredir güncellenemedi; Yenile ile tekrar dene' : '')
+    : 'Son Midas taramasının tarih ve saati';
 }
 
 async function refreshIntradayQuotes() {
