@@ -509,7 +509,7 @@ export function addSiteMarketMetrics(positions) {
     const midasUnitCost = (row.marketValueTRY - row.totalPLTRY) / row.units;
     const keptUnits = Math.min(row.units, b.units);
     const cost = keptUnits * b.unitTRY + (row.units - keptUnits) * midasUnitCost;
-    const totalPLTRY = row.marketValueTRY - cost;
+    const totalPLTRY = Math.round((row.marketValueTRY - cost) * 100) / 100 + 0; // −0,00 yerine 0
     const fxNative = row.price > 0 ? row.marketValueTRY / (row.units * row.price) : null;
     return {
       ...row,
