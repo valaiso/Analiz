@@ -71,6 +71,13 @@ export const fmtDateShort = (iso) => (iso ? DATE_SHORT.format(new Date(iso + 'T0
 
 export const cls = (v) => (!isNum(v) || v === 0 ? '' : v > 0 ? 'up' : 'down');
 
+/** ISO tarihe gün ekler/çıkarır. */
+export function addDays(iso, days) {
+  const d = new Date(iso + 'T00:00:00');
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 /* ------------------------------------------------------------------ DOM */
 
 export const $ = (sel, root = document) => root.querySelector(sel);
