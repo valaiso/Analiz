@@ -1,13 +1,13 @@
 /* Panel: portföyün özeti - toplam değer, günlük ve toplam kazanç, pozisyonlar. */
 
-import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, money, cls, isNum, fmtDate, toast }
+import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, money, cls, isNum, fmtDate, toast, confirmDialog }
   from '../util.js';
 import { DB } from '../data.js';
 import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
 import { cashflowCalendar, realReturn } from '../insights.js';
 import {
-  transactions, daysSinceBackup, getMidasAccountSnapshot,
+  transactions, removeTransaction, daysSinceBackup, getMidasAccountSnapshot,
   valueHistory, recordPortfolioValue, recordMonthlySnapshot, setPortfolioValue, removePortfolioValue, cashflows, midasBaselineState, pendingCashflow,
   updateMidasBaseline, confirmPendingCashflow, rejectPendingCashflow, removeCashflow, dividends, dividendsBetween, manualCashflowsBetween,
 } from '../store.js';
@@ -625,9 +625,44 @@ export function renderPanel(ctx) {
 
   const oversold = analysis.holdings.filter((x) => x.oversold);
   if (oversold.length) {
+    // Her sorunlu varlığın işlemleri tarih sırasıyla, elde kalan adetle birlikte: eldekinden
+    // fazla satılan satır işaretlenir ve hatalı kayıt buradan silinebilir.
+    const allTx = ctx.analysisTransactions || transactions();
+    const tradeTable = (code) => {
+      let balance = 0;
+      const list = allTx.filter((tx) => tx.code === code && tx.units > 0)
+        .sort((a, b) => String(a.date).localeCompare(String(b.date)) || (a.type === 'AL' ? -1 : 1));
+      return h('div', { class: 'table-wrap', style: 'margin-top:8px' }, h('table', {},
+        h('thead', {}, h('tr', {}, h('th', {}, 'Tarih'), h('th', {}, 'İşlem'), h('th', {}, 'Adet'),
+          h('th', {}, 'Fiyat'), h('th', {}, 'Elde kalan'), h('th', {}, ''))),
+        h('tbody', {}, list.map((tx) => {
+          const before = balance;
+          balance = tx.type === 'SAT' ? Math.max(0, balance - tx.units) : balance + tx.units;
+          const excess = tx.type === 'SAT' && tx.units > before + 1e-9;
+          return h('tr', { style: excess ? 'background:var(--down-soft)' : null },
+            h('td', {}, fmtDate(tx.date)),
+            h('td', { class: tx.type === 'SAT' ? 'down' : 'up' }, tx.type === 'SAT' ? 'Satış' : 'Alış'),
+            h('td', {}, fmtUnits(tx.units)),
+            h('td', {}, money(tx.price)),
+            h('td', {}, excess ? h('span', { class: 'down' }, `eldeki ${fmtUnits(before)} · fazla ${fmtUnits(tx.units - before)}`) : fmtUnits(balance)),
+            h('td', {}, h('button', {
+              class: 'btn btn-sm btn-danger', type: 'button',
+              onclick: async () => {
+                const ok = await confirmDialog('İşlemi sil',
+                  `${fmtDate(tx.date)} tarihli ${code} ${tx.type === 'SAT' ? 'satış' : 'alış'} kaydı (${fmtUnits(tx.units)} adet) silinsin mi? Midas pozisyonların ve toplam değer etkilenmez.`,
+                  { danger: true, okLabel: 'Sil' });
+                if (ok) { removeTransaction(tx.id); toast(`${code} işlemi silindi`); ctx.refresh(); }
+              },
+            }, 'Sil')));
+        }))));
+    };
     root.append(h('div', { class: 'notice warn' },
-      `Dikkat: ${oversold.map((x) => x.code).join(', ')} satış adetleri kayıtlı alışları aşıyor. `
-      + 'Eşleşmeyen fazla adetlerin kâr/zararı hesaplanmadı; eksik alış kaydını veya satış miktarını İşlemler sekmesinden kontrol et.'));
+      h('div', {}, `Dikkat: ${oversold.map((x) => x.code).join(', ')} satış adetleri kayıtlı alışları aşıyor. `
+        + 'Eşleşmeyen fazla adetlerin kâr/zararı hesaplanmadı. Hatalı satışı ya da eksik alışı aşağıdan kontrol et; '
+        + 'yanlış kaydı Sil ile kaldırabilirsin. Midas pozisyonların ve toplam değer bu kayıtlardan etkilenmez.'),
+      ...oversold.map((holding) => h('details', { style: 'margin-top:8px' },
+        h('summary', { style: 'cursor:pointer;font-weight:600' }, `${holding.code} işlemleri`),
+        tradeTable(holding.code)))));
   }
 
   return root;
