@@ -631,6 +631,7 @@ async function checkSiteVersion() {
     location.replace(`${location.pathname}?v=${live}${location.hash}`);
   } catch { /* çevrimdışı: açık sürümle devam */ }
 }
+try { sessionStorage.removeItem('fresh-reload'); } catch { /* yok */ }
 checkSiteVersion();
 setInterval(checkSiteVersion, 5 * 60_000);
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkSiteVersion(); });

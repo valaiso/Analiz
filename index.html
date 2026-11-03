@@ -15,7 +15,15 @@
 <link rel="apple-touch-icon" href="/Analiz/iconV1.png?v=1">
 <link rel="manifest" href="/Analiz/site.webmanifest">
 
-<link rel="stylesheet" href="assets/css/style.css">
+<script>
+  // Yayından sonraki ~10 dk GitHub eski sayfayı verebilir; o sayfanın istediği dosyalar artık
+  // yoksa site önbelleği atlayan adresle yeniden açılır (en fazla 3 deneme).
+  window.__openFresh = function () {
+    try { var n = +sessionStorage.getItem('fresh-reload') || 0; if (n >= 3) return; sessionStorage.setItem('fresh-reload', String(n + 1)); } catch (e) {}
+    location.replace(location.pathname + '?r=' + Date.now() + location.hash);
+  };
+</script>
+<link rel="stylesheet" href="assets/css/style.css" onerror="window.__openFresh()">
 </head>
 <body>
 
@@ -91,6 +99,6 @@
 <div id="modalRoot" class="modal-root" hidden></div>
 <div id="toastRoot" class="toast-root" aria-live="polite"></div>
 
-<script type="module" src="assets/js/app.js"></script>
+<script type="module" src="assets/js/app.js" onerror="window.__openFresh()"></script>
 </body>
 </html>
