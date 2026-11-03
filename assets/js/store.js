@@ -428,20 +428,6 @@ export const cashflows = () => (Array.isArray(state.cashflows) ? state.cashflows
 export const midasBaselineState = () => state.midasBaseline || null;
 export const pendingCashflow = () => state.pendingCashflow || null;
 
-// Midas işlem geçmişi yalnızca PC tarayıcısında durur. Satılanların gerçekleşen K/Z
-// toplamı hesaba yazılır ki telefon da başlangıçtan beri toplam kâr/zararı aynı göstersin.
-export const realizedSummaryCloud = () => state.realizedSummaryCloud || null;
-export function syncRealizedSummary(total, byYear) {
-  const rounded = Math.round(Number(total) * 100) / 100;
-  if (!Number.isFinite(rounded)) return false;
-  const years = (byYear || []).map((y) => ({ year: y.year, amount: Math.round(y.amount * 100) / 100 }));
-  const current = state.realizedSummaryCloud;
-  if (current && current.total === rounded && JSON.stringify(current.byYear) === JSON.stringify(years)) return false;
-  state.realizedSummaryCloud = { total: rounded, byYear: years, at: new Date().toISOString() };
-  persist();
-  return true;
-}
-
 /** Yeni tarama geldiyse karşılaştırma için önceki fotoğrafı saklayıp günceller. */
 export function updateMidasBaseline(baseline, detected) {
   if (!baseline || state.midasBaseline?.key === baseline.key) return false;
