@@ -3,7 +3,7 @@
 
 import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, cls, isNum, fmtDate, colorAt } from '../util.js';
 import { lineChart } from '../charts.js';
-import { valueHistory, cashflows, dividends, monthlySnapshots, transactions } from '../store.js';
+import { valueHistory, cashflows, dividends, monthlySnapshots, transactions, afterTrackingStart } from '../store.js';
 import { buildMonthlyReport, reportMonths, monthLabel, FIRST_REPORT_MONTH } from '../report.js';
 import { sectionCard, tonedSection } from './common.js';
 
@@ -209,8 +209,9 @@ export function renderRapor() {
   const months = reportMonths(history, snapshots);
   const input = (month) => ({
     // Rapor yalnızca Midas verisiyle hazırlanır; elle girilen eski işlemler kullanılmaz.
-    month, history, flows: cashflows(), dividends: dividends(), snapshots,
-    transactions: transactions().filter((tx) => tx.source === 'midas'),
+    month, history, flows: cashflows().filter((f) => afterTrackingStart(f.date)),
+    dividends: dividends().filter((d) => afterTrackingStart(d.date)), snapshots,
+    transactions: transactions().filter((tx) => tx.source === 'midas' && afterTrackingStart(tx.date)),
   });
 
   const holder = h('div');

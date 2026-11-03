@@ -7,7 +7,7 @@ import { riskSummary } from '../portfolio.js';
 import {
   monthlyReturns, yearlyFromMonthly, drawdownEpisodes, rollingReturns, diversification, recordedSeries,
 } from '../insights.js';
-import { settings, setSetting, valueHistory, cashflows } from '../store.js';
+import { settings, setSetting, valueHistory, cashflows, trackingStart } from '../store.js';
 import { indexForDate } from '../data.js';
 import { kpiCard, sectionCard, emptyState, tonedSection } from './common.js';
 
@@ -29,7 +29,7 @@ export function renderRisk(ctx) {
   const recorded = recordedSeries(valueHistory(), cashflows());
   const series = recorded.dates.length >= 2
     ? { ...recorded, start: Math.max(0, indexForDate(recorded.dates[0])) }
-    : analysis.series;
+    : trackingStart() ? { ...recorded, start: 0 } : analysis.series;
   const MIN_DAYS = 10;
 
   if (series.dates.length < MIN_DAYS) {

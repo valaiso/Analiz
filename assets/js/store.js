@@ -354,6 +354,7 @@ export function tradingDateFor(date) {
 export function recordPortfolioValue(calendarDate, value) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(calendarDate)) || !(Number.isFinite(value) && value > 0)) return false;
   const date = tradingDateFor(calendarDate);
+  if (!afterTrackingStart(date)) return false;
   const history = { ...(state.valueHistory || {}) };
   const rounded = Math.round(value * 100) / 100;
   const lastAt = Date.parse(state.valueHistoryUpdatedAt || '') || 0;
@@ -408,6 +409,7 @@ export function setPortfolioValue(calendarDate, value) {
   const amount = Math.round(Number(value) * 100) / 100;
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(calendarDate)) || !(amount > 0)) return null;
   const date = tradingDateFor(calendarDate);
+  if (!afterTrackingStart(date)) return null;
   state.valueHistory = { ...(state.valueHistory || {}), [date]: amount };
   persist();
   return date;
@@ -794,6 +796,12 @@ export const allTransactions = () => [...state.tx, ...withoutPhantomFills(midasT
 /* --------------------------------------------------------------------- ayarlar */
 
 export const settings = () => state.settings;
+
+// Takip başlangıcı: site bu günden önceki hiçbir veriyi (değer kaydı, para girişi, gerçekleşen
+// K/Z, aylık akış, rapor, temettü, işlem listesi) göstermez. Eski işlemler yalnızca açık
+// pozisyonların maliyet hesabı için saklanır.
+export const trackingStart = () => state.settings?.trackingStart || null;
+export const afterTrackingStart = (date) => { const start = trackingStart(); return !start || String(date || '') >= start; };
 
 export function setSetting(key, value) {
   state.settings[key] = value;

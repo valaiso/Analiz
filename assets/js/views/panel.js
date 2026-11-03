@@ -9,7 +9,7 @@ import { cashflowCalendar, realReturn } from '../insights.js';
 import {
   transactions, removeTransaction, daysSinceBackup, getMidasAccountSnapshot,
   valueHistory, recordPortfolioValue, recordMonthlySnapshot, setPortfolioValue, removePortfolioValue, cashflows, midasBaselineState, pendingCashflow,
-  updateMidasBaseline, confirmPendingCashflow, rejectPendingCashflow, removeCashflow, dividends, dividendsBetween, manualCashflowsBetween,
+  updateMidasBaseline, trackingStart, confirmPendingCashflow, rejectPendingCashflow, removeCashflow, dividends, dividendsBetween, manualCashflowsBetween,
 } from '../store.js';
 import {
   currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics,
@@ -282,7 +282,7 @@ export function renderPanel(ctx) {
       }, 'Hayır, Midas’ı yeniden eşitle')));
   }
   const real = hasMidasTotal ? realReturn(valueHistory(), cashflows()) : null;
-  const realDividends = real ? dividends().filter((item) => item.date > real.startDate)
+  const realDividends = real ? dividends().filter((item) => item.date > real.startDate && item.date >= (trackingStart() || ''))
     .reduce((sum, item) => sum + item.amount, 0) : 0;
 
   const txs = ctx.analysisTransactions || transactions();
@@ -592,16 +592,16 @@ export function renderPanel(ctx) {
 
   /* --------------------------------------------------------------- nakit akışı */
 
-  const nakit = cashflowCalendar(txs);
+  const nakit = cashflowCalendar(txs, trackingStart());
   const yearlyRealizedTotal = nakit.realizedByYear.reduce((sum, year) => sum + year.amount, 0);
   const realizedDifference = Math.round((totals.realized - yearlyRealizedTotal) * 100) / 100;
-  if (nakit.realizedByYear.length && Math.abs(realizedDifference) > 0.01) {
+  if (!trackingStart() && nakit.realizedByYear.length && Math.abs(realizedDifference) > 0.01) {
     root.append(h('div', { class: 'notice warn' },
       `Gerçekleşen K/Z kartı ile yıllık tablonun toplamı ${tlSigned(realizedDifference)} farklı. `
       + 'İşlem tarihi, adet ve fiyat kayıtlarını kontrol et.'));
   }
   let nakitSection = null;
-  if (nakit.monthly.length > 1) {
+  if (nakit.monthly.length >= 1) {
     const kutu = h('div');
     const sonAylar = nakit.monthly.slice(-18);
     nakitSection = toneCard({
@@ -621,7 +621,7 @@ export function renderPanel(ctx) {
   if (nakit.realizedByYear.length) {
     // Portföy kaydı 16.10.2026'da başladı: başlıktaki rakam o günden beri gerçekleşen kâr/zarar.
     // Yıl kutucukları o yılın tamamıdır (kayıt öncesi satışlar da dahil).
-    const startDate = Object.keys(valueHistory()).sort()[0] || null;
+    const startDate = trackingStart() || Object.keys(valueHistory()).sort()[0] || null;
     const sinceSales = startDate ? nakit.realizedSales.filter((sale) => sale.date >= startDate) : [];
     const sinceTotal = sinceSales.reduce((sum, sale) => sum + sale.amount, 0);
     const byCode = new Map();
@@ -640,7 +640,7 @@ export function renderPanel(ctx) {
         h('span', {}, `${fmtDate(startDate)}’DEN BERİ`),
         h('strong', { class: cls(sinceTotal) }, tlSigned(sinceTotal))) : null,
       nakit.realizedByYear.map((y) => h('div', { class: `year-tile ${cls(y.amount)}` },
-        h('span', {}, `${y.year} (TÜM YIL)`),
+        h('span', {}, trackingStart() ? `${y.year}` : `${y.year} (TÜM YIL)`),
         h('strong', { class: cls(y.amount) }, tlSigned(y.amount))))),
     codeRows.length ? h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, h('th', {}, `${fmtDate(startDate)}’den beri satılan`), h('th', {}, 'Gerçekleşen K/Z'))),
@@ -654,7 +654,7 @@ export function renderPanel(ctx) {
 
 
 
-  if (analysis.preRange) {
+  if (analysis.preRange && !trackingStart()) {
     root.append(h('div', { class: 'notice' },
       `Bazı işlemlerin ${fmtDate(series.dates[0])} tarihinden eski. TEFAS'tan `
       + 'yalnızca son 3 yılın fiyatları alındığı için grafikler bu tarihten '

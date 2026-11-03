@@ -9,7 +9,7 @@ import {
 import {
   transactions, addTransaction, updateTransaction, removeTransaction,
   allTransactions, addMidasTransactions, saveMidasAccountSnapshot, getMidasAccountSnapshot,
-  pruneMidasHistory, dividends, addDividend, removeDividend, cashflows, addManualCashflow, removeCashflow,
+  pruneMidasHistory, trackingStart, afterTrackingStart, dividends, addDividend, removeDividend, cashflows, addManualCashflow, removeCashflow,
 } from '../store.js';
 import { currentMidasPositions } from '../asset-groups.js';
 import { sectionCard, fundPicker, tonedSection } from './common.js';
@@ -697,7 +697,7 @@ function dividendSection(ctx) {
       : `${tl(record.amount)} temettü kaydedildi`);
     ctx.refresh();
   };
-  const list = dividends().slice().reverse();
+  const list = dividends().filter((item) => afterTrackingStart(item.date)).slice().reverse();
   const total = list.reduce((sum, item) => sum + item.amount, 0);
   const year = new Date().getFullYear();
   const thisYear = list.filter((item) => item.date.startsWith(String(year))).reduce((sum, item) => sum + item.amount, 0);
@@ -750,7 +750,7 @@ function cashSection(ctx) {
       : `${tl(Math.abs(record.amount))} ${record.amount > 0 ? 'nakit ekleme' : 'nakit çekme'} kaydedildi`);
     ctx.refresh();
   };
-  const list = cashflows().slice().reverse();
+  const list = cashflows().filter((flow) => afterTrackingStart(flow.date)).slice().reverse();
   const net = list.reduce((sum, flow) => sum + flow.amount, 0);
   const sourceLabel = (flow) => (flow.source === 'elle' ? 'Elle' : flow.source === 'midas-tespit' ? 'Midas tespiti' : '—');
   const table = list.length ? h('div', { class: 'table-wrap cash-table' }, h('table', {},
@@ -786,7 +786,9 @@ function cashSection(ctx) {
 
 export function renderIslemler(ctx) {
   const root = h('div', { class: 'stack' });
-  const list = transactions();
+  const allList = transactions();
+  const list = allList.filter((tx) => afterTrackingStart(tx.date));
+  const hiddenBeforeStart = allList.length - list.length;
 
   const midasButton = h('button', {
     class: 'btn btn-primary', type: 'button',
@@ -822,7 +824,9 @@ export function renderIslemler(ctx) {
   if (!list.length) {
     root.append(h('div', { class: 'card empty' },
       h('h3', {}, 'Henüz işlem yok'),
-      h('p', {}, 'Yukarıdaki formdan ilk alımını ekle.')));
+      h('p', {}, hiddenBeforeStart
+        ? `Takip ${fmtDate(trackingStart())} tarihinde başladı; bu tarihten sonraki işlemler burada görünecek. Önceki ${hiddenBeforeStart} işlem yalnızca eldeki varlıkların maliyeti için saklanıyor, hiçbir hesapta sayılmıyor.`
+        : 'Yukarıdaki formdan ilk alımını ekle.')));
     return root;
   }
 
@@ -882,7 +886,7 @@ export function renderIslemler(ctx) {
   });
 
   root.append(tonedSection('slate', '≡', 'İşlem Geçmişi',
-    `${list.length} kayıt · sayfa başına 10 · en yeniden eskiye`, historyTable));
+    `${list.length} kayıt · sayfa başına 10 · en yeniden eskiye${hiddenBeforeStart ? ` · ${fmtDate(trackingStart())} öncesi ${hiddenBeforeStart} işlem gizli (yalnızca maliyet için saklanıyor)` : ''}`, historyTable));
 
   return root;
 }

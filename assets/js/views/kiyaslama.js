@@ -2,7 +2,7 @@
 
 import { h, tl, tlSigned, pctSigned, num, cls, isNum, colorAt, fmtDate } from '../util.js';
 import { counterfactual } from '../insights.js';
-import { transactions, valueHistory, cashflows } from '../store.js';
+import { transactions, valueHistory, cashflows, trackingStart, afterTrackingStart } from '../store.js';
 import { DB, indexForDate } from '../data.js';
 import { lineChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
@@ -40,7 +40,7 @@ export function renderKiyaslama(ctx) {
   const { analysis, navigate } = ctx;
   const { series } = analysis;
 
-  if (!series.dates.length && !Object.keys(valueHistory()).length) {
+  if ((trackingStart() || !series.dates.length) && !Object.keys(valueHistory()).length) {
     return emptyState('Kıyaslama için işlem geçmişi gerekiyor',
       'En az bir alım işlemi girdiğinde portföyünün getirisi endekslerle karşılaştırılır.',
       'İşlem ekle', () => navigate('islemler'));
@@ -234,7 +234,7 @@ export function renderKiyaslama(ctx) {
 
   /* --------------------------------------------------- karşı-olgusal senaryo */
 
-  const txs = ctx.analysisTransactions || transactions();
+  const txs = (ctx.analysisTransactions || transactions()).filter((tx) => afterTrackingStart(tx.date));
   const senaryolar = [];
   for (const key of available) {
     // TÜFE bir yatırım aracı değildir; getiri karşılaştırmasında alım gücü
