@@ -246,7 +246,7 @@ function renderDonut(container, cfg) {
 
   const r = size / 2 - thickness / 2 - 2;
   const cx = size / 2, cy = size / 2;
-  const svg = svgEl('svg', { viewBox: `0 0 ${size} ${size}`, width: '100%', height: 'auto' });
+  const svg = svgEl('svg', { viewBox: `0 0 ${size} ${size}`, width: '100%' });
 
   let angle = -Math.PI / 2;
   data.forEach((it) => {
