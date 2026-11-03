@@ -17,7 +17,7 @@ import {
   midasBaseline, unexplainedChange,
 } from '../asset-groups.js';
 import { assetLogo } from '../logos.js';
-import { tile, fundParts, groupTiles, plBadge } from './tiles.js';
+import { tile, fundParts, groupTiles, plBadge, groupPL } from './tiles.js';
 import { kpiCard, plCard, sectionCard, toneCard, groupStrip, SECTION_TONES, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
 
 /**
@@ -47,6 +47,10 @@ function signedCurrency(value, currency = 'TRY') {
   }).format(Math.abs(value));
   return `${value > 0 ? '+' : value < 0 ? '−' : ''}${rendered}`;
 }
+
+// Özet bandındaki kutu: sayfa açılınca günlük kazanç; dokununca toplam kazanç (panel her
+// dakika yeniden çizilse de seçim korunur, sayfa yenilenince günlüğe döner).
+let heroShowsTotal = false;
 
 export function renderPanel(ctx) {
   const { analysis, navigate } = ctx;
@@ -335,6 +339,29 @@ export function renderPanel(ctx) {
       ? 'Midas pozisyonları doğrulanana kadar günlük değişim hesaplanmıyor'
       : `${fmtDate(totals.prevDate)} kapanışına göre`;
   const heroTrend = (value) => (value > 0 ? 'hero-up' : value < 0 ? 'hero-down' : '');
+  // Toplam kazanç: açık pozisyonların maliyete göre kâr/zararı (temerrüt fonları hariç),
+  // Fonlar/ETF/Kripto kartlarındaki "Toplam" rozetiyle aynı hesap.
+  const totalGain = positionSnapshotConsistent ? groupPL(displayPositions) : { total: null, totalPct: null };
+  const heroGainBox = () => {
+    const box = h('div', { class: 'hero-toggle', role: 'button', tabindex: '0', title: 'Dokun: günlük ⇄ toplam kazanç' });
+    const paint = () => {
+      const total = heroShowsTotal;
+      const amount = total ? (isNum(totalGain.totalPct) ? totalGain.total : null) : dailyAmount;
+      const share = total ? totalGain.totalPct : dailyPctValue;
+      box.replaceChildren(
+        h('span', {}, total ? 'Toplam kazanç' : 'Günlük kazanç', h('i', { class: 'hero-swap', 'aria-hidden': 'true' }, ' ⇄')),
+        h('strong', { class: heroTrend(amount) }, isNum(amount) ? tlSigned(amount) : '—'),
+        h('em', { class: heroTrend(share) }, isNum(share) ? pctSigned(share) : ''));
+      box.setAttribute('aria-label', total ? 'Toplam kazanç; dokununca günlük kazanç' : 'Günlük kazanç; dokununca toplam kazanç');
+    };
+    const flip = () => { heroShowsTotal = !heroShowsTotal; paint(); };
+    box.addEventListener('click', flip);
+    box.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); flip(); }
+    });
+    paint();
+    return box;
+  };
   // Kurumsal özet bandı: toplam değer ve günlük kazanç.
   root.append(h('section', { class: 'hero' },
     h('div', {},
@@ -342,10 +369,7 @@ export function renderPanel(ctx) {
       h('h2', {}, totalValueText),
       h('p', {}, totalValueSub)),
     h('div', { class: 'hero-figures' },
-      h('div', {},
-        h('span', {}, 'Günlük kazanç'),
-        h('strong', { class: heroTrend(dailyAmount) }, isNum(dailyAmount) ? tlSigned(dailyAmount) : '—'),
-        h('em', { class: heroTrend(dailyPctValue) }, isNum(dailyPctValue) ? pctSigned(dailyPctValue) : '')),
+      heroGainBox(),
       h('div', {},
         h('span', {}, 'Gerçek getiri'),
         h('strong', { class: heroTrend(real?.twr) }, isNum(real?.twr) ? pctSigned(real.twr) : '—'),
