@@ -10,6 +10,7 @@ import {
 } from './store.js';
 import { requestMidasLiveQuotes, requestServerLiveQuotes } from './midas-import.js';
 import { holidayName } from './holidays.js';
+import { lastDataChecks } from './verify.js';
 import { syncPushSubscription, initPushButton } from './push.js';
 import { needsIntradayQuote } from './asset-groups.js';
 import { supabase } from './supabase-client.js';
@@ -458,8 +459,15 @@ async function refresh() {
     await render();
     // Yenile canlı hisse / ETF / kripto fiyatlarını da çeker (telefonda sunucudan)
     const gotQuotes = await refreshIntradayQuotes();
-    if (yeniGun && oncekiGun && yeniGun > oncekiGun) toast(`Yeni veriler yüklendi: ${fmtDate(yeniGun)}`);
-    else toast(`Veriler güncel: ${fmtDate(yeniGun)}`);
+    // Taze veriyle panel yeniden çizildi; veri kontrolü de yeniden çalıştı.
+    const checks = lastDataChecks();
+    const problems = checks ? checks.checks.filter((c) => c.status !== 'ok') : [];
+    const checkText = checks
+      ? problems.length ? ` · Veri kontrolü: ${problems.length} uyarı (${problems.map((c) => c.title).join(', ')})`
+        : ` · Veri kontrolü: ${checks.checks.length}/${checks.checks.length} doğru`
+      : '';
+    if (yeniGun && oncekiGun && yeniGun > oncekiGun) toast(`Yeni veriler yüklendi: ${fmtDate(yeniGun)}${checkText}`);
+    else toast(`Veriler güncel: ${fmtDate(yeniGun)}${checkText}`);
     // Canlı fiyat alınamadıysa söyle (piyasa kapalıyken son işlem saatinde kalması normaldir)
     if (!gotQuotes && $('#quoteTime')?.classList.contains('is-stale')) {
       setTimeout(() => toast('Canlı fiyat alınamadı; gösterilen son alınan fiyat'), 2700);

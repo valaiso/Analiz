@@ -664,6 +664,16 @@ function transactionCoreFingerprint(tx) {
     Number(tx.units)].join('|');
 }
 
+/** Okunan Midas satırı bu tarayıcıda zaten kayıtlı mı? (kaynak kimliği ya da tarih/kod/tür/adet) */
+export function isStoredMidasTransaction(row) {
+  const code = String(row?.code || '').trim().toLocaleUpperCase('tr');
+  const type = row?.type === 'SAT' ? 'SAT' : 'AL';
+  const id = String(row?.sourceId || '');
+  if (id && midasTx.some((tx) => tx.sourceId === id)) return true;
+  const core = transactionCoreFingerprint({ date: row?.date, code, type, units: row?.units });
+  return midasTx.some((tx) => transactionCoreFingerprint(tx) === core);
+}
+
 /** Midas işlemlerini ayrı localStorage anahtarında saklar; Supabase state'ine eklemez. */
 export function addMidasTransactions(rows) {
   const manualFingerprints = new Set(state.tx.map(transactionFingerprint));

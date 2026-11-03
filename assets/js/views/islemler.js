@@ -8,7 +8,7 @@ import {
 } from '../data.js';
 import {
   transactions, addTransaction, updateTransaction, removeTransaction,
-  allTransactions, addMidasTransactions, saveMidasAccountSnapshot, getMidasAccountSnapshot,
+  allTransactions, addMidasTransactions, isStoredMidasTransaction, saveMidasAccountSnapshot, getMidasAccountSnapshot,
   pruneMidasHistory, trackingStart, afterTrackingStart, dividends, addDividend, removeDividend, cashflows, addManualCashflow, removeCashflow,
 } from '../store.js';
 import { currentMidasPositions } from '../asset-groups.js';
@@ -132,6 +132,9 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
   // Fiyat geçmişi eksik semboller beklenmeden atlanır; diğer işlemler aktarılır.
   const importable = ready.filter((row) => DB.byCode.has(row.code));
   const reusedCount = importable.filter((row) => row.fromStore).length;
+  // Önizleme yalnızca yeni işlemleri öne çıkarır; zaten kayıtlı olanlar katlanır.
+  const newRows = importable.filter((row) => !row.fromStore && !isStoredMidasTransaction(row));
+  const knownRows = ready.filter((row) => !newRows.includes(row));
   const line = (row) => h('tr', {},
     h('td', {}, row.date || '—'),
     h('td', {}, row.code || '—'),
@@ -153,10 +156,14 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
           h('th', { style: 'text-align:left' }, textHeading))),
         h('tbody', {}, pageItems.map(line)))));
 
-  const readyContent = ready.length
-    ? table(ready, 'Birim fiyat', 'Midas satırı')
-    : h('div', { class: 'notice warn' },
-      'İçe aktarılacak işlem alanları henüz tam okunamadı. Eksik satırları aşağıdan inceleyin.');
+  const readyContent = h('div', { class: 'stack' },
+    newRows.length
+      ? table(newRows, 'Birim fiyat', 'Midas satırı')
+      : h('div', { class: 'notice' }, h('strong', {}, 'Yeni işlem yok.'),
+        ` Okunan ${ready.length} işlemin hepsi zaten kayıtlı; kayıtlar güncel.`),
+    knownRows.length ? h('details', {},
+      h('summary', {}, `Zaten kayıtlı ${knownRows.length} işlemi göster`),
+      h('div', { style: 'margin-top:10px' }, table(knownRows, 'Birim fiyat', 'Midas satırı'))) : null);
 
   const quoteNotice = unknownCodes.length
     ? h('div', { class: 'notice warn' },
@@ -176,8 +183,8 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
     h('button', { class: 'btn', type: 'button', onclick: () => close() }, 'Vazgeç'),
     h('button', {
       class: 'btn btn-primary', type: 'button',
-      disabled: !importable.length && !applyLifecycle,
       onclick: () => {
+        if (!importable.length && !applyLifecycle) { close(); return; }
         const lifecycleResult = applyLifecycle?.();
         if (lifecycleResult && (lifecycleResult.removedTransactions || lifecycleResult.pruned.removed || lifecycleResult.pruned.trimmed)) {
           logMidas(`Kapalı dönem temizliği: ${lifecycleResult.removedTransactions} Midas işlem kaydı, ${lifecycleResult.pruned.removed} fiyat geçmişi silindi; ${lifecycleResult.pruned.trimmed} açık varlığın geçmişi alış tarihinden başlatıldı.`);
@@ -192,16 +199,19 @@ function showMidasPreview(rows, scanInfo, ctx, marketErrors = {}, applyLifecycle
           : 'Yeni işlem yok; kayıtlar güncel');
         ctx.refresh();
       },
-    }, unknownCodes.length
-      ? `${importable.length} işlemi içe aktar (${unknownCodes.join(', ')} hariç)`
-      : `${ready.length} işlemi içe aktar`));
+    }, !newRows.length ? 'Tamam'
+      : unknownCodes.length
+        ? `${newRows.length} yeni işlemi içe aktar (${unknownCodes.join(', ')} hariç)`
+        : `${newRows.length} yeni işlemi içe aktar`));
 
   const body = h('div', { class: 'stack' },
     h('p', { class: 'dim' },
-      `${candidates.length - candidates.filter((row) => row.fromStore).length} satır okundu (${scanInfo.scannedPages} sayfa)`
-      + `${reusedCount ? `; ${reusedCount} kayıtlı eski işlem korunuyor` : ''}. ${ready.length} satır işlem bilgisi açısından tam; `
-      + `${unknownCodes.length} kodda alış tarihinden itibaren fiyat geçmişi hâlâ eksik, ${unmatched.length} satırda işlem bilgisi eksik. `
-      + 'Aktarım için sembollerin fiyat geçmişi gerekir. Midas’a hiçbir emir gönderilmez; ek fiyat geçmişleri hesabının ortak havuzuna eşitlenir, işlemler bu tarayıcıda kalır.'),
+      newRows.length
+        ? `${newRows.length} yeni işlem bulundu (${scanInfo.scannedPages} sayfa okundu; ${knownRows.length} işlem zaten kayıtlı).`
+        : `Yeni işlem yok (${scanInfo.scannedPages} sayfa okundu; ${knownRows.length} işlem zaten kayıtlı).`,
+      unmatched.length ? ` ${unmatched.length} satırda işlem bilgisi eksik.` : '',
+      unknownCodes.length ? ` ${unknownCodes.length} kodda fiyat geçmişi eksik.` : '',
+      ' Midas’a hiçbir emir gönderilmez; işlemler bu tarayıcıda kalır.'),
     quoteNotice,
     readyContent,
     unmatchedContent,

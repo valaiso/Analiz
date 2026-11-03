@@ -613,6 +613,15 @@ td.name { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-spa
 .sec-orange { --sec: #ea580c; }
 .sec-violet { --sec: #7c3aed; }
 .sec-amber  { --sec: #c58b12; }
+.sec-green  { --sec: #15803d; }
+.sec-red    { --sec: #dc2626; }
+.check-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.check-list li { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; font-size: .88rem; }
+.check-list .ck { font-weight: 700; text-align: center; }
+.check-list .ck-ok { color: var(--up, #15803d); }
+.check-list .ck-warn { color: #c58b12; }
+.check-list .ck-error { color: var(--down, #dc2626); }
+.check-list small { display: block; color: var(--muted, #64748b); margin-top: 2px; }
 .sec-indigo { --sec: var(--brand-2); }
 .sec-slate  { --sec: var(--brand); }
 html[data-theme="dark"] .sec-slate, html[data-theme="dark"] .sec-indigo, html[data-theme="dark"] .sec-blue { --sec: #4b8df8; }
