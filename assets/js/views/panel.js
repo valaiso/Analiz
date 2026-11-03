@@ -604,15 +604,18 @@ export function renderPanel(ctx) {
       + 'İşlem tarihi, adet ve fiyat kayıtlarını kontrol et.'));
   }
   let nakitSection = null;
-  if (nakit.monthly.length >= 1) {
+  if (nakit.monthly.length >= 1 || trackingStart()) {
     const kutu = h('div');
     const sonAylar = nakit.monthly.slice(-18);
     nakitSection = toneCard({
       tone: 'indigo', icon: '⇅', title: 'Aylık Yatırım Akışı',
-      sub: `Son ${sonAylar.length} ay · pozitif = para koydun, negatif = çektin`,
+      sub: sonAylar.length
+        ? `Son ${sonAylar.length} ay · pozitif = para koydun, negatif = çektin`
+        : `${fmtDate(trackingStart())}’den beri alım/satım yok · pozitif = para koydun, negatif = çektin`,
       figure: tlSigned(sonAylar.reduce((sum, m) => sum + m.amount, 0)), figureSub: 'dönem toplamı',
     }, kutu);
-    barChart(kutu, {
+    if (!sonAylar.length) kutu.append(h('p', { class: 'dim', style: 'margin:0' }, 'İlk alım ya da satışından sonra aylar burada görünecek.'));
+    else barChart(kutu, {
       items: sonAylar.map((m) => ({ label: m.month.slice(2), value: m.amount })),
       format: (v) => tlSigned(v),
       labelWidth: 52,
@@ -621,7 +624,7 @@ export function renderPanel(ctx) {
   if (nakitSection) root.append(h('div', { class: 'grid grid-2' }, stopajSection, nakitSection));
   else root.append(stopajSection);
 
-  if (nakit.realizedByYear.length) {
+  if (nakit.realizedByYear.length || trackingStart()) {
     // Portföy kaydı 16.10.2026'da başladı: başlıktaki rakam o günden beri gerçekleşen kâr/zarar.
     // Yıl kutucukları o yılın tamamıdır (kayıt öncesi satışlar da dahil).
     const startDate = trackingStart() || Object.keys(valueHistory()).sort()[0] || null;
@@ -645,6 +648,8 @@ export function renderPanel(ctx) {
       nakit.realizedByYear.map((y) => h('div', { class: `year-tile ${cls(y.amount)}` },
         h('span', {}, trackingStart() ? `${y.year}` : `${y.year} (TÜM YIL)`),
         h('strong', { class: cls(y.amount) }, tlSigned(y.amount))))),
+    !codeRows.length ? h('p', { class: 'dim', style: 'margin:0' },
+      `${fmtDate(startDate)}’den beri satış yok; satış yaptıkça kâr/zararı burada görünecek.`) : null,
     codeRows.length ? h('div', { class: 'table-wrap' }, h('table', {},
       h('thead', {}, h('tr', {}, h('th', {}, `${fmtDate(startDate)}’den beri satılan`), h('th', {}, 'Gerçekleşen K/Z'))),
       h('tbody', {}, codeRows.map(([code, amount]) => h('tr', {},
