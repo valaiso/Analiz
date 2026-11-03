@@ -801,6 +801,18 @@ export const settings = () => state.settings;
 // K/Z, aylık akış, rapor, temettü, işlem listesi) göstermez. Eski işlemler yalnızca açık
 // pozisyonların maliyet hesabı için saklanır.
 export const trackingStart = () => state.settings?.trackingStart || null;
+// Takip başlangıcı günündeki pozisyon değerleri: kartlardaki "Toplam" K/Z bu değerlerden ölçülür.
+export const trackingBaseline = () => state.trackingBaseline || null;
+export function setTrackingBaseline(date, rows) {
+  if (!date || !rows || !Object.keys(rows).length) return false;
+  const current = state.trackingBaseline;
+  if (current?.date === date && JSON.stringify(current.rows) === JSON.stringify(rows)) return false;
+  // Gün içinde fiyat değiştikçe güncellenir; buluta en fazla 10 dakikada bir yazılır.
+  const last = Date.parse(current?.at || '') || 0;
+  state.trackingBaseline = { date, rows, at: new Date().toISOString() };
+  if (current?.date !== date || Date.now() - last >= 10 * 60_000) persist();
+  return true;
+}
 export const afterTrackingStart = (date) => { const start = trackingStart(); return !start || String(date || '') >= start; };
 
 export function setSetting(key, value) {

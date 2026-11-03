@@ -220,10 +220,11 @@ export function buildMonthlyReport({ month, history = {}, flows = [], dividends 
   };
 
   // Tahmini stopaj (fon kârı üzerinden; temerrüt fonları hariç).
-  const stopaj = positions.filter((row) => row.group === 'Fon' && !FROZEN_FUND_CODES.has(row.code) && row.totalPLTRY > 0)
+  const taxProfit = (row) => (Number.isFinite(row.purchasePLTRY) ? row.purchasePLTRY : row.totalPLTRY);
+  const stopaj = positions.filter((row) => row.group === 'Fon' && !FROZEN_FUND_CODES.has(row.code) && taxProfit(row) > 0)
     .map((row) => {
       const { rate } = fundStopajRate(row.code, '', toDate || `${month}-28`);
-      return { code: row.code, profit: row.totalPLTRY, rate, amount: row.totalPLTRY * rate };
+      return { code: row.code, profit: taxProfit(row), rate, amount: taxProfit(row) * rate };
     });
 
   // Kurallara göre özet cümleler.

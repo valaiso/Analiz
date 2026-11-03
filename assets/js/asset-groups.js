@@ -2,7 +2,7 @@ import { isTurkishMarketClosed } from './holidays.js';
 import {
   DB, cachedHistory, exactPriceAtIndex, lastIndex, indexForDate, usdTryAtIndex,
 } from './data.js';
-import { getMidasAccountSnapshot } from './store.js';
+import { getMidasAccountSnapshot, trackingStart, trackingBaseline, setTrackingBaseline } from './store.js';
 
 const GROUP_ORDER = ['ETF', 'Fon', 'Hisse', 'Kripto', 'Diğer'];
 // Temerrüde düşen, alım-satımı olmayan fonlar: fiyat Midas'taki değerde sabit,
@@ -479,7 +479,50 @@ export function midasStockAccountValue(measuredStockRows) {
 }
 
 /** Midas'ın açık sembollerini site fiyat geçmişi ve yerel işlem adetleriyle birleştir. */
+function istanbulToday() {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Europe/Istanbul' }).format(new Date());
+}
+
+/**
+ * Kartlardaki "Toplam" K/Z takip başlangıcından ölçülür: başlangıç günü elde olan adetlerin
+ * maliyeti o günkü değeridir; sonradan alınan adetler Midas alış maliyetiyle sayılır.
+ * Başlangıç günü boyunca o günün değerleri başlangıç olarak kaydedilir (gün sonu değeri kalır).
+ */
 export function addSiteMarketMetrics(positions) {
+  const rows = computeSiteMarketMetrics(positions);
+  const start = trackingStart();
+  if (!start) return rows;
+  const unitValue = (row) => (Number.isFinite(row.marketValueTRY) && row.units > 0 ? row.marketValueTRY / row.units : null);
+  if (istanbulToday() === start && rows.length) {
+    const snapshot = {};
+    for (const row of rows) {
+      const unitTRY = unitValue(row);
+      if (row.code && Number.isFinite(unitTRY)) snapshot[row.code] = { units: row.units, unitTRY: Math.round(unitTRY * 1e6) / 1e6 };
+    }
+    if (rows.every((row) => !row.code || snapshot[row.code] || row.frozen)) setTrackingBaseline(start, snapshot);
+  }
+  const base = trackingBaseline();
+  if (!base || base.date !== start) return rows;
+  return rows.map((row) => {
+    const b = base.rows?.[row.code];
+    if (!b || row.frozen || !Number.isFinite(row.totalPLTRY) || !Number.isFinite(row.marketValueTRY) || !(row.units > 0)) return row;
+    const midasUnitCost = (row.marketValueTRY - row.totalPLTRY) / row.units;
+    const keptUnits = Math.min(row.units, b.units);
+    const cost = keptUnits * b.unitTRY + (row.units - keptUnits) * midasUnitCost;
+    const totalPLTRY = row.marketValueTRY - cost;
+    const fxNative = row.price > 0 ? row.marketValueTRY / (row.units * row.price) : null;
+    return {
+      ...row,
+      totalPLTRY,
+      totalPLNative: Number.isFinite(fxNative) && fxNative > 0 ? totalPLTRY / fxNative : row.totalPLNative,
+      totalPct: cost > 0 ? totalPLTRY / cost * 100 : null,
+      totalSinceTrackingStart: true,
+      purchasePLTRY: row.totalPLTRY, // alış maliyetine göre K/Z (stopaj bununla hesaplanır)
+    };
+  });
+}
+
+function computeSiteMarketMetrics(positions) {
   const liveQuotes = getMidasAccountSnapshot()?.liveQuotes || {};
   return (positions || []).map((position) => {
     // Midas canlı pozisyonlarında adet yalnızca Midas tablosundan gelmeli.

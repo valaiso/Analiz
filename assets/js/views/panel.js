@@ -232,6 +232,7 @@ export function renderPanel(ctx) {
         value: Math.round(row.marketValueTRY * 100) / 100,
         unitTRY: row.units > 0 ? row.marketValueTRY / row.units : null,
         totalPLTRY: isNum(row.totalPLTRY) ? Math.round(row.totalPLTRY * 100) / 100 : null,
+        purchasePLTRY: isNum(row.purchasePLTRY) ? Math.round(row.purchasePLTRY * 100) / 100 : null,
         totalPct: isNum(row.totalPct) ? row.totalPct : null,
         frozen: Boolean(row.frozen),
       })),
@@ -296,7 +297,9 @@ export function renderPanel(ctx) {
     if (assetType(position.code, position.kind, position.category) !== 'Fon'
       || ['THF', 'TP2'].includes(position.code)) continue;
     const transactionRealized = Number(analysis.holdings.find((holding) => holding.code === position.code)?.realized) || 0;
-    const profit = Number.isFinite(position.totalPLTRY) ? position.totalPLTRY + transactionRealized
+    // Stopaj gerçek alış maliyetine göre kârdan kesilir (takip başlangıcına göre değil).
+    const purchasePL = Number.isFinite(position.purchasePLTRY) ? position.purchasePLTRY : position.totalPLTRY;
+    const profit = Number.isFinite(purchasePL) ? purchasePL + transactionRealized
       : Number.isFinite(position.totalPLNative) ? position.totalPLNative
         : Number.isFinite(position.totalPL) ? position.totalPL + transactionRealized : taxableFundPL.get(position.code);
     if (Number.isFinite(profit)) taxableFundPL.set(position.code, profit);
