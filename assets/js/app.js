@@ -614,3 +614,23 @@ async function boot() {
 }
 
 boot();
+
+// GitHub Pages ana sayfayı ~10 dk eski haliyle verebilir. Sorgu parametreli istek sunucu
+// önbelleğini atlar: yayındaki sürüm açık olandan farklıysa sayfa yeni sürümle yeniden açılır.
+async function checkSiteVersion() {
+  const current = (import.meta.url.match(/\/v\/([0-9a-f]+)\/assets\//) || [])[1];
+  if (!current || document.visibilityState === 'hidden') return;
+  try {
+    const response = await fetch(`${location.origin}${location.pathname}?sv=${Date.now()}`, { cache: 'no-store' });
+    if (!response.ok) return;
+    const live = ((await response.text()).match(/v\/([0-9a-f]+)\/assets\/js\/app\.js/) || [])[1];
+    if (!live || live === current) return;
+    const tried = sessionStorage.getItem('site-version-redirect');
+    if (tried === live) return; // aynı sürüme ikinci kez yönlendirme yapma
+    sessionStorage.setItem('site-version-redirect', live);
+    location.replace(`${location.pathname}?v=${live}${location.hash}`);
+  } catch { /* çevrimdışı: açık sürümle devam */ }
+}
+checkSiteVersion();
+setInterval(checkSiteVersion, 5 * 60_000);
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkSiteVersion(); });
