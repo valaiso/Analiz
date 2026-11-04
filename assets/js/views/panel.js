@@ -416,6 +416,11 @@ export function renderPanel(ctx) {
     runDataChecks({
       snapshot: midasSnapshot, rows: displayPositions, stockAccount, cryptoTotal, total: midasPortfolioTotal,
       dailyAmount, history: valueHistory(), flows: cashflows(), start: trackingStart(), baseline: trackingBaseline(),
+      totalGain: totalGain.total,
+      realizedSinceStart: trackingStart() ? cashflowCalendar(txs, trackingStart()).realizedSales
+        .filter((sale) => sale.date >= trackingStart()).reduce((sum, sale) => sum + sale.amount, 0) : 0,
+      dividendsSinceStart: trackingStart() ? dividends().filter((item) => item.date >= trackingStart())
+        .reduce((sum, item) => sum + item.amount, 0) : 0,
       pending: pendingCashflow(), oversold: analysis.holdings.filter((x) => x.oversold
         && (!trackingStart() || String(x.oversoldDate || '') >= trackingStart())).map((x) => x.code),
     });

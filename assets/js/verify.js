@@ -45,7 +45,8 @@ export const lastDataChecks = () => lastResult;
 export function runDataChecks(input) {
   const {
     snapshot, rows = [], stockAccount, cryptoTotal = 0, total, dailyAmount,
-    history = {}, flows = [], start, baseline, pending, oversold = [],
+    history = {}, flows = [], start, baseline, pending, oversold = [], totalGain = null, realizedSinceStart = 0,
+    dividendsSinceStart = 0,
   } = input;
   const checks = [];
   const add = (status, title, detail) => checks.push({ status, title, detail });
@@ -119,6 +120,18 @@ export function runDataChecks(input) {
     add(Math.abs(diff) < 1 ? 'ok' : 'warn', 'Günlük kazanç tutarlı',
       Math.abs(diff) < 1 ? `Günlük ${tl(dailyAmount)} = varlıkların günlük değişim toplamı.`
         : `Gösterilen ${tl(dailyAmount)}, varlıkların toplamı ${tl(sum)} (${tl(diff)} fark).`);
+  }
+
+  // 5b) Özet bandındaki toplam kazanç = kartlardaki "Toplam" kazançlar + satışlardan gerçekleşen + temettü
+  if (isNum(totalGain) && start) {
+    const cards = live.reduce((s, row) => s + (!row.frozen && isNum(row.totalPLTRY) ? row.totalPLTRY : 0), 0);
+    const expected = cards + realizedSinceStart + dividendsSinceStart;
+    const diff = totalGain - expected;
+    const parts = `kartlar ${tl(cards)}${realizedSinceStart ? ` + satışlar ${tl(realizedSinceStart)}` : ''}${dividendsSinceStart ? ` + temettü ${tl(dividendsSinceStart)}` : ''}`;
+    add(Math.abs(diff) <= 5 ? 'ok' : Math.abs(diff) <= 50 ? 'warn' : 'error', 'Toplam kazanç kartlarla tutarlı',
+      Math.abs(diff) <= 5
+        ? `Toplam kazanç ${tl(totalGain)} = ${parts}.`
+        : `Özet bandı ${tl(totalGain)}, ${parts} = ${tl(expected)} (${tl(diff)} fark). Başlangıç değeri ya da nakit hesabı kaymış olabilir.`);
   }
 
   // 6) Midas taramasının yaşı
