@@ -451,7 +451,7 @@ export function renderPanel(ctx) {
         h('span', {}, 'Gerçek getiri'),
         h('strong', { class: heroTrend(real?.twr) }, isNum(real?.twr) ? pctSigned(real.twr) : '—'),
         h('em', {}, real && isNum(real.twr)
-          ? `${fmtDate(real.startDate)}’den beri${realDividends > 0 ? ` · ${tl(realDividends)} temettü dahil` : ''} · ${realReturnText()}`
+          ? `${realReturnText()}${realDividends > 0 ? ` · ${tl(realDividends)} temettü dahil` : ''}`
           : 'ikinci kayıt gününden itibaren')),
       h('div', {},
         h('span', {}, 'Stopaj (tahmini)'),
