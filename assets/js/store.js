@@ -644,11 +644,20 @@ export function transactions() {
     byDate.get(date).push(row);
   }
   return [...byDate.entries()].sort(([a], [b]) => a.localeCompare(b)).flatMap(([, dayRows]) => {
-    // Midas provides a clock time for its fills. Sort same-day trades by time
-    // only when every row has one; manual fills without a time keep their
-    // original order rather than being guessed before/after Midas fills.
-    if (dayRows.length > 1 && dayRows.every((row) => /^\d{1,2}:\d{2}(?::\d{2})?$/.test(String(row.time || '')))) {
-      dayRows.sort((a, b) => String(a.time).localeCompare(String(b.time)));
+    // Aynı gündeki işlemler saate göre sıralanır. Saat yazı olarak değil saniye olarak
+    // karşılaştırılır ("9:58" yazı sırasında "14:20"den sonra gelir ve satış alıştan önce
+    // sayılırdı). Saati olmayan satırda aynı gün alış satıştan önce sayılır.
+    if (dayRows.length > 1) {
+      const seconds = (row) => {
+        const m = String(row.time || '').match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+        return m ? Number(m[1]) * 3600 + Number(m[2]) * 60 + Number(m[3] || 0) : null;
+      };
+      const allTimed = dayRows.every((row) => seconds(row) !== null);
+      dayRows = dayRows.map((row, index) => ({ row, index })).sort((a, b) => {
+        if (allTimed) return seconds(a.row) - seconds(b.row) || a.index - b.index;
+        const rank = (row) => (row.type === 'SAT' ? 1 : 0);
+        return rank(a.row) - rank(b.row) || a.index - b.index;
+      }).map((item) => item.row);
     }
     return dayRows;
   });

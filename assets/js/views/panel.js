@@ -399,7 +399,8 @@ export function renderPanel(ctx) {
     runDataChecks({
       snapshot: midasSnapshot, rows: displayPositions, stockAccount, cryptoTotal, total: midasPortfolioTotal,
       dailyAmount, history: valueHistory(), flows: cashflows(), start: trackingStart(), baseline: trackingBaseline(),
-      pending: pendingCashflow(), oversold: analysis.holdings.filter((x) => x.oversold).map((x) => x.code),
+      pending: pendingCashflow(), oversold: analysis.holdings.filter((x) => x.oversold
+        && (!trackingStart() || String(x.oversoldDate || '') >= trackingStart())).map((x) => x.code),
     });
   }
 
@@ -697,7 +698,10 @@ export function renderPanel(ctx) {
       + 'Bu pozisyonların değeri son bilinen fiyattan hesaplanıyor, yani güncel değil.'));
   }
 
-  const oversold = analysis.holdings.filter((x) => x.oversold);
+  // Takip başlangıcından önceki satışlar hiçbir hesapta sayılmadığı için uyarı da verilmez.
+  const oversoldHoldings = analysis.holdings.filter((x) => x.oversold
+    && (!trackingStart() || String(x.oversoldDate || '') >= trackingStart()));
+  const oversold = oversoldHoldings;
   if (oversold.length) {
     // Her sorunlu varlığın işlemleri tarih sırasıyla, elde kalan adetle birlikte: eldekinden
     // fazla satılan satır işaretlenir ve hatalı kayıt buradan silinebilir.

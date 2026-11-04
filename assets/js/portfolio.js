@@ -47,7 +47,7 @@ export function buildPositions(txs) {
     if (t.type === 'SAT') {
       // Elde olandan fazla satış girilmişse eldekiyle sınırla ve işaretle.
       const qty = Math.min(t.units, p.units);
-      if (t.units > p.units + EPS) p.oversold = true;
+      if (t.units > p.units + EPS) { p.oversold = true; p.oversoldDate = t.date; }
       const avg = p.units > EPS ? p.cost / p.units : 0;
       const nativeAvg = p.units > EPS ? p.nativeCost / p.units : 0;
       p.realized += (qty * t.price - fee) * fx - qty * avg;
