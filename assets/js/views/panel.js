@@ -419,7 +419,15 @@ export function renderPanel(ctx) {
     const startIndex = at(real.startDate);
     const endIndex = at(todayInIstanbul());
     if (!(startIndex > 0) || !(endIndex > 0)) return 'reel: TÜFE verisi yok';
-    if (endIndex === startIndex) return 'reel: dönemin TÜFE’si henüz açıklanmadı';
+    if (endIndex === startIndex) {
+      // TÜİK bir ayın enflasyonunu ertesi ayın 3'ünde açıklar (hafta sonuysa ilk iş günü).
+      const [y, m] = real.startDate.split('-').map(Number);
+      const release = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 3));
+      while (isTurkishMarketClosed(release.toISOString().slice(0, 10))) release.setUTCDate(release.getUTCDate() + 1);
+      const monthName = new Intl.DateTimeFormat('tr-TR', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, 15)));
+      const releaseText = new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(release);
+      return `reel: ${monthName.charAt(0).toLocaleUpperCase('tr')}${monthName.slice(1)} TÜFE’si bekleniyor (açıklanma ${releaseText})`;
+    }
     const inflation = (endIndex / startIndex - 1) * 100;
     const nominal = isNum(totalGain.totalPct) ? totalGain.totalPct : real.twr;
     return `reel ${pctSigned(((1 + nominal / 100) / (1 + inflation / 100) - 1) * 100)} (TÜFE %${inflation.toFixed(1).replace('.', ',')})`;
