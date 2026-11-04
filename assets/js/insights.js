@@ -380,6 +380,23 @@ export function recordedSeries(history, flows) {
   return { dates, twr };
 }
 
+/**
+ * Dönemin enflasyonu henüz açıklanmadıysa tahmin: son açıklanan aylık enflasyon, geçen gün
+ * sayısına göre bileşik olarak bölünür. Gerçek rakam açıklanınca site onu kullanır.
+ * @param {number[]} tufeValues  TÜFE endeksi (yayın gününden itibaren geçerli, ileri doldurulmuş)
+ * @param {number} days          dönemin takvim günü sayısı
+ * @returns {{ monthly: number, estimate: number } | null}  yüzde olarak
+ */
+export function estimatedInflation(tufeValues, days) {
+  const distinct = [];
+  for (const value of tufeValues || []) {
+    if (value > 0 && value !== distinct.at(-1)) distinct.push(value);
+  }
+  if (distinct.length < 2 || !(days >= 0)) return null;
+  const monthly = distinct.at(-1) / distinct.at(-2) - 1;
+  return { monthly: monthly * 100, estimate: ((1 + monthly) ** (days / 30.44) - 1) * 100 };
+}
+
 export function realReturn(history, flows) {
   const dates = Object.keys(history || {}).filter((date) => Number(history[date]) > 0).sort();
   if (!dates.length) return null;

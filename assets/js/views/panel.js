@@ -4,7 +4,7 @@ import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, money, cls, isNum, 
 import { DB, indexForDate } from '../data.js';
 import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
-import { cashflowCalendar, realReturn } from '../insights.js';
+import { cashflowCalendar, realReturn, estimatedInflation } from '../insights.js';
 import { runDataChecks } from '../verify.js';
 import { fifoLots, fifoStopaj, lotsMatchUnits } from '../tax.js';
 import { isTurkishMarketClosed } from '../holidays.js';
@@ -426,7 +426,16 @@ export function renderPanel(ctx) {
       while (isTurkishMarketClosed(release.toISOString().slice(0, 10))) release.setUTCDate(release.getUTCDate() + 1);
       const monthName = new Intl.DateTimeFormat('tr-TR', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, 15)));
       const releaseText = new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(release);
-      return `reel: ${monthName.charAt(0).toLocaleUpperCase('tr')}${monthName.slice(1)} TÜFE’si bekleniyor (açıklanma ${releaseText})`;
+      const month = `${monthName.charAt(0).toLocaleUpperCase('tr')}${monthName.slice(1)}`;
+      // Açıklanana kadar tahmin: son açıklanan aylık enflasyon, geçen güne göre bölünür.
+      const days = (Date.parse(`${todayInIstanbul()}T12:00:00Z`) - Date.parse(`${real.startDate}T12:00:00Z`)) / 86400000;
+      const known = values.slice(0, indexForDate(todayInIstanbul()) + 1);
+      const est = estimatedInflation(known, days);
+      const nominal = isNum(totalGain.totalPct) ? totalGain.totalPct : real.twr;
+      if (!est || !isNum(nominal)) return `reel: ${month} TÜFE’si bekleniyor (açıklanma ${releaseText})`;
+      const prevMonthName = new Intl.DateTimeFormat('tr-TR', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 2, 15)));
+      const realEst = ((1 + nominal / 100) / (1 + est.estimate / 100) - 1) * 100;
+      return `reel ≈ ${pctSigned(realEst)} (tahmini · ${prevMonthName} enflasyonu %${est.monthly.toFixed(2).replace('.', ',')})`;
     }
     const inflation = (endIndex / startIndex - 1) * 100;
     const nominal = isNum(totalGain.totalPct) ? totalGain.totalPct : real.twr;

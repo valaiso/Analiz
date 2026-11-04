@@ -13,7 +13,7 @@ seedStorage('tefas-midas-import-v1', [
 
 const store = await import('../assets/js/store.js');
 const { buildPositions, riskSummary } = await import('../assets/js/portfolio.js');
-const { realReturn, cashflowCalendar } = await import('../assets/js/insights.js');
+const { realReturn, cashflowCalendar, estimatedInflation } = await import('../assets/js/insights.js');
 const { cashflowThreshold, unexplainedChange, applyDailyMarketTransactions, weeklyMarketGain } = await import('../assets/js/asset-groups.js');
 const { runDataChecks } = await import('../assets/js/verify.js');
 
@@ -138,4 +138,14 @@ test('Veri kontrolü: fonlar farklı fiyat günlerindeyse uyarır', () => {
   ];
   const check = runDataChecks({ rows }).checks.find((c) => c.title === 'Fonlar aynı fiyat gününde');
   assert.equal(check.status, 'warn');
+});
+
+test('Tahmini enflasyon: son açıklanan aylık TÜFE geçen güne göre bölünür', () => {
+  // Eylül 4.368,20 → Ekim 4.480,88 (%2,58); 2 günlük tahmin ≈ %0,168
+  const values = [4289.26, 4289.26, 4368.201771, 4368.201771, 4480.884378, 4480.884378];
+  const est = estimatedInflation(values, 2);
+  near(assert, est.monthly, (4480.884378 / 4368.201771 - 1) * 100, 1e-9);
+  near(assert, est.estimate, ((4480.884378 / 4368.201771) ** (2 / 30.44) - 1) * 100, 1e-9);
+  near(assert, estimatedInflation(values, 30.44).estimate, est.monthly, 1e-9);   // tam bir ay = aylık oran
+  assert.equal(estimatedInflation([100, 100], 5), null);                          // tek değer: tahmin yok
 });
