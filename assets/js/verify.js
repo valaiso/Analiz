@@ -46,7 +46,7 @@ export function runDataChecks(input) {
   const {
     snapshot, rows = [], stockAccount, cryptoTotal = 0, total, dailyAmount,
     history = {}, flows = [], start, baseline, pending, oversold = [], totalGain = null, realizedSinceStart = 0,
-    dividendsSinceStart = 0,
+    dividendsSinceStart = 0, openingRows = null,
   } = input;
   const checks = [];
   const add = (status, title, detail) => checks.push({ status, title, detail });
@@ -120,6 +120,18 @@ export function runDataChecks(input) {
     add(Math.abs(diff) < 1 ? 'ok' : 'warn', 'Günlük kazanç tutarlı',
       Math.abs(diff) < 1 ? `Günlük ${tl(dailyAmount)} = varlıkların günlük değişim toplamı.`
         : `Gösterilen ${tl(dailyAmount)}, varlıkların toplamı ${tl(sum)} (${tl(diff)} fark).`);
+  }
+
+  // 5a) Bugün adedi artan varlıklar: yeni adetlerin günlük kazancı alış fiyatından mı?
+  if (openingRows) {
+    const grown = live.filter((row) => !row.frozen && openingRows[row.code] && row.units > openingRows[row.code].units + 1e-9);
+    const unadjusted = grown.filter((row) => !row.dailyBoughtToday && !row.dailyTransactionsApplied);
+    if (grown.length) {
+      add(unadjusted.length ? 'warn' : 'ok', 'Bugün alınanlar alış fiyatından sayılıyor',
+        unadjusted.length
+          ? `${unadjusted.map((r) => r.code).join(', ')}: bugün adet arttı ama alış maliyeti bulunamadı; günlük kazanç yeni adetleri dünkü fiyattan sayıyor.`
+          : `${grown.map((r) => `${r.code} +${(r.units - openingRows[r.code].units).toLocaleString('tr-TR', { maximumFractionDigits: 6 })} adet`).join(', ')}: günlük kazanç gerçek alış fiyatından hesaplandı.`);
+    }
   }
 
   // 5b) Özet bandındaki toplam kazanç = kartlardaki "Toplam" kazançlar + satışlardan gerçekleşen + temettü

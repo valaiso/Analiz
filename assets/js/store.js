@@ -864,6 +864,32 @@ export function setScanCash(key, cash) {
   state.midasScanCash = { key, cash: Math.round(cash * 100) / 100 };
   persist();
 }
+/**
+ * Gün başı pozisyonları: her günün son bilinen adetleri ve Midas toplam maliyetleri saklanır;
+ * ertesi gün bunlar "açılış" olur. Gün içinde adet artmışsa yeni adetlerin günlük kazancı
+ * dünkü kapanıştan değil gerçek alış maliyetinden (Midas maliyet artışı) hesaplanır.
+ */
+export function recordDayPositions(today, rows) {
+  if (!today || !rows || !Object.keys(rows).length) return;
+  const current = state.positionDays;
+  if (current?.date === today) {
+    const changed = Object.keys(rows).length !== Object.keys(current.rows || {}).length
+      || Object.entries(rows).some(([code, row]) => Math.abs((current.rows?.[code]?.units ?? -1) - row.units) > 1e-9);
+    state.positionDays = { date: today, rows };
+    if (changed) persist();
+    return;
+  }
+  if (current?.date && current.date < today) state.positionOpen = { date: today, from: current.date, rows: current.rows };
+  state.positionDays = { date: today, rows };
+  persist();
+}
+export function dayOpeningRows(today, previousTradingDay) {
+  if (state.positionOpen?.date === today) return state.positionOpen.rows;
+  // İlk gün: önceki işlem gününün takip başlangıcı fotoğrafı açılış sayılır.
+  const base = state.trackingBaseline;
+  if (base?.date && base.date === previousTradingDay && !(state.positionDays?.date && state.positionDays.date < today)) return base.rows;
+  return null;
+}
 export const afterTrackingStart = (date) => { const start = trackingStart(); return !start || String(date || '') >= start; };
 
 export function setSetting(key, value) {

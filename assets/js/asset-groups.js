@@ -788,7 +788,7 @@ function computeSiteMarketMetrics(positions) {
 }
 
 /** Compute the daily mark-to-market using market prices and same-day fills. */
-export function applyDailyMarketTransactions(positions, transactions, date, { positionsComplete = false } = {}) {
+export function applyDailyMarketTransactions(positions, transactions, date, { positionsComplete = false, openingRows = null } = {}) {
   const byCode = new Map((transactions || []).filter((tx) => tx.source === 'midas'
     && String(tx.date || '').slice(0, 10) === date && tx.code)
     .reduce((groups, tx) => {
@@ -801,7 +801,33 @@ export function applyDailyMarketTransactions(positions, transactions, date, { po
   const adjustedRows = (positions || []).map((row) => {
     const fills = byCode.get(row.code) || [];
     byCode.delete(row.code);
-    if (row.noDailyChange || !fills.length) return row;
+    if (row.noDailyChange) return row;
+    if (!fills.length) {
+      // Bugünkü işlem kaydı yok ama Midas adedi gün başına göre artmış: yeni adetler bugün
+      // alınmıştır; günlük kazançları alış maliyetinden (Midas maliyet artışı) hesaplanır.
+      const open = openingRows?.[row.code];
+      const now = row.dailyUnitPriceNowTRY;
+      const prev = row.dailyUnitPricePrevTRY;
+      const purchasePL = Number.isFinite(row.purchasePLTRY) ? row.purchasePLTRY : row.totalPLTRY;
+      if (!open || !(row.units > open.units + 1e-9) || !Number.isFinite(open.midasCost)
+        || !Number.isFinite(now) || !Number.isFinite(prev) || !Number.isFinite(purchasePL)
+        || !Number.isFinite(row.marketValueTRY)) return row;
+      const newUnits = row.units - open.units;
+      const newCost = (row.marketValueTRY - purchasePL) - open.midasCost;
+      if (!(newCost > 0)) return row;
+      const dailyPLTRY = open.units * (now - prev) + (newUnits * now - newCost);
+      const openingValueTRY = open.units * prev + newCost;
+      const fxNow = Number(row.price) > 0 ? now / Number(row.price) : 1;
+      return {
+        ...row,
+        dailyPLTRY,
+        dailyPLNative: fxNow > 0 ? dailyPLTRY / fxNow : dailyPLTRY,
+        dailyPct: openingValueTRY > 0 ? dailyPLTRY / openingValueTRY * 100 : null,
+        marketValuePrevTRY: openingValueTRY,
+        dailyOpeningUnits: open.units,
+        dailyBoughtToday: newUnits,
+      };
+    }
     const previousUnitTRY = row.dailyUnitPricePrevTRY;
     const currentUnitTRY = row.dailyUnitPriceNowTRY;
     const currentUnits = Number(row.units) || 0;

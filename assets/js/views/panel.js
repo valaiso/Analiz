@@ -6,10 +6,12 @@ import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
 import { cashflowCalendar, realReturn } from '../insights.js';
 import { runDataChecks } from '../verify.js';
+import { isTurkishMarketClosed } from '../holidays.js';
 import {
   transactions, removeTransaction, daysSinceBackup, getMidasAccountSnapshot, valueHistory,
   recordPortfolioValue, recordMonthlySnapshot, setPortfolioValue, removePortfolioValue, cashflows,
   midasBaselineState, pendingCashflow, updateMidasBaseline, trackingStart, trackingBaseline, alignTrackingStartValue, setTrackingBaselineCash,
+  recordDayPositions, dayOpeningRows,
   confirmPendingCashflow, rejectPendingCashflow, dividends, dividendsBetween, manualCashflowsBetween,
 } from '../store.js';
 import {
@@ -128,8 +130,30 @@ export function renderPanel(ctx) {
     && String(tx.date || '').slice(0, 10) === todayInIstanbul());
   const dailyPositionCoverageComplete = (stockPositionsCaptured || !expectsStockSnapshot)
     && (cryptoPositionsCaptured || !expectsCryptoSnapshot);
+  // Gün başı adetleri: bugün adedi artan varlığın yeni adetleri alış maliyetiyle sayılır.
+  const previousTradingDay = (() => {
+    const day = new Date(`${todayInIstanbul()}T12:00:00Z`);
+    for (let i = 0; i < 10; i += 1) {
+      day.setUTCDate(day.getUTCDate() - 1);
+      const iso = day.toISOString().slice(0, 10);
+      if (!isTurkishMarketClosed(iso)) return iso;
+    }
+    return null;
+  })();
+  const openingRows = stockPositionsCaptured ? dayOpeningRows(todayInIstanbul(), previousTradingDay) : null;
+  if (stockPositionsCaptured) {
+    const dayRows = {};
+    for (const row of snapshotPositions) {
+      const purchasePL = isNum(row.purchasePLTRY) ? row.purchasePLTRY : row.totalPLTRY;
+      if (row.code && row.units > 0) dayRows[row.code] = {
+        units: row.units,
+        midasCost: isNum(row.marketValueTRY) && isNum(purchasePL) ? Math.round((row.marketValueTRY - purchasePL) * 100) / 100 : null,
+      };
+    }
+    recordDayPositions(todayInIstanbul(), dayRows);
+  }
   const dailyMarket = applyDailyMarketTransactions(snapshotPositions, todayMidasTransactions,
-    todayInIstanbul(), { positionsComplete: dailyPositionCoverageComplete });
+    todayInIstanbul(), { positionsComplete: dailyPositionCoverageComplete, openingRows });
   const dailyPositions = dailyMarket.rows;
   // Do not infer an open holding from Midas order history.
   const displayPositions = positionsVerified ? dailyPositions
@@ -416,7 +440,7 @@ export function renderPanel(ctx) {
     runDataChecks({
       snapshot: midasSnapshot, rows: displayPositions, stockAccount, cryptoTotal, total: midasPortfolioTotal,
       dailyAmount, history: valueHistory(), flows: cashflows(), start: trackingStart(), baseline: trackingBaseline(),
-      totalGain: totalGain.total,
+      totalGain: totalGain.total, openingRows,
       realizedSinceStart: trackingStart() ? cashflowCalendar(txs, trackingStart()).realizedSales
         .filter((sale) => sale.date >= trackingStart()).reduce((sum, sale) => sum + sale.amount, 0) : 0,
       dividendsSinceStart: trackingStart() ? dividends().filter((item) => item.date >= trackingStart())
