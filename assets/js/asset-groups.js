@@ -169,14 +169,25 @@ export function midasBaseline() {
   const unitTRY = {};
   const fxAt = (currency, at) => currencyFxToTRY('', currency, indexForDate(String(at || '').slice(0, 10)));
   const stockFx = fxAt('USD', snapshot.stockCapturedAt);
+  // Midas fon fiyatını kuruşa yuvarlar (0,11559 → 0,12). Binlerce adetli fonda bu, iki tarama
+  // arasında yüzlerce TL'lik sahte "açıklanamayan değişim" yaratır; tam TEFAS fiyatı kullanılır.
+  const scanDay = dateInTimezone(snapshot.stockCapturedAt, 'Europe/Istanbul');
+  const scanIndex = scanDay ? indexForDate(scanDay) : -1;
+  let frozenValue = 0;
   for (const row of snapshot.positions || []) {
     if (!(row.units > 0) || !(row.price > 0)) continue;
     const meta = DB.byCode.get(row.code) || {};
     const currency = row.currency || meta.currency || (meta.kind === 'US_ETF' ? 'USD' : 'TRY');
     const fx = currency === 'USD' ? stockFx : 1;
     if (!Number.isFinite(fx)) return null;
+    let price = row.price;
+    if (currency !== 'USD' && scanIndex >= 0) {
+      const exact = exactPriceAtIndex(cachedHistory(row.code), scanIndex);
+      if (exact && Math.abs(exact - price) <= 0.005 + 1e-9) price = exact;
+    }
     units[row.code] = row.units;
-    unitTRY[row.code] = row.price * fx;
+    unitTRY[row.code] = price * fx;
+    if (FROZEN_FUND_CODES.has(row.code)) frozenValue += row.units * price * fx;
   }
   let cryptoTotal = 0;
   const cryptoCaptured = snapshot.cryptoPositionsSource === 'midas-visible-v1' && snapshot.cryptoPositionsCaptured === true;
@@ -196,9 +207,19 @@ export function midasBaseline() {
     key: `${snapshot.stockCapturedAt || ''}|${cryptoCaptured ? snapshot.cryptoCapturedAt || '' : ''}`,
     at: [snapshot.stockCapturedAt, cryptoCaptured ? snapshot.cryptoCapturedAt : null].filter(Boolean).sort().at(-1),
     total: snapshot.summary.totalValue + cryptoTotal,
+    frozenValue,
     units,
     unitTRY,
   };
+}
+
+/**
+ * Para giriş/çıkışı sorusunun eşiği: fiyatı oynayan kısmın %0,3'ü, en az 250 TL.
+ * (Eskiden toplamın %1'iydi; ~525 bin TL'de 5.250 TL'nin altındaki yatırmalar kâr sayılıyordu.)
+ */
+export function cashflowThreshold(baseline) {
+  const liquid = Math.max(0, Math.abs(Number(baseline?.total) || 0) - (Number(baseline?.frozenValue) || 0));
+  return Math.max(250, liquid * 0.003);
 }
 
 /**
@@ -215,8 +236,8 @@ export function unexplainedChange(previous, current) {
     if (Number.isFinite(before) && Number.isFinite(after)) market += oldUnits * (after - before);
   }
   const amount = current.total - previous.total - market;
-  const threshold = Math.max(1000, Math.abs(previous.total) * 0.01);
-  return { amount, market, significant: Math.abs(amount) >= threshold };
+  const threshold = cashflowThreshold(previous);
+  return { amount, market, threshold, significant: Math.abs(amount) >= threshold };
 }
 
 // ETF'in neyi takip ettiği ve kısaca ne anlama geldiği.

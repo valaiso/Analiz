@@ -25,6 +25,10 @@ from tefas import Tefas, KIND_LABELS
 ROOT = Path(__file__).resolve().parent.parent
 
 
+
+# Gram altın kıyası için TEFAS altın borsa yatırım fonları (Ziraat, İş, QNB).
+GOLD_BENCHMARK_FUNDS = {"ZGD", "ILK", "FGA"}
+
 def _json_safe(value):
     """Replace non-finite floats with JSON null before writing generated data."""
     if isinstance(value, float) and not math.isfinite(value):
@@ -315,7 +319,7 @@ def build_site(conn: sqlite3.Connection, out_dir: Path, years: int) -> dict:
     meta = {c: dict(zip(("name", "kind", "shares", "investors", "size", "category", "category_src"), rest))
             for c, *rest in conn.execute("SELECT code, name, kind, shares, investors, size, category, category_src FROM funds")}
 
-    funds_out, para_piyasasi = [], []
+    funds_out, para_piyasasi, altin_fonlari = [], [], []
 
     for code, info in sorted(meta.items()):
         rows = conn.execute("SELECT date, price FROM prices WHERE code = ? ORDER BY date", (code,)).fetchall()
@@ -344,6 +348,9 @@ def build_site(conn: sqlite3.Connection, out_dir: Path, years: int) -> dict:
         kategori = resmi or categorize(info["name"])
         if kategori == "Para Piyasası":
             para_piyasasi.append((first_idx, series))
+        # Gram altın kıyası: yurt içi gram fiyatını izleyen büyük altın borsa yatırım fonları.
+        if code in GOLD_BENCHMARK_FUNDS:
+            altin_fonlari.append((first_idx, series))
 
         funds_out.append({
             "code": code, "name": info["name"], "kind": info["kind"], "cat": kategori,
@@ -362,7 +369,7 @@ def build_site(conn: sqlite3.Connection, out_dir: Path, years: int) -> dict:
 
     # Benchmarks
     bench = benchmarks.collect(dt.date.fromisoformat(calendar[0]), dt.date.fromisoformat(last_day), calendar,
-                               money_market=para_piyasasi)
+                               money_market=para_piyasasi, gold_funds=altin_fonlari or None)
     _write_json(data_dir / "benchmarks.json", bench)
 
     info = {

@@ -905,6 +905,17 @@ export function dayOpeningRows(today, previousTradingDay) {
   if (base?.date && base.date === previousTradingDay && !(state.positionDays?.date && state.positionDays.date < today)) return base.rows;
   return null;
 }
+// FIFO alış partileri (stopaj için): Midas işlem geçmişi yalnızca PC'de olduğu için
+// PC'nin çıkardığı partiler hesaba yazılır; telefon aynı partilerle hesaplar.
+export const fifoLotsCloud = () => state.fifoLotsCloud?.funds || null;
+export function syncFifoLots(funds) {
+  const current = state.fifoLotsCloud?.funds;
+  if (current && JSON.stringify(current) === JSON.stringify(funds)) return false;
+  state.fifoLotsCloud = { funds, at: new Date().toISOString() };
+  persist();
+  return true;
+}
+
 export const afterTrackingStart = (date) => { const start = trackingStart(); return !start || String(date || '') >= start; };
 
 export function setSetting(key, value) {

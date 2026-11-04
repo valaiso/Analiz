@@ -3,7 +3,7 @@
 
 import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, isNum, fmtDate, colorAt } from '../util.js';
 import { lineChart } from '../charts.js';
-import { valueHistory, cashflows, dividends, monthlySnapshots, transactions, afterTrackingStart, trackingStart } from '../store.js';
+import { valueHistory, cashflows, dividends, monthlySnapshots, transactions, afterTrackingStart, trackingStart, fifoLotsCloud } from '../store.js';
 import { buildMonthlyReport, reportMonths, monthLabel, FIRST_REPORT_MONTH } from '../report.js';
 import { tonedSection } from './common.js';
 
@@ -212,6 +212,7 @@ export function renderRapor() {
     month, history, flows: cashflows().filter((f) => afterTrackingStart(f.date)),
     dividends: dividends().filter((d) => afterTrackingStart(d.date)), snapshots,
     transactions: transactions().filter((tx) => tx.source === 'midas' && afterTrackingStart(tx.date)),
+    fifoLots: fifoLotsCloud(),
   });
 
   const holder = h('div');
@@ -261,3 +262,4 @@ export function renderRapor() {
   }
   return root;
 }
+

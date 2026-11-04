@@ -65,16 +65,21 @@ export function renderRisk(ctx) {
       label: 'Yıllık Oynaklık',
       tone: 'blue',
       value: isNum(summary.vol) ? pct(summary.vol, 1) : '—',
-      sub: summary.vol > 25 ? 'Yüksek dalgalanma' : summary.vol > 12 ? 'Orta' : 'Düşük',
-      hint: 'Günlük getirilerin standart sapması, yıllığa çevrilmiş',
+      sub: `${summary.vol > 25 ? 'Yüksek dalgalanma' : summary.vol > 12 ? 'Orta' : 'Düşük'}`
+        + `${isNum(summary.volMargin) ? ` · hata payı ±${num(summary.volMargin, 1)} puan` : ''}`,
+      hint: 'Günlük getirilerin standart sapması, yıllığa çevrilmiş. Hata payı %95 güvenle gerçek değerin aralığıdır.',
     }),
     kpiCard({
       label: 'Sharpe Oranı',
       tone: 'green',
-      value: isNum(summary.sharpe) ? num(summary.sharpe, 2) : '—',
+      value: isNum(summary.sharpe)
+        ? `${num(summary.sharpe, 2)}${isNum(summary.sharpeMargin) ? ` ± ${num(summary.sharpeMargin, 2)}` : ''}`
+        : '—',
       valueClass: cls(summary.sharpe),
       sub: `Risksiz getiri %${num(riskFree, 1)} ${!manualRf && isNum(ppAuto) ? '(para piyasası fonları, son 1 yıl)' : '(elle girildi)'}`,
-      hint: 'Aldığın risk başına düşen fazla getiri; 1 üzeri iyi kabul edilir',
+      hint: isNum(summary.sharpeMargin) && Math.abs(summary.sharpe) < summary.sharpeMargin
+        ? `Hata payı (%95) Sharpe'ın kendisinden büyük: ${summary.observations} günlük veriyle iyi mi kötü mü olduğu henüz söylenemez.`
+        : 'Aldığın risk başına düşen fazla getiri; 1 üzeri iyi kabul edilir. ± hata payı %95 güven aralığıdır (Lo, 2002).',
     }),
     kpiCard({
       label: 'Maksimum Düşüş',

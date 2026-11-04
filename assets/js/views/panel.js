@@ -6,18 +6,19 @@ import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
 import { cashflowCalendar, realReturn } from '../insights.js';
 import { runDataChecks } from '../verify.js';
+import { fifoLots, fifoStopaj, lotsMatchUnits } from '../tax.js';
 import { isTurkishMarketClosed } from '../holidays.js';
 import {
   transactions, removeTransaction, daysSinceBackup, getMidasAccountSnapshot, valueHistory,
   recordPortfolioValue, recordMonthlySnapshot, setPortfolioValue, removePortfolioValue, cashflows,
   midasBaselineState, pendingCashflow, updateMidasBaseline, trackingStart, trackingBaseline, alignTrackingStartValue, setTrackingBaselineCash,
-  recordDayPositions, dayOpeningRows,
+  recordDayPositions, dayOpeningRows, fifoLotsCloud, syncFifoLots,
   confirmPendingCashflow, rejectPendingCashflow, dividends, dividendsBetween, manualCashflowsBetween,
 } from '../store.js';
 import {
   currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, applyDailyMarketTransactions,
   groupAssetRows, assetType, midasStockAccountValue, assetLabel, fundStopajRate, midasBaseline,
-  unexplainedChange,
+  unexplainedChange, cashflowThreshold,
 } from '../asset-groups.js';
 import { tile, fundParts, groupTiles, plBadge } from './tiles.js';
 import { sectionCard, toneCard, SECTION_TONES, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
@@ -294,7 +295,7 @@ export function renderPanel(ctx) {
       const from = String(previousBaseline.at || '').slice(0, 10);
       const to = String(currentBaseline.at || '').slice(0, 10);
       const amount = rawChange.amount - dividendsBetween(from, to) - manualCashflowsBetween(from, to);
-      return { ...rawChange, amount, significant: Math.abs(amount) >= Math.max(1000, Math.abs(previousBaseline.total) * 0.01) };
+      return { ...rawChange, amount, significant: Math.abs(amount) >= cashflowThreshold(previousBaseline) };
     })() : null;
     updateMidasBaseline(currentBaseline, change?.significant ? change : null);
   }
@@ -325,46 +326,45 @@ export function renderPanel(ctx) {
     .reduce((sum, item) => sum + item.amount, 0) : 0;
 
   const txs = ctx.analysisTransactions || transactions();
-  const taxableFundPL = new Map(analysis.holdings
-    .filter((holding) => !holding.closed && assetType(holding.code, holding.kind, holding.cat) === 'Fon'
-      && !['THF', 'TP2'].includes(holding.code))
-    .map((holding) => [holding.code, Number(holding.totalPL) || 0]));
-  // Midas positions may have no corresponding transaction history in the app.
-  // Use their live cost-based P/L when available so taxable funds like GPN count.
+  // Tahmini stopaj (bugün satılsa): aracı kurum gibi "ilk giren ilk çıkar" partileriyle.
+  // Partiler Midas işlem geçmişinden çıkarılır (yalnızca PC'de); adetleri Midas'la tutarsa
+  // hesaba yazılır ve telefon da aynı partileri kullanır. Tutmazsa (eksik geçmiş) Midas'ın
+  // ortalama maliyeti kullanılır. Geçmiş satışların kârı eklenmez: onların stopajı kesildi.
+  const hasMidasHistory = txs.some((tx) => tx.source === 'midas');
+  const cloudLots = fifoLotsCloud();
+  const lotsToSync = {};
+  const stopajRows = [];
   for (const position of snapshotPositions) {
     if (assetType(position.code, position.kind, position.category) !== 'Fon'
-      || ['THF', 'TP2'].includes(position.code)) continue;
-    const transactionRealized = Number(analysis.holdings.find((holding) => holding.code === position.code)?.realized) || 0;
-    // Stopaj gerçek alış maliyetine göre kârdan kesilir (takip başlangıcına göre değil).
-    const purchasePL = Number.isFinite(position.purchasePLTRY) ? position.purchasePLTRY : position.totalPLTRY;
-    const profit = Number.isFinite(purchasePL) ? purchasePL + transactionRealized
-      : Number.isFinite(position.totalPLNative) ? position.totalPLNative
-        : Number.isFinite(position.totalPL) ? position.totalPL + transactionRealized : taxableFundPL.get(position.code);
-    if (Number.isFinite(profit)) taxableFundPL.set(position.code, profit);
-  }
-  // Açık dönemin ilk alış tarihi (pozisyon sıfırlanınca yeni dönem başlar).
-  const holdingStart = new Map();
-  const openUnits = new Map();
-  for (const tx of txs) {
-    const code = String(tx.code || '').toLocaleUpperCase('tr');
-    const units = Number(tx.units) || 0;
-    const before = openUnits.get(code) || 0;
-    if (tx.type === 'AL') {
-      if (before <= 1e-8) holdingStart.set(code, String(tx.date || '').slice(0, 10));
-      openUnits.set(code, before + units);
-    } else if (tx.type === 'SAT') {
-      const after = Math.max(0, before - units);
-      openUnits.set(code, after);
-      if (after <= 1e-8) holdingStart.delete(code);
+      || ['THF', 'TP2'].includes(position.code) || !(position.units > 0) || !isNum(position.marketValueTRY)) continue;
+    let lots = null;
+    if (hasMidasHistory) {
+      const built = fifoLots(txs.filter((tx) => tx.source === 'midas'), position.code).lots;
+      if (lotsMatchUnits(built, position.units)) {
+        lots = built;
+        lotsToSync[position.code] = { units: position.units, lots: built.map((lot) => ({
+          date: lot.date, units: Math.round(lot.units * 1e6) / 1e6, unitCost: Math.round(lot.unitCost * 1e6) / 1e6,
+        })) };
+      }
+    } else if (cloudLots?.[position.code] && lotsMatchUnits(cloudLots[position.code].lots, position.units)) {
+      lots = cloudLots[position.code].lots;
     }
+    const price = position.marketValueTRY / position.units;
+    if (lots) {
+      const result = fifoStopaj(lots, price, (date) => fundStopajRate(position.code, date, todayInIstanbul()));
+      if (result.profit > 0 || result.amount > 0) {
+        stopajRows.push({ code: position.code, profit: result.profit, rate: result.rate, reason: result.reason,
+          amount: result.amount, method: 'FIFO', lots: lots.length });
+      }
+      continue;
+    }
+    const purchasePL = Number.isFinite(position.purchasePLTRY) ? position.purchasePLTRY : position.totalPLTRY;
+    if (!(purchasePL > 0)) continue;
+    const { rate, reason } = fundStopajRate(position.code, '', todayInIstanbul());
+    stopajRows.push({ code: position.code, profit: purchasePL, rate, reason: `${reason} · ortalama maliyetle`, amount: purchasePL * rate, method: 'ortalama' });
   }
-  const stopajRows = [...taxableFundPL.entries()]
-    .filter(([, profit]) => profit > 0)
-    .map(([code, profit]) => {
-      const { rate, reason } = fundStopajRate(code, holdingStart.get(code), todayInIstanbul());
-      return { code, profit, rate, reason, amount: profit * rate };
-    })
-    .sort((a, b) => b.amount - a.amount);
+  if (hasMidasHistory && Object.keys(lotsToSync).length) syncFifoLots(lotsToSync);
+  stopajRows.sort((a, b) => b.amount - a.amount);
   const stopajEstimate = stopajRows.reduce((sum, row) => sum + row.amount, 0);
 
   /* ------------------------------------------------------------------ KPI'lar */
@@ -377,9 +377,20 @@ export function renderPanel(ctx) {
       : `${totals.fundCount} varlık · ${fmtDate(totals.lastDate)}`;
   const dailyAmount = hasMidasTotal ? siteDailyChange : hasMidasImportState ? null : totals.dayPL;
   const dailyPctValue = hasMidasTotal ? siteDailyPct : hasMidasImportState ? null : totals.dayPct;
+  // Hangi fiyat gününün kullanıldığı: fonlar TEFAS'ın ilan ettiği fiyat günüyle (fonun değerleme
+  // günü izahnamesine göre önceki iş günü olabilir), ABD varlıkları son seans kapanışıyla.
+  const priceDatesOf = (rows) => [...new Set(rows.map((row) => row.quoteDate).filter(Boolean))].sort();
+  const liveRows = dailyRows.filter((row) => row.units > 0 && !row.frozen && !row.noDailyChange);
+  const fundDates = priceDatesOf(liveRows.filter((row) => row.currency !== 'USD' && !row.midasCryptoSnapshot));
+  const usDates = priceDatesOf(liveRows.filter((row) => row.currency === 'USD'));
+  const short = (iso) => fmtDate(iso).replace(/ \d{4}$/, '');
+  const priceDateNote = [
+    fundDates.length ? `fonlar ${fundDates.map(short).join(' / ')} TEFAS fiyatıyla` : '',
+    usDates.length ? `ABD ETF'leri ${usDates.map(short).join(' / ')} kapanışıyla` : '',
+  ].filter(Boolean).join(', ');
   const dailyHint = hasMidasTotal
     ? (isNum(siteDailyChange)
-      ? `Piyasa fiyatlarından hesaplandı · fonlar TEFAS'ın bugün açıkladığı fiyatla (önceki günün piyasa kapanışı), ABD ETF'leri son seansla${dailyLastSessionNote ? ` · ${dailyLastSessionNote}` : ''}${dailyCryptoScope ? ` · ${dailyCryptoScope}` : ''}${dailyIncompleteHint ? ` · kısmi: ${dailyIncompleteHint}` : ''}`
+      ? `Piyasa fiyatlarından hesaplandı${priceDateNote ? ` · ${priceDateNote}` : ''}${dailyLastSessionNote ? ` · ${dailyLastSessionNote}` : ''}${dailyCryptoScope ? ` · ${dailyCryptoScope}` : ''}${dailyIncompleteHint ? ` · kısmi: ${dailyIncompleteHint}` : ''}`
       : `Günlük fiyat hareketi hesaplanamadı; eksik: ${dailyIncompleteHint || 'açık pozisyon fiyatı bulunamadı'}`)
     : hasMidasImportState
       ? 'Midas pozisyonları doğrulanana kadar günlük değişim hesaplanmıyor'

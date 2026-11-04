@@ -99,6 +99,16 @@ export function runDataChecks(input) {
     if (row.currency === 'USD') return (Date.parse(today) - Date.parse(row.quoteDate)) / 86400000 > 4;
     return tefasLast && row.quoteDate < tefasLast && tradingDaysBetween(row.quoteDate, tefasLast).length >= 1;
   });
+  // Fonların hepsi aynı TEFAS fiyat gününden mi? (farklıysa günlük kazanç farklı günleri karıştırır)
+  const fundDays = [...new Set(live.filter((row) => !row.frozen && row.currency !== 'USD' && !row.midasCryptoSnapshot && row.quoteDate)
+    .map((row) => row.quoteDate))].sort();
+  if (fundDays.length) {
+    add(fundDays.length > 1 ? 'warn' : 'ok', 'Fonlar aynı fiyat gününde',
+      fundDays.length > 1
+        ? `Fonlar farklı günlerin fiyatıyla hesaplanıyor (${live.filter((r) => !r.frozen && r.currency !== 'USD' && r.quoteDate)
+          .map((r) => `${r.code} ${r.quoteDate}`).join(', ')}); günlük kazanç farklı günleri karıştırıyor olabilir.`
+        : `Bütün fonlar ${fundDays[0]} TEFAS fiyatıyla hesaplanıyor.`);
+  }
   add(staleRows.length ? 'warn' : 'ok', 'Varlık fiyatları güncel',
     staleRows.length ? `Eski fiyatla hesaplanan: ${staleRows.map((r) => `${r.code} (${r.quoteDate})`).join(', ')}`
       : 'Bütün açık varlıklar son fiyatla hesaplanıyor (temerrütteki fonlar sabit fiyatlı).');

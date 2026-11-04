@@ -415,8 +415,13 @@ export function riskSummary(twrSeries, dates, riskFree = 0) {
     ? (new Date(dates[dates.length - 1]) - new Date(dates[0])) / 86400000 : 0;
   const annual = annualizedReturn(twrSeries, days);
   const sharpe = isNum(annual) && isNum(vol) && vol > 0.01 ? (annual - riskFree) / vol : null;
+  // Tahmin hata payları (%95 güven aralığının yarı genişliği). Sharpe için Lo (2002),
+  // bağımsız günlük getiri varsayımıyla: SE ≈ √((252 + SR²/2) / T); oynaklık için σ/√(2T).
+  const T = rets.length;
+  const sharpeMargin = isNum(sharpe) && T > 1 ? 1.96 * Math.sqrt((252 + sharpe * sharpe / 2) / T) : null;
+  const volMargin = isNum(vol) && T > 1 ? 1.96 * vol / Math.sqrt(2 * T) : null;
   return {
-    vol, sharpe, annual,
+    vol, sharpe, annual, sharpeMargin, volMargin, observations: T,
     maxDD: maxDrawdown(twrSeries),
     days,
     best: rets.length ? Math.max(...rets) * 100 : null,

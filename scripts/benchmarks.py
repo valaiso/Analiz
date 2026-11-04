@@ -209,7 +209,7 @@ def tufe_series(start: dt.date, end: dt.date) -> dict[str, float]:
     if published:
         print(f"  TUFE: {len(published)} aylik gozlem, yayim gunlerine hizalandi", flush=True)
     return published
-def money_market_index(days: list[str], funds: list[tuple[int, list]]) -> dict[str, float]:
+def money_market_index(days: list[str], funds: list[tuple[int, list]], max_daily: float = 0.05) -> dict[str, float]:
     """Para piyasası fonlarının eşit ağırlıklı günlük getiri endeksi (başlangıç 100).
 
     Her gün, o gün ve önceki gün fiyatı olan PPF'lerin günlük getirilerinin
@@ -227,7 +227,7 @@ def money_market_index(days: list[str], funds: list[tuple[int, list]]) -> dict[s
             prev, cur = series[i - 1], series[i]
             if prev and cur and prev > 0:
                 r = cur / prev - 1
-                if abs(r) <= 0.05:
+                if abs(r) <= max_daily:
                     returns.append(r)
         if returns:
             level *= 1 + sum(returns) / len(returns)
@@ -236,7 +236,8 @@ def money_market_index(days: list[str], funds: list[tuple[int, list]]) -> dict[s
     return out
 
 
-def collect(start: dt.date, end: dt.date, days: list[str], money_market: list[tuple[int, list]] | None = None) -> dict:
+def collect(start: dt.date, end: dt.date, days: list[str], money_market: list[tuple[int, list]] | None = None,
+            gold_funds: list[tuple[int, list]] | None = None) -> dict:
     """Tum kiyaslama serilerini toplayip takvim gunlerine hizalar.
 
     `days` portfoy takviminin gunleridir (TEFAS'in veri urettigi gunler).
@@ -279,8 +280,12 @@ def collect(start: dt.date, end: dt.date, days: list[str], money_market: list[tu
     add("BIST100", "BIST 100", "puan", bist)
     add("USDTRY", "Dolar/TL", "TL", usdtry)
 
-    # Gram altin: iki seriyi ortak gunlerde birlestir, sonra hizala.
-    if gold_usd and usdtry:
+    # Gram altın: Türkiye'deki gerçek gram fiyatını takip eden altın borsa yatırım fonlarının
+    # (TEFAS) eşit ağırlıklı getirisi. Vadeli ons × kur formülü yurt içi fiyattan sapıyordu
+    # (ör. son 1 yılda %21,5'e karşı altın BYF'lerinde %14–15). Fon yoksa formüle dönülür.
+    if gold_funds:
+        add("GRAMALTIN", "Gram Altın (altın BYF'leri)", "endeks", money_market_index(days, gold_funds, max_daily=0.15))
+    elif gold_usd and usdtry:
         usd_ff = _forward_fill(usdtry, sorted(set(usdtry) | set(gold_usd)))
         gram = {
             day: value / TROY_OUNCE_GRAMS * usd_ff[day]

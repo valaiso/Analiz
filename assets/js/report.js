@@ -7,6 +7,7 @@
 import { DB, indexForDate } from './data.js';
 import { realReturn } from './insights.js';
 import { fundStopajRate, FROZEN_FUND_CODES } from './asset-groups.js';
+import { fifoStopaj, lotsMatchUnits } from './tax.js';
 
 export const FIRST_REPORT_MONTH = '2026-11';
 
@@ -17,7 +18,7 @@ export const monthLabel = (month) => `${MONTHS[Number(month.slice(5, 7)) - 1]} $
 export const BENCHMARK_ORDER = [
   ['BIST100', 'BIST 100'],
   ['SP500TL', 'S&P 500 (TL)'],
-  ['GRAMALTIN', 'Gram Altın (ons × kur)'],
+  ['GRAMALTIN', 'Gram Altın'],
   ['USDTRY', 'Dolar/TL'],
   ['PARAPIYASASI', 'PPF Ortalaması'],
   ['TUFE', 'Enflasyon (TÜFE)'],
@@ -110,7 +111,7 @@ function portfolioIndex(history, flows, dates) {
  * Ayın raporunu hesaplar.
  * input: { month, history, flows, dividends, snapshots, transactions }
  */
-export function buildMonthlyReport({ month, history = {}, flows = [], dividends = [], snapshots = {}, transactions = [] }) {
+export function buildMonthlyReport({ month, history = {}, flows = [], dividends = [], snapshots = {}, transactions = [], fifoLots = null }) {
   const monthDates = Object.keys(history).filter((date) => date.startsWith(month)).sort();
   const priorDates = Object.keys(history).filter((date) => date < `${month}-01`).sort();
   // Dönem, önceki ayın son kayıtlı gününden (ay başı değeri) bu ayın son gününe kadardır.
@@ -220,12 +221,20 @@ export function buildMonthlyReport({ month, history = {}, flows = [], dividends 
   };
 
   // Tahmini stopaj (fon kârı üzerinden; temerrüt fonları hariç).
-  const taxProfit = (row) => (Number.isFinite(row.purchasePLTRY) ? row.purchasePLTRY : row.totalPLTRY);
-  const stopaj = positions.filter((row) => row.group === 'Fon' && !FROZEN_FUND_CODES.has(row.code) && taxProfit(row) > 0)
+  // Panelle aynı yöntem: adetleri tutan FIFO partileri varsa onlarla, yoksa ortalama maliyetle.
+  const asOf = toDate || `${month}-28`;
+  const stopaj = positions.filter((row) => row.group === 'Fon' && !FROZEN_FUND_CODES.has(row.code))
     .map((row) => {
-      const { rate } = fundStopajRate(row.code, '', toDate || `${month}-28`);
-      return { code: row.code, profit: taxProfit(row), rate, amount: taxProfit(row) * rate };
-    });
+      const lots = fifoLots?.[row.code]?.lots;
+      if (lots && lotsMatchUnits(lots, row.units) && Number.isFinite(row.unitTRY)) {
+        const result = fifoStopaj(lots, row.unitTRY, (date) => fundStopajRate(row.code, date, asOf));
+        return { code: row.code, profit: result.profit, rate: result.rate, amount: result.amount };
+      }
+      const profit = Number.isFinite(row.purchasePLTRY) ? row.purchasePLTRY : row.totalPLTRY;
+      const { rate } = fundStopajRate(row.code, '', asOf);
+      return { code: row.code, profit, rate, amount: profit > 0 ? profit * rate : 0 };
+    })
+    .filter((row) => row.amount > 0);
 
   // Kurallara göre özet cümleler.
   const insights = [];
