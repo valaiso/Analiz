@@ -214,12 +214,34 @@ export function midasBaseline() {
 }
 
 /**
- * Para giriş/çıkışı sorusunun eşiği: fiyatı oynayan kısmın %0,3'ü, en az 250 TL.
- * (Eskiden toplamın %1'iydi; ~525 bin TL'de 5.250 TL'nin altındaki yatırmalar kâr sayılıyordu.)
+ * Para giriş/çıkışı sorusunun eşiği: son 1 haftanın fiyat hareketiyle oluşan kazancın (ya da
+ * kaybın) %50'si; ama en az fiyatı oynayan kısmın binde 1'i. Taban yüzde olduğu için portföy
+ * büyüdükçe kendiliğinden büyür ve durgun haftalarda yuvarlama farkları soru açtırmaz.
+ * @param baseline     önceki Midas taraması (total, frozenValue)
+ * @param weeklyGain   son 1 haftanın para hareketinden arındırılmış değer değişimi (TL) ya da null
  */
-export function cashflowThreshold(baseline) {
+export function cashflowThreshold(baseline, weeklyGain = null) {
   const liquid = Math.max(0, Math.abs(Number(baseline?.total) || 0) - (Number(baseline?.frozenValue) || 0));
-  return Math.max(250, liquid * 0.003);
+  const floor = liquid * 0.001;
+  const weekly = Number.isFinite(weeklyGain) ? Math.abs(weeklyGain) * 0.5 : 0;
+  return Math.max(floor, weekly);
+}
+
+/**
+ * Kayıtlı günlük değerlerden son 1 haftanın piyasa kazancı: değer farkı − aradaki para hareketleri.
+ * `before` gününden önceki kayıtlar kullanılır; böylece sorgulanan yeni para girişi kendi eşiğini
+ * büyütmez. 1 haftalık kayıt yoksa eldeki en eski kayıttan hesaplanır; tek kayıt varsa null.
+ */
+export function weeklyMarketGain(history, flows, before) {
+  const dates = Object.keys(history || {}).filter((d) => Number(history[d]) > 0 && (!before || d < before)).sort();
+  if (dates.length < 2) return null;
+  const last = dates.at(-1);
+  const weekAgo = new Date(`${last}T12:00:00Z`);
+  weekAgo.setUTCDate(weekAgo.getUTCDate() - 7);
+  const limit = weekAgo.toISOString().slice(0, 10);
+  const ref = dates.filter((d) => d <= limit).at(-1) || dates[0];
+  const flow = (flows || []).filter((f) => f.date > ref && f.date <= last).reduce((sum, f) => sum + (Number(f.amount) || 0), 0);
+  return history[last] - history[ref] - flow;
 }
 
 /**

@@ -14,7 +14,7 @@ seedStorage('tefas-midas-import-v1', [
 const store = await import('../assets/js/store.js');
 const { buildPositions, riskSummary } = await import('../assets/js/portfolio.js');
 const { realReturn, cashflowCalendar } = await import('../assets/js/insights.js');
-const { cashflowThreshold, unexplainedChange, applyDailyMarketTransactions } = await import('../assets/js/asset-groups.js');
+const { cashflowThreshold, unexplainedChange, applyDailyMarketTransactions, weeklyMarketGain } = await import('../assets/js/asset-groups.js');
 const { runDataChecks } = await import('../assets/js/verify.js');
 
 test('Aynı gün işlemleri saate göre sayı olarak sıralanır (9:58 alış, 14:20 satıştan önce)', () => {
@@ -32,9 +32,21 @@ test('Doğru sıralamayla sahte "alıştan fazla satış" uyarısı çıkmaz', (
   assert.equal(positions.get('BTCX').oversold, false);
 });
 
-test('Para girişi eşiği: fiyatı oynayan kısmın %0,3\'ü, en az 250 TL', () => {
-  near(assert, cashflowThreshold({ total: 525000, frozenValue: 440000 }), 255);
-  near(assert, cashflowThreshold({ total: 30000, frozenValue: 0 }), 250);
+test('Para girişi eşiği: haftalık piyasa kazancının %50\'si, en az oynayan kısmın binde 1\'i', () => {
+  const base = { total: 525000, frozenValue: 441000 };           // oynayan kısım 84.000
+  near(assert, cashflowThreshold(base, 550), 275);               // normal hafta
+  near(assert, cashflowThreshold(base, 40), 84);                 // durgun hafta: taban
+  near(assert, cashflowThreshold(base, -300), 150);              // eksi hafta: büyüklüğü
+  near(assert, cashflowThreshold(base, null), 84);               // geçmiş yok: taban
+  near(assert, cashflowThreshold({ total: 1000000, frozenValue: 0 }, 100), 1000); // 1 milyonda taban 1.000
+});
+
+test('Haftalık piyasa kazancı para hareketlerini çıkarır ve sorgulanan günü saymaz', () => {
+  const history = { '2026-11-02': 100000, '2026-11-06': 100300, '2026-11-09': 102700, '2026-11-10': 104000 };
+  const flows = [{ date: '2026-11-09', amount: 2000 }];
+  // 10 Kasım taraması sorgulanıyor: hafta 2 → 9 Kasım; 102.700 − 100.000 − 2.000 = 700
+  near(assert, weeklyMarketGain(history, flows, '2026-11-10'), 700);
+  assert.equal(weeklyMarketGain({ '2026-11-03': 1 }, [], null), null);
 });
 
 test('2.000 TL\'lik para yatırma artık yakalanır (eskiden 5.250 TL altı kâr sayılıyordu)', () => {
@@ -43,6 +55,8 @@ test('2.000 TL\'lik para yatırma artık yakalanır (eskiden 5.250 TL altı kâr
   const change = unexplainedChange(previous, current);
   near(assert, change.amount, 2000);
   assert.equal(change.significant, true);
+  // Haftalık kazanç 1.000 TL olsa bile (eşik 500) 2.000 TL yakalanır.
+  assert.ok(Math.abs(change.amount) >= cashflowThreshold(previous, 1000));
 });
 
 test('Fiyat hareketi para girişi sanılmaz', () => {

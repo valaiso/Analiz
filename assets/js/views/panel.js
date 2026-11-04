@@ -18,7 +18,7 @@ import {
 import {
   currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, applyDailyMarketTransactions,
   groupAssetRows, assetType, midasStockAccountValue, assetLabel, fundStopajRate, midasBaseline,
-  unexplainedChange, cashflowThreshold,
+  unexplainedChange, cashflowThreshold, weeklyMarketGain,
 } from '../asset-groups.js';
 import { tile, fundParts, groupTiles, plBadge } from './tiles.js';
 import { sectionCard, toneCard, SECTION_TONES, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
@@ -295,7 +295,11 @@ export function renderPanel(ctx) {
       const from = String(previousBaseline.at || '').slice(0, 10);
       const to = String(currentBaseline.at || '').slice(0, 10);
       const amount = rawChange.amount - dividendsBetween(from, to) - manualCashflowsBetween(from, to);
-      return { ...rawChange, amount, significant: Math.abs(amount) >= cashflowThreshold(previousBaseline) };
+      // Eşik: son 1 haftanın piyasa kazancının %50'si, en az oynayan kısmın binde 1'i.
+      // Hafta, yeni taramanın gününden öncesine kadar sayılır (sorgulanan para kendini saymasın).
+      const weekly = weeklyMarketGain(valueHistory(), cashflows(), to);
+      const threshold = cashflowThreshold(previousBaseline, weekly);
+      return { ...rawChange, amount, threshold, weekly, significant: Math.abs(amount) >= threshold };
     })() : null;
     updateMidasBaseline(currentBaseline, change?.significant ? change : null);
   }
