@@ -9,7 +9,7 @@ import { runDataChecks } from '../verify.js';
 import {
   transactions, removeTransaction, daysSinceBackup, getMidasAccountSnapshot, valueHistory,
   recordPortfolioValue, recordMonthlySnapshot, setPortfolioValue, removePortfolioValue, cashflows,
-  midasBaselineState, pendingCashflow, updateMidasBaseline, trackingStart, trackingBaseline, alignTrackingStartValue,
+  midasBaselineState, pendingCashflow, updateMidasBaseline, trackingStart, trackingBaseline, alignTrackingStartValue, setTrackingBaselineCash,
   confirmPendingCashflow, rejectPendingCashflow, dividends, dividendsBetween, manualCashflowsBetween,
 } from '../store.js';
 import {
@@ -74,9 +74,14 @@ export function renderPanel(ctx) {
   {
     const start = trackingStart();
     const base = trackingBaseline();
-    if (stockPositionsCaptured && start && base && base.date === start && !base.alignedAt && todayInIstanbul() > start) {
+    if (stockPositionsCaptured && start && base && base.date === start && todayInIstanbul() === start) {
+      setTrackingBaselineCash(stockAccount.cash);
+    }
+    // Nakit başlangıç anının nakdi olmalı (sonraki taramada nakit alıma gitmiş olabilir).
+    if (stockPositionsCaptured && start && base && base.date === start && !base.alignedAt
+      && Number.isFinite(base.cash) && todayInIstanbul() > start) {
       const baseSum = Object.values(base.rows || {}).reduce((sum, row) => sum + row.units * row.unitTRY, 0);
-      alignTrackingStartValue(baseSum + stockAccount.cash);
+      alignTrackingStartValue(baseSum + base.cash);
     }
   }
   const stockMidasTotal = stockPositionsCaptured ? stockAccount.total

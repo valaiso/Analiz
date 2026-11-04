@@ -515,7 +515,10 @@ export function addSiteMarketMetrics(positions) {
     const snapshot = {};
     for (const row of rows) {
       const unitTRY = unitValue(row);
-      if (row.code && Number.isFinite(unitTRY)) snapshot[row.code] = { units: row.units, unitTRY: Math.round(unitTRY * 1e6) / 1e6 };
+      // midasCost: Midas'ın o anki toplam alış maliyeti; sonradan alınan adetlerin gerçek
+      // maliyeti = bugünkü Midas maliyeti − bu değer.
+      const midasCost = Number.isFinite(row.totalPLTRY) ? Math.round((row.marketValueTRY - row.totalPLTRY) * 100) / 100 : null;
+      if (row.code && Number.isFinite(unitTRY)) snapshot[row.code] = { units: row.units, unitTRY: Math.round(unitTRY * 1e6) / 1e6, midasCost };
     }
     if (rows.every((row) => !row.code || snapshot[row.code] || row.frozen)) setTrackingBaseline(start, snapshot);
   }
@@ -524,9 +527,15 @@ export function addSiteMarketMetrics(positions) {
   return rows.map((row) => {
     const b = base.rows?.[row.code];
     if (!b || row.frozen || !Number.isFinite(row.totalPLTRY) || !Number.isFinite(row.marketValueTRY) || !(row.units > 0)) return row;
-    const midasUnitCost = (row.marketValueTRY - row.totalPLTRY) / row.units;
+    const midasCostNow = row.marketValueTRY - row.totalPLTRY;
     const keptUnits = Math.min(row.units, b.units);
-    const cost = keptUnits * b.unitTRY + (row.units - keptUnits) * midasUnitCost;
+    const newUnits = row.units - keptUnits;
+    // Sonradan alınan adetler kendi alış fiyatıyla: Midas toplam maliyetindeki artış. (Ortalama
+    // maliyet eski ucuz alışları da içerdiği için yeni adetleri olduğundan ucuz gösteriyordu.)
+    const newCost = newUnits <= 0 ? 0
+      : Number.isFinite(b.midasCost) && midasCostNow - b.midasCost > 0 ? midasCostNow - b.midasCost
+        : newUnits * (midasCostNow / row.units);
+    const cost = keptUnits * b.unitTRY + newCost;
     const totalPLTRY = Math.round((row.marketValueTRY - cost) * 100) / 100 + 0; // −0,00 yerine 0
     const fxNative = row.price > 0 ? row.marketValueTRY / (row.units * row.price) : null;
     return {

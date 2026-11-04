@@ -837,6 +837,14 @@ export function setTrackingBaseline(date, rows) {
  * bir kez, o günün pozisyon değerleri + nakit başlangıç değeri yapılır. Böylece özet bandındaki
  * toplam kazanç, Fon/ETF/Kripto kartlarındaki "Toplam" kazançların toplamına eşit olur.
  */
+/** Başlangıç günü boyunca o anki nakit de başlangıç fotoğrafına yazılır. */
+export function setTrackingBaselineCash(cash) {
+  const base = state.trackingBaseline;
+  if (!base || base.date !== trackingStart() || !Number.isFinite(cash)) return;
+  if (Math.abs((base.cash ?? -1) - cash) < 0.01) return;
+  state.trackingBaseline = { ...base, cash: Math.round(cash * 100) / 100 };
+}
+
 export function alignTrackingStartValue(value) {
   const base = state.trackingBaseline;
   const start = trackingStart();
