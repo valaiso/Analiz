@@ -287,7 +287,7 @@ def collect(start: dt.date, end: dt.date, days: list[str], money_market: list[tu
             for day, value in gold_usd.items()
             if day in usd_ff
         }
-        add("GRAMALTIN", "Gram Altin", "TL", gram)
+        add("GRAMALTIN", "Gram Altın (ons × kur)", "TL", gram)
 
     add("TUFE", "TUFE (Enflasyon)", "endeks", tufe_series(start, end))
 

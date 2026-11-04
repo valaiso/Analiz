@@ -373,7 +373,22 @@ export function recordPortfolioValue(calendarDate, value) {
  * Aylık rapor için ayın son pozisyon fotoğrafı. Ay içinde her kayıtta üzerine
  * yazılır; ay bitince son yazılan fotoğraf ay sonu durumu olur.
  */
-export const monthlySnapshots = () => state.monthlySnapshots || {};
+export const monthlySnapshots = () => {
+  // Takip başlangıcı gününde eski hesapla (alış maliyetine göre) kaydedilmiş satırlar
+  // başlangıçtan beri K/Z'ye çevrilir: o gün başlangıç olduğu için 0.
+  const start = state.settings?.trackingStart;
+  for (const snap of Object.values(state.monthlySnapshots || {})) {
+    if (!start || snap?.date !== start || !Array.isArray(snap.rows)) continue;
+    for (const row of snap.rows) {
+      if (row && !('purchasePLTRY' in row) && Number.isFinite(row.totalPLTRY)) {
+        row.purchasePLTRY = row.totalPLTRY;
+        row.totalPLTRY = 0;
+        row.totalPct = 0;
+      }
+    }
+  }
+  return state.monthlySnapshots || {};
+};
 
 /** Ayın son iş günü (hafta sonuna denk gelirse önceki cuma). */
 function lastWeekdayOfMonth(month) {

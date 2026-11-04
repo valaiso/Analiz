@@ -10,7 +10,7 @@ import { assetType } from '../asset-groups.js';
 // Varlık sınıfı → sabit renk (sıra değil varlık belirler). Açık ve koyu tema
 // için ayrı adımlar, ikisi de renk körlüğü ve kontrast kontrolünden geçti.
 export const CLASS_ORDER = ['Fon', 'Hisse', 'ETF', 'Kripto', 'Nakit'];
-const CLASS_LABELS = { Fon: 'Fon', Hisse: 'Hisse', ETF: 'ETF', Kripto: 'Kripto', Nakit: 'Nakit', Diğer: 'Diğer' };
+const CLASS_LABELS = { Fon: 'Fon', Hisse: 'Hisse', ETF: 'ETF', Kripto: 'Kripto', Nakit: 'Nakit / takas', Diğer: 'Diğer' };
 
 let tooltipEl = null;
 function tooltip() {

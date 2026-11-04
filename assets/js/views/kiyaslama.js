@@ -280,14 +280,12 @@ export function renderKiyaslama(ctx) {
   /* ----------------------------------------------------------------- açıklama */
 
   root.append(h('div', { class: 'notice' },
-    h('div', {}, h('b', {}, 'Neden iki farklı getiri var?')),
+    h('div', {}, h('b', {}, 'Portföy getirisi nasıl ölçülüyor?')),
     h('div', { style: 'margin-top:5px' },
       'Buradaki portföy getirisi ', h('b', {}, 'zaman ağırlıklıdır'),
-      ': ne zaman para eklediğinden bağımsız olarak fon seçimlerinin performansını ölçer, '
-      + 'bu yüzden endekslerle adil kıyaslanır. Panel sekmesindeki ',
-      h('b', {}, 'XIRR'),
-      ' ise para ağırlıklıdır: paranın ne zaman girdiğini de hesaba katar, yani cebindeki '
-      + 'gerçek yıllık getiriyi verir.'),
+      ': para eklemen ya da çekmen getiriyi değiştirmez, yalnızca seçtiğin varlıkların performansını ölçer; '
+      + 'bu yüzden endekslerle adil kıyaslanır. Paneldeki “Gerçek getiri” yüzdesi aynı yöntemle, '
+      + '“Toplam kazanç” ise TL olarak hesaplanır (değer − yatırılan para).'),
     !available.includes('TUFE')
       ? h('div', { style: 'margin-top:8px' },
         'TÜFE verisi şu an yüklenemedi. EVDS API anahtarını ve veri güncelleme çıktısını kontrol et.')

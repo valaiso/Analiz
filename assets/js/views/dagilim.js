@@ -123,7 +123,7 @@ export function renderDagilim(ctx) {
     }));
     const classTotal = Number.isFinite(midasTotal) && midasTotal > 0
       ? midasTotal : sortedGroups.reduce((sum, g) => sum + g.value, 0);
-    const classes = [...sortedGroups, ...(cashValue > 0.01 ? [{ key: 'Nakit', label: 'Nakit', value: cashValue, rows: [] }] : [])];
+    const classes = [...sortedGroups, ...(cashValue > 0.01 ? [{ key: 'Nakit', label: 'Nakit / takas', value: cashValue, rows: [] }] : [])];
     if (liveValuesReconcile) {
       root.append(toneCard({ tone: 'blue', icon: '⊟', title: 'Varlık Sınıfları',
         sub: 'Portföyün sınıflara göre payı · günlük ve toplam K/Z' },

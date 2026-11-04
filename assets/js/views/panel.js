@@ -1,7 +1,7 @@
 /* Panel: portföyün özeti - toplam değer, günlük ve toplam kazanç, pozisyonlar. */
 
 import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, money, cls, isNum, fmtDate, toast, confirmDialog } from '../util.js';
-import { DB } from '../data.js';
+import { DB, indexForDate } from '../data.js';
 import { lineChart, barChart } from '../charts.js';
 import { sliceLastDays } from '../portfolio.js';
 import { cashflowCalendar, realReturn } from '../insights.js';
@@ -371,7 +371,7 @@ export function renderPanel(ctx) {
 
   const totalValueText = hasMidasTotal ? tl(midasPortfolioTotal) : hasMidasImportState ? '—' : tl(totals.value);
   const totalValueSub = hasMidasTotal
-    ? `Hisse/Fon/ETF ${tl(stockMidasTotal)}${stockAccount.cash > 0.5 && stockPositionsCaptured ? ` (${tl(stockAccount.cash)} nakit dahil)` : ''} + Kripto ${tl(cryptoTotal)}${midasTotalPartial ? ' · kısmi toplam' : ''}`
+    ? `Hisse/Fon/ETF ${tl(stockMidasTotal)}${stockAccount.cash > 0.5 && stockPositionsCaptured ? ` (${tl(stockAccount.cash)} nakit/takas dahil)` : ''} + Kripto ${tl(cryptoTotal)}${midasTotalPartial ? ' · kısmi toplam' : ''}`
     : hasMidasImportState
       ? 'Midas’ın açık pozisyonları doğrulanana kadar hesaplanmıyor'
       : `${totals.fundCount} varlık · ${fmtDate(totals.lastDate)}`;
@@ -379,7 +379,7 @@ export function renderPanel(ctx) {
   const dailyPctValue = hasMidasTotal ? siteDailyPct : hasMidasImportState ? null : totals.dayPct;
   const dailyHint = hasMidasTotal
     ? (isNum(siteDailyChange)
-      ? `Piyasa fiyatlarından hesaplandı${dailyLastSessionNote ? ` · ${dailyLastSessionNote}` : ''}${dailyCryptoScope ? ` · ${dailyCryptoScope}` : ''}${dailyIncompleteHint ? ` · kısmi: ${dailyIncompleteHint}` : ''}`
+      ? `Piyasa fiyatlarından hesaplandı · fonlar TEFAS'ın bugün açıkladığı fiyatla (önceki günün piyasa kapanışı), ABD ETF'leri son seansla${dailyLastSessionNote ? ` · ${dailyLastSessionNote}` : ''}${dailyCryptoScope ? ` · ${dailyCryptoScope}` : ''}${dailyIncompleteHint ? ` · kısmi: ${dailyIncompleteHint}` : ''}`
       : `Günlük fiyat hareketi hesaplanamadı; eksik: ${dailyIncompleteHint || 'açık pozisyon fiyatı bulunamadı'}`)
     : hasMidasImportState
       ? 'Midas pozisyonları doğrulanana kadar günlük değişim hesaplanmıyor'
@@ -394,6 +394,21 @@ export function renderPanel(ctx) {
   const totalGain = real && isNum(real.twr)
     ? { total: liveEnd - real.startValue - real.netFlows, totalPct: ((1 + real.twr / 100) * (liveEnd / real.endValue) - 1) * 100 }
     : { total: null, totalPct: null };
+  // Enflasyondan arındırılmış (reel) getiri: dönem başı ve son açıklanan TÜFE endeksine göre.
+  const realReturnText = () => {
+    const values = DB.benchmarks?.TUFE?.values || [];
+    const at = (date) => {
+      for (let i = indexForDate(date); i >= 0; i -= 1) if (values[i] > 0) return values[i];
+      return null;
+    };
+    const startIndex = at(real.startDate);
+    const endIndex = at(todayInIstanbul());
+    if (!(startIndex > 0) || !(endIndex > 0)) return 'reel: TÜFE verisi yok';
+    if (endIndex === startIndex) return 'reel: dönemin TÜFE’si henüz açıklanmadı';
+    const inflation = (endIndex / startIndex - 1) * 100;
+    const nominal = isNum(totalGain.totalPct) ? totalGain.totalPct : real.twr;
+    return `reel ${pctSigned(((1 + nominal / 100) / (1 + inflation / 100) - 1) * 100)} (TÜFE %${inflation.toFixed(1).replace('.', ',')})`;
+  };
   const heroGainBox = () => {
     const box = h('div', { class: 'hero-toggle', role: 'button', tabindex: '0', title: 'Dokun: günlük ⇄ toplam kazanç' });
     const paint = () => {
@@ -426,7 +441,7 @@ export function renderPanel(ctx) {
         h('span', {}, 'Gerçek getiri'),
         h('strong', { class: heroTrend(real?.twr) }, isNum(real?.twr) ? pctSigned(real.twr) : '—'),
         h('em', {}, real && isNum(real.twr)
-          ? `${fmtDate(real.startDate)}’den beri${realDividends > 0 ? ` · ${tl(realDividends)} temettü dahil` : ''}`
+          ? `${fmtDate(real.startDate)}’den beri${realDividends > 0 ? ` · ${tl(realDividends)} temettü dahil` : ''} · ${realReturnText()}`
           : 'ikinci kayıt gününden itibaren')),
       h('div', {},
         h('span', {}, 'Stopaj (tahmini)'),

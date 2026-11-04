@@ -149,9 +149,12 @@ export function runDataChecks(input) {
   // 6) Midas taramasının yaşı
   const scanAt = Date.parse(snapshot?.stockCapturedAt || snapshot?.capturedAt || '');
   if (Number.isFinite(scanAt)) {
-    const days = (Date.now() - scanAt) / 86400000;
-    add(days > 3 ? 'warn' : 'ok', 'Midas taraması yakın tarihli',
-      days > 3 ? `Son Midas taraması ${Math.floor(days)} gün önce; adetler değişmiş olabilir. PC'de Midas'ı tara.`
+    // Son işlem gününden önceki tarama eskidir: o günden beri alım/satım yapılmış olabilir.
+    const scanDate = istanbulDate(new Date(scanAt));
+    const prevTradingDay = today ? lastTurkishTradingDay(addDays(today, -1)) : null;
+    const old = scanDate && prevTradingDay && scanDate < prevTradingDay;
+    add(old ? 'warn' : 'ok', 'Midas taraması güncel',
+      old ? `Son Midas taraması ${scanDate}; ${prevTradingDay} ve sonrasındaki alım/satımlar görünmüyor olabilir. PC'de Midas'ı tara.`
         : `Son tarama ${new Date(scanAt).toLocaleString('tr-TR', { timeZone: 'Europe/Istanbul' })}.`);
   }
 

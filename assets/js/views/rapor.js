@@ -3,7 +3,7 @@
 
 import { h, tl, tlSigned, pct, pctSigned, units as fmtUnits, isNum, fmtDate, colorAt } from '../util.js';
 import { lineChart } from '../charts.js';
-import { valueHistory, cashflows, dividends, monthlySnapshots, transactions, afterTrackingStart } from '../store.js';
+import { valueHistory, cashflows, dividends, monthlySnapshots, transactions, afterTrackingStart, trackingStart } from '../store.js';
 import { buildMonthlyReport, reportMonths, monthLabel, FIRST_REPORT_MONTH } from '../report.js';
 import { tonedSection } from './common.js';
 
@@ -158,7 +158,7 @@ function renderReport(report, { preview }) {
       report.positions.length ? h('table', { class: 'rp-table' },
         h('thead', {}, h('tr', {},
           h('th', { style: 'width:30%' }, 'Varlık'), h('th', { class: 'r hide-sm' }, 'Adet'), h('th', { class: 'r' }, 'Değer'),
-          h('th', { class: 'r' }, 'Ağırlık'), h('th', { class: 'r' }, showStart ? 'Ay içi' : 'Toplam K/Z'),
+          h('th', { class: 'r' }, 'Ağırlık'), h('th', { class: 'r' }, showStart ? 'Ay içi' : trackingStart() ? `K/Z (${fmtDate(trackingStart())}’ten beri)` : 'Toplam K/Z'),
           h('th', { class: 'r hide-sm' }, 'K/Z %'), h('th', { class: 'bar-col' }, ''))),
         h('tbody', {}, report.positions.map((row) => h('tr', {},
           h('td', {}, h('b', { class: 'mono' }, row.code), ' ', h('span', { class: 'nm' }, row.label || '')),

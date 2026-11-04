@@ -17,7 +17,7 @@ export const monthLabel = (month) => `${MONTHS[Number(month.slice(5, 7)) - 1]} $
 export const BENCHMARK_ORDER = [
   ['BIST100', 'BIST 100'],
   ['SP500TL', 'S&P 500 (TL)'],
-  ['GRAMALTIN', 'Gram Altın'],
+  ['GRAMALTIN', 'Gram Altın (ons × kur)'],
   ['USDTRY', 'Dolar/TL'],
   ['PARAPIYASASI', 'PPF Ortalaması'],
   ['TUFE', 'Enflasyon (TÜFE)'],

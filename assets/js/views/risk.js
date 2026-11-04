@@ -43,8 +43,20 @@ export function renderRisk(ctx) {
   }
 
   const root = h('div', { class: 'stack' });
-  const riskFree = Number(settings().riskFree) || 0;
+  // Risksiz faiz: elle girilmediyse para piyasası fonlarının son 1 yıllık getirisi (her gün güncel).
+  const ppAll = (DB.benchmarks?.PARAPIYASASI?.values || []).map((v, i) => [i, v]).filter(([, v]) => isNum(v) && v > 0);
+  const ppLast = ppAll.at(-1);
+  const ppYearAgo = ppLast ? ppAll.filter(([i]) => i <= ppLast[0] - 250).at(-1) : null;
+  const ppAuto = ppLast && ppYearAgo ? (ppLast[1] / ppYearAgo[1] - 1) * 100 : null;
+  const manualRf = settings().riskFreeMode === 'manual';
+  const riskFree = !manualRf && isNum(ppAuto) ? Math.round(ppAuto * 10) / 10 : Number(settings().riskFree) || 0;
   const summary = riskSummary(series.twr, series.dates, riskFree);
+  if (series.dates.length < 60) {
+    root.append(h('div', { class: 'notice warn' },
+      h('strong', {}, 'Ön değerler. '),
+      `Şu an ${series.dates.length} işlem günü var. Yıllık oynaklık, Sharpe ve yıllık getiri birkaç haftalık veriden yıllığa `
+      + 'çevrildiği için çok oynaktır; en az 60 işlem günü (tercihen 1 yıl) dolmadan güvenilir kabul edilmemeli.'));
+  }
 
   /* -------------------------------------------------------------------- KPI'lar */
 
@@ -61,7 +73,7 @@ export function renderRisk(ctx) {
       tone: 'green',
       value: isNum(summary.sharpe) ? num(summary.sharpe, 2) : '—',
       valueClass: cls(summary.sharpe),
-      sub: `Risksiz getiri %${num(riskFree, 0)} varsayıldı`,
+      sub: `Risksiz getiri %${num(riskFree, 1)} ${!manualRf && isNum(ppAuto) ? '(para piyasası fonları, son 1 yıl)' : '(elle girildi)'}`,
       hint: 'Aldığın risk başına düşen fazla getiri; 1 üzeri iyi kabul edilir',
     }),
     kpiCard({
@@ -108,6 +120,7 @@ export function renderRisk(ctx) {
   });
   rfInput.addEventListener('change', () => {
     setSetting('riskFree', Number(rfInput.value) || 0);
+    setSetting('riskFreeMode', 'manual');
     ctx.refresh();
   });
 
@@ -116,11 +129,11 @@ export function renderRisk(ctx) {
       h('label', { class: 'dim', style: 'font-size:.86rem' },
         'Sharpe hesabında kullanılacak risksiz yıllık getiri (%):'),
       rfInput,
-      isNum(ppYillik)
+      manualRf && isNum(ppAuto)
         ? h('button', {
           class: 'btn btn-sm', type: 'button',
-          onclick: () => { setSetting('riskFree', Math.round(ppYillik)); ctx.refresh(); },
-        }, `Para piyasası fonlarını kullan (%${num(ppYillik, 0)})`)
+          onclick: () => { setSetting('riskFreeMode', 'auto'); ctx.refresh(); },
+        }, `Otomatik: para piyasası fonları (%${num(ppAuto, 1)})`)
         : null),
     isNum(ppYillik)
       ? h('p', { class: 'dim', style: 'margin:8px 0 0;font-size:.8rem' },
