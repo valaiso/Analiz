@@ -410,36 +410,14 @@ export function renderPanel(ctx) {
     ? { total: liveEnd - real.startValue - real.netFlows, totalPct: ((1 + real.twr / 100) * (liveEnd / real.endValue) - 1) * 100 }
     : { total: null, totalPct: null };
   // Enflasyondan arındırılmış (reel) getiri: dönem başı ve son açıklanan TÜFE endeksine göre.
+  // Alt satır: içinde bulunulan ay ve son açıklanan aylık TÜFE (ör. "Kasım 2026 TÜFE %2,58").
   const realReturnText = () => {
-    const values = DB.benchmarks?.TUFE?.values || [];
-    const at = (date) => {
-      for (let i = indexForDate(date); i >= 0; i -= 1) if (values[i] > 0) return values[i];
-      return null;
-    };
-    const startIndex = at(real.startDate);
-    const endIndex = at(todayInIstanbul());
-    if (!(startIndex > 0) || !(endIndex > 0)) return 'reel: TÜFE verisi yok';
-    if (endIndex === startIndex) {
-      // TÜİK bir ayın enflasyonunu ertesi ayın 3'ünde açıklar (hafta sonuysa ilk iş günü).
-      const [y, m] = real.startDate.split('-').map(Number);
-      const release = new Date(Date.UTC(m === 12 ? y + 1 : y, m === 12 ? 0 : m, 3));
-      while (isTurkishMarketClosed(release.toISOString().slice(0, 10))) release.setUTCDate(release.getUTCDate() + 1);
-      const monthName = new Intl.DateTimeFormat('tr-TR', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, 15)));
-      const releaseText = new Intl.DateTimeFormat('tr-TR', { day: 'numeric', month: 'short', timeZone: 'UTC' }).format(release);
-      const month = `${monthName.charAt(0).toLocaleUpperCase('tr')}${monthName.slice(1)}`;
-      // Açıklanana kadar tahmin: son açıklanan aylık enflasyon, geçen güne göre bölünür.
-      const days = (Date.parse(`${todayInIstanbul()}T12:00:00Z`) - Date.parse(`${real.startDate}T12:00:00Z`)) / 86400000;
-      const known = values.slice(0, indexForDate(todayInIstanbul()) + 1);
-      const est = estimatedInflation(known, days);
-      const nominal = isNum(totalGain.totalPct) ? totalGain.totalPct : real.twr;
-      if (!est || !isNum(nominal)) return `reel: ${month} TÜFE’si bekleniyor (açıklanma ${releaseText})`;
-      const prevMonthName = new Intl.DateTimeFormat('tr-TR', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 2, 15)));
-      const realEst = ((1 + nominal / 100) / (1 + est.estimate / 100) - 1) * 100;
-      return `reel ≈ ${pctSigned(realEst)} (tahmini · ${prevMonthName} enflasyonu %${est.monthly.toFixed(2).replace('.', ',')})`;
-    }
-    const inflation = (endIndex / startIndex - 1) * 100;
-    const nominal = isNum(totalGain.totalPct) ? totalGain.totalPct : real.twr;
-    return `reel ${pctSigned(((1 + nominal / 100) / (1 + inflation / 100) - 1) * 100)} (TÜFE %${inflation.toFixed(1).replace('.', ',')})`;
+    const values = (DB.benchmarks?.TUFE?.values || []).slice(0, indexForDate(todayInIstanbul()) + 1);
+    const est = estimatedInflation(values, 0);
+    const [y, m] = todayInIstanbul().split('-').map(Number);
+    const monthName = new Intl.DateTimeFormat('tr-TR', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, 15)));
+    const label = `${monthName.charAt(0).toLocaleUpperCase('tr')}${monthName.slice(1)} ${y} TÜFE`;
+    return est ? `${label} %${est.monthly.toFixed(2).replace('.', ',')}` : `${label} —`;
   };
   const heroGainBox = () => {
     const box = h('div', { class: 'hero-toggle', role: 'button', tabindex: '0', title: 'Dokun: günlük ⇄ toplam kazanç' });
