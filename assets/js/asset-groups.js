@@ -2,7 +2,7 @@ import { isTurkishMarketClosed } from './holidays.js';
 import {
   DB, cachedHistory, exactPriceAtIndex, lastIndex, indexForDate, usdTryAtIndex,
 } from './data.js';
-import { getMidasAccountSnapshot, trackingStart, trackingBaseline, setTrackingBaseline } from './store.js';
+import { getMidasAccountSnapshot, trackingStart, trackingBaseline, setTrackingBaseline, scanCash, setScanCash } from './store.js';
 
 const GROUP_ORDER = ['ETF', 'Fon', 'Hisse', 'Kripto', 'Diğer'];
 // Temerrüde düşen, alım-satımı olmayan fonlar: fiyat Midas'taki değerde sabit,
@@ -466,12 +466,15 @@ export function midasStockAccountValue(measuredStockRows) {
   // döviz de tarama gününün kuruyla çevrilir. Aksi halde nakit ve toplam birkaç yüz TL kayar.
   const scanDay = dateInTimezone(snapshot?.stockCapturedAt || snapshot?.capturedAt, 'Europe/Istanbul');
   const scanIndex = scanDay ? indexForDate(scanDay) : -1;
+  const scanIsDataDay = scanIndex >= 0 && DB.calendar[scanIndex] === scanDay;
+  let allExact = scanIsDataDay;
   for (const row of measuredStockRows || []) {
     const fx = currencyFxToTRY(row.code, row.currency, scanIndex >= 0 ? scanIndex : latestIndex);
     let unitPrice = row.midasPrice;
     if (row.currency !== 'USD' && unitPrice > 0 && scanIndex >= 0) {
       const exact = exactPriceAtIndex(cachedHistory(row.code), scanIndex);
       if (exact && Math.abs(exact - unitPrice) <= 0.005 + 1e-9) unitPrice = exact;
+      else if (!FROZEN_FUND_CODES.has(row.code)) allExact = false;
     }
     const capturedValue = row.units > 0 && unitPrice > 0 && Number.isFinite(fx)
       ? row.units * unitPrice * fx : null;
@@ -482,9 +485,14 @@ export function midasStockAccountValue(measuredStockRows) {
   const summary = snapshot?.summarySource === 'midas-visible-v1' ? snapshot.summary : null;
   const summaryTotal = Number.isFinite(summary?.totalValue) && summary.totalValue >= 0
     ? summary.totalValue : null;
-  const cash = summaryTotal !== null && capturedComplete
+  const scanKey = summaryTotal !== null ? `${snapshot?.stockCapturedAt || snapshot?.capturedAt || ''}|${summaryTotal}` : null;
+  const frozenCash = scanCash(scanKey);
+  const computedCash = summaryTotal !== null && capturedComplete
     ? Math.max(0, summaryTotal - capturedPositions)
     : Number.isFinite(summary?.tryCash) && summary.tryCash > 0 ? summary.tryCash : 0;
+  // Tarama gününün TEFAS fiyatları yayımlanınca nakit sabitlenir; o zamana kadar her seferinde hesaplanır.
+  if (frozenCash === null && allExact && capturedComplete && summaryTotal !== null) setScanCash(scanKey, computedCash);
+  const cash = frozenCash ?? computedCash;
   return { positions, cash, total: positions + cash, summaryTotal };
 }
 

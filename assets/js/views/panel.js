@@ -9,7 +9,7 @@ import { runDataChecks } from '../verify.js';
 import {
   transactions, removeTransaction, daysSinceBackup, getMidasAccountSnapshot, valueHistory,
   recordPortfolioValue, recordMonthlySnapshot, setPortfolioValue, removePortfolioValue, cashflows,
-  midasBaselineState, pendingCashflow, updateMidasBaseline, trackingStart, trackingBaseline,
+  midasBaselineState, pendingCashflow, updateMidasBaseline, trackingStart, trackingBaseline, alignTrackingStartValue,
   confirmPendingCashflow, rejectPendingCashflow, dividends, dividendsBetween, manualCashflowsBetween,
 } from '../store.js';
 import {
@@ -70,6 +70,15 @@ export function renderPanel(ctx) {
   const measuredSnapshotPositions = addSiteMarketMetrics(rawSnapshotPositions);
   const stockAccount = midasStockAccountValue(measuredSnapshotPositions
     .filter((row) => !row.midasCryptoSnapshot));
+  // Başlangıç günü bitince başlangıç değeri, kartların başlangıç anındaki pozisyon değerleri + nakit olur.
+  {
+    const start = trackingStart();
+    const base = trackingBaseline();
+    if (stockPositionsCaptured && start && base && base.date === start && !base.alignedAt && todayInIstanbul() > start) {
+      const baseSum = Object.values(base.rows || {}).reduce((sum, row) => sum + row.units * row.unitTRY, 0);
+      alignTrackingStartValue(baseSum + stockAccount.cash);
+    }
+  }
   const stockMidasTotal = stockPositionsCaptured ? stockAccount.total
     : stockSummaryCaptured ? midasSummary.totalValue : 0;
   const cryptoRows = measuredSnapshotPositions.filter((row) => row.midasCryptoSnapshot);
@@ -350,8 +359,11 @@ export function renderPanel(ctx) {
   // Toplam kazanç: grafikteki "portföy değeri − yatırılan anapara" farkıyla aynı hesap
   // (ilk kayıttan beri, para giriş/çıkışı hariç; yüzde zaman ağırlıklı). Maliyete göre
   // kâr/zarar Fonlar/ETF/Kripto kartlarındaki "Toplam" rozetlerinde kalır.
+  // Bugünün kaydı en fazla 30 dakikada bir yazılır; kutu kartlarla aynı anı göstersin diye
+  // son kaydın yerine anlık toplam değer kullanılır.
+  const liveEnd = hasMidasTotal && midasSnapshotComplete && real?.endValue > 0 ? midasPortfolioTotal : real?.endValue;
   const totalGain = real && isNum(real.twr)
-    ? { total: real.profit, totalPct: real.twr }
+    ? { total: liveEnd - real.startValue - real.netFlows, totalPct: ((1 + real.twr / 100) * (liveEnd / real.endValue) - 1) * 100 }
     : { total: null, totalPct: null };
   const heroGainBox = () => {
     const box = h('div', { class: 'hero-toggle', role: 'button', tabindex: '0', title: 'Dokun: günlük ⇄ toplam kazanç' });

@@ -832,6 +832,30 @@ export function setTrackingBaseline(date, rows) {
   if (current?.date !== date || Date.now() - last >= 10 * 60_000) persist();
   return true;
 }
+/**
+ * Takip başlangıç değeri kartların başlangıç anıyla aynı olsun: başlangıç günü bittikten sonra
+ * bir kez, o günün pozisyon değerleri + nakit başlangıç değeri yapılır. Böylece özet bandındaki
+ * toplam kazanç, Fon/ETF/Kripto kartlarındaki "Toplam" kazançların toplamına eşit olur.
+ */
+export function alignTrackingStartValue(value) {
+  const base = state.trackingBaseline;
+  const start = trackingStart();
+  if (!base || !start || base.date !== start || base.alignedAt || !(value > 0)) return false;
+  state.valueHistory = { ...(state.valueHistory || {}), [start]: Math.round(value * 100) / 100 };
+  state.trackingBaseline = { ...base, alignedAt: new Date().toISOString(), startValue: Math.round(value * 100) / 100 };
+  persist();
+  return true;
+}
+
+// Midas toplamı − pozisyonlar = nakit. Tarama başına bir kez hesaplanıp sabitlenir; her açılışta
+// güncel kurla yeniden hesaplanınca birkaç TL oynuyor ve kazanç rakamlarını kaydırıyordu.
+export const scanCash = (key) => (key && state.midasScanCash?.key === key ? state.midasScanCash.cash : null);
+export function setScanCash(key, cash) {
+  if (!key || !Number.isFinite(cash)) return;
+  if (state.midasScanCash?.key === key) return;
+  state.midasScanCash = { key, cash: Math.round(cash * 100) / 100 };
+  persist();
+}
 export const afterTrackingStart = (date) => { const start = trackingStart(); return !start || String(date || '') >= start; };
 
 export function setSetting(key, value) {
