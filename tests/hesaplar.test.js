@@ -41,6 +41,15 @@ test('Para girişi eşiği: haftalık piyasa kazancının %50\'si, en az oynayan
   near(assert, cashflowThreshold({ total: 1000000, frozenValue: 0 }, 100), 1000); // 1 milyonda taban 1.000
 });
 
+test('Taban portföyle büyür: 1,5 milyonda 1.500 TL, 2 milyonda 2.000 TL', () => {
+  near(assert, cashflowThreshold({ total: 1500000, frozenValue: 0 }, 100), 1500);
+  near(assert, cashflowThreshold({ total: 2000000, frozenValue: 0 }, 100), 2000);
+  // Haftalık kazanç büyükse eşik onun yarısıdır: 2 milyonda 10.000 TL kazanç → 5.000 TL eşik.
+  near(assert, cashflowThreshold({ total: 2000000, frozenValue: 0 }, 10000), 5000);
+  // Tasfiyedeki (fiyatı donmuş) fonlar tabana girmez: 2 milyonun 440 bini donmuşsa taban 1.560 TL.
+  near(assert, cashflowThreshold({ total: 2000000, frozenValue: 440000 }, 100), 1560);
+});
+
 test('Haftalık piyasa kazancı para hareketlerini çıkarır ve sorgulanan günü saymaz', () => {
   const history = { '2026-11-02': 100000, '2026-11-06': 100300, '2026-11-09': 102700, '2026-11-10': 104000 };
   const flows = [{ date: '2026-11-09', amount: 2000 }];
