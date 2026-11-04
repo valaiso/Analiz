@@ -456,9 +456,10 @@ async function refresh() {
   try {
     const { oncekiGun, yeniGun } = await refreshData();
     updateDataStatus();
-    await render();
+    await render({ runChecks: true });
     // Yenile canlı hisse / ETF / kripto fiyatlarını da çeker (telefonda sunucudan)
     const gotQuotes = await refreshIntradayQuotes();
+    if (gotQuotes && currentView !== 'panel') await render({ preserveScroll: true, runChecks: true });
     // Taze veriyle panel yeniden çizildi; veri kontrolü de yeniden çalıştı.
     const checks = lastDataChecks();
     const problems = checks ? checks.checks.filter((c) => c.status !== 'ok') : [];
@@ -530,7 +531,7 @@ function todayInIstanbul() {
 
 /* -------------------------------------------------------------------- çizim */
 
-async function render({ preserveScroll = false } = {}) {
+async function render({ preserveScroll = false, runChecks = false } = {}) {
   if (rendering || !cloudReady) return;
   rendering = true;
   updateQuoteTimestamp();
@@ -546,7 +547,10 @@ async function render({ preserveScroll = false } = {}) {
       accountEmail: sessionUser?.email || '',
       changeAccount: signOutFromAccount,
     };
-    if (currentView === 'panel' || currentView === 'dagilim') {
+    // Veri kontrolü panel hesaplarıyla yapılır; Ayarlar açıkken ya da ↻ başka sekmede
+    // basıldığında panel görünmeden arka planda hesaplanır.
+    const checksInBackground = currentView !== 'panel' && (currentView === 'ayarlar' || runChecks);
+    if (currentView === 'panel' || currentView === 'dagilim' || checksInBackground) {
       const snapshot = getMidasAccountSnapshot();
       const today = todayInIstanbul();
       const positions = [
@@ -559,15 +563,18 @@ async function render({ preserveScroll = false } = {}) {
       const marketCodes = [...new Set([...positions, ...sameDayTradeCodes].filter(Boolean))];
       if (marketCodes.length) await loadHistories(marketCodes);
     }
-    if (view.needsAnalysis) {
+    if (view.needsAnalysis || checksInBackground) {
       const txs = transactions();
       // Keep closed Midas orders in the ledger: their realized gains/losses
       // must remain in totals and yearly cashflow. The live Midas snapshot
       // separately controls which open positions are shown on the panel.
       ctx.analysisTransactions = txs;
-      if (txs.length) app.replaceChildren(h('div', { class: 'loading' },
+      if (txs.length && view.needsAnalysis) app.replaceChildren(h('div', { class: 'loading' },
         h('div', { class: 'spinner' }), h('p', {}, 'Hesaplanıyor…')));
       ctx.analysis = await analyze(txs);
+    }
+    if (checksInBackground && ctx.analysis) {
+      try { renderPanel({ ...ctx }); } catch (error) { console.warn('Veri kontrolü çalıştırılamadı', error); }
     }
     const node = view.render(ctx);
     const warning = stalenessNotice();

@@ -393,26 +393,14 @@ export function renderPanel(ctx) {
         h('em', {}, 'satışta fon kârından')),
       h('p', { class: 'hero-note' }, dailyHint))));
 
-  // Veri kontrolü: rakamlar kendi içinde ve kaynaklarla tutarlı mı? (↻ Yenile ile tekrar çalışır)
+  // Veri kontrolü: rakamlar kendi içinde ve kaynaklarla tutarlı mı? Sonuç Ayarlar'da gösterilir
+  // (↻ Yenile ile tekrar çalışır).
   if (hasMidasTotal) {
-    const result = runDataChecks({
+    runDataChecks({
       snapshot: midasSnapshot, rows: displayPositions, stockAccount, cryptoTotal, total: midasPortfolioTotal,
       dailyAmount, history: valueHistory(), flows: cashflows(), start: trackingStart(), baseline: trackingBaseline(),
       pending: pendingCashflow(), oversold: analysis.holdings.filter((x) => x.oversold).map((x) => x.code),
     });
-    const errors = result.checks.filter((c) => c.status === 'error').length;
-    const warns = result.checks.filter((c) => c.status === 'warn').length;
-    const okCount = result.checks.length - errors - warns;
-    const mark = { ok: '✓', warn: '!', error: '✕' };
-    root.append(toneCard({
-      tone: errors ? 'red' : warns ? 'amber' : 'green', icon: errors ? '✕' : warns ? '!' : '✓', title: 'Veri Kontrolü',
-      sub: `Son kontrol ${new Date(result.at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' })} · ↻ Yenile’ye basınca tekrar çalışır · ayrıntı için dokun`,
-      figure: `${okCount}/${result.checks.length}`,
-      figureSub: errors ? `${errors} hata${warns ? `, ${warns} uyarı` : ''}` : warns ? `${warns} uyarı` : 'hepsi doğru',
-      collapsible: 'veri-kontrolu',
-    }, h('ul', { class: 'check-list' }, result.checks.map((c) => h('li', {},
-      h('span', { class: `ck ck-${c.status}` }, mark[c.status]),
-      h('div', {}, h('strong', {}, c.title), h('small', {}, c.detail)))))));
   }
 
   const stopajContent = stopajRows.length

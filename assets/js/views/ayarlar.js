@@ -8,7 +8,8 @@ import {
   settings, setSetting, exportJSON, importJSON, resetAll, addTransaction,
   allTransactions, daysSinceBackup,
 } from '../store.js';
-import { sectionCard } from './common.js';
+import { sectionCard, toneCard } from './common.js';
+import { lastDataChecks } from '../verify.js';
 import { pushStatus, enablePush, disablePush, testNotification, pushDiagnostics, syncPushSubscription, registeredDeviceCount } from '../push.js';
 
 /**
@@ -149,6 +150,26 @@ function csvImportDialog({ onImported, onClose }) {
 export function renderAyarlar(ctx) {
   const root = h('div', { class: 'stack' });
   const cfg = settings();
+
+  /* ------------------------------------------------------- veri kontrolü */
+
+  const result = lastDataChecks();
+  if (result) {
+    const errors = result.checks.filter((c) => c.status === 'error').length;
+    const warns = result.checks.filter((c) => c.status === 'warn').length;
+    const okCount = result.checks.length - errors - warns;
+    const mark = { ok: '✓', warn: '!', error: '✕' };
+    root.append(toneCard({
+      tone: errors ? 'red' : warns ? 'amber' : 'green', icon: errors ? '✕' : warns ? '!' : '✓', title: 'Veri Kontrolü',
+      sub: `Son kontrol ${new Date(result.at).toLocaleTimeString('tr-TR', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Istanbul' })} · ↻ Yenile’ye basınca tekrar çalışır`,
+      figure: `${okCount}/${result.checks.length}`,
+      figureSub: errors ? `${errors} hata${warns ? `, ${warns} uyarı` : ''}` : warns ? `${warns} uyarı` : 'hepsi doğru',
+    }, h('ul', { class: 'check-list' }, result.checks.map((c) => h('li', {},
+      h('span', { class: `ck ck-${c.status}` }, mark[c.status]),
+      h('div', {}, h('strong', {}, c.title), h('small', {}, c.detail)))))));
+  } else {
+    root.append(sectionCard('Veri Kontrolü', 'Midas taraması olmadan kontrol yapılamaz; PC’de Midas’ı tara.'));
+  }
 
   /* --------------------------------------------------------------- hesap */
 
