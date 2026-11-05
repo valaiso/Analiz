@@ -690,10 +690,10 @@ export function renderPanel(ctx) {
     const kutu = h('div');
     const sonAylar = nakit.monthly.slice(-18);
     nakitSection = toneCard({
-      tone: 'indigo', icon: '⇅', title: 'Aylık Yatırım Akışı',
+      tone: 'indigo', icon: '⇅', title: 'Alımlar − Satışlar',
       sub: sonAylar.length
-        ? `Son ${sonAylar.length} ay · pozitif = para koydun, negatif = çektin`
-        : `${fmtDate(trackingStart())}’den beri alım/satım yok · pozitif = para koydun, negatif = çektin`,
+        ? `Son ${sonAylar.length} ay`
+        : `${fmtDate(trackingStart())}’den beri alım/satım yok`,
       figure: tlSigned(sonAylar.reduce((sum, m) => sum + m.amount, 0)), figureSub: 'dönem toplamı',
     }, kutu);
     if (!sonAylar.length) kutu.append(h('p', { class: 'dim', style: 'margin:0' }, 'İlk alım ya da satışından sonra aylar burada görünecek.'));
