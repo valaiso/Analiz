@@ -685,18 +685,27 @@ export function renderPanel(ctx) {
       `Gerçekleşen K/Z kartı ile yıllık tablonun toplamı ${tlSigned(realizedDifference)} farklı. `
       + 'İşlem tarihi, adet ve fiyat kayıtlarını kontrol et.'));
   }
+  // Para giriş − çıkış: yalnızca hesaba yatırılan (+) ve çekilen (−) para; fon/ETF alım-satımı
+  // ve kripto aktarımı (yeni para değil) girmez. Kaynak: onaylanan ve elle girilen nakit kayıtları.
   let nakitSection = null;
-  if (nakit.monthly.length >= 1 || trackingStart()) {
+  {
+    const start = trackingStart();
+    const byMonth = new Map();
+    for (const flow of cashflows()) {
+      if (flow.kind === 'kripto' || (start && flow.date < start) || !Number(flow.amount)) continue;
+      const month = String(flow.date).slice(0, 7);
+      byMonth.set(month, (byMonth.get(month) || 0) + Number(flow.amount));
+    }
+    const sonAylar = [...byMonth.entries()].sort().slice(-18).map(([month, amount]) => ({ month, amount }));
     const kutu = h('div');
-    const sonAylar = nakit.monthly.slice(-18);
     nakitSection = toneCard({
-      tone: 'indigo', icon: '⇅', title: 'Alımlar − Satışlar',
+      tone: 'indigo', icon: '⇅', title: 'Para Giriş − Çıkış',
       sub: sonAylar.length
-        ? `Son ${sonAylar.length} ay`
-        : `${fmtDate(trackingStart())}’den beri alım/satım yok`,
+        ? `Son ${sonAylar.length} ay · hesaba yatırılan ve çekilen para`
+        : `${start ? `${fmtDate(start)}’den beri ` : ''}para girişi ya da çıkışı yok`,
       figure: tlSigned(sonAylar.reduce((sum, m) => sum + m.amount, 0)), figureSub: 'dönem toplamı',
     }, kutu);
-    if (!sonAylar.length) kutu.append(h('p', { class: 'dim', style: 'margin:0' }, 'İlk alım ya da satışından sonra aylar burada görünecek.'));
+    if (!sonAylar.length) kutu.append(h('p', { class: 'dim', style: 'margin:0' }, 'Hesaba para yatırdığında ya da çektiğinde aylar burada görünecek. Fon alım-satımı buraya girmez.'));
     else barChart(kutu, {
       items: sonAylar.map((m) => ({ label: m.month.slice(2), value: m.amount })),
       format: (v) => tlSigned(v),
