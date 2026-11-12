@@ -126,16 +126,31 @@ export function attribution(holdings, netInvested) {
 /* --------------------------------------------------------------- nakit akışı */
 
 /** Ay bazında net yatırılan tutar ve yıl bazında gerçekleşen kâr/zarar. */
-export function cashflowCalendar(txs, fromDate = null) {
+/**
+ * @param baselineRows  takip başlangıcı fotoğrafı ({ KOD: { unitTRY } }). Verilirse başlangıç
+ *   gününde eldeki her adedin maliyeti o günkü değere çekilir: başlangıçtan sonraki satışların
+ *   kârı, kartlar ve toplam kazançla aynı şekilde 3 Kasım değerinden ölçülür.
+ */
+export function cashflowCalendar(txs, fromDate = null, baselineRows = null) {
   const aylik = new Map();
   const gerceklesenYil = new Map();
   const satislar = [];                        // satış başına gerçekleşen kâr/zarar
   const pozisyon = new Map();                 // ortalama maliyet takibi
+  let rebased = false;
+  const rebaseToStart = () => {
+    rebased = true;
+    if (!baselineRows) return;
+    for (const [code, p] of pozisyon) {
+      const unit = baselineRows[code]?.unitTRY;
+      if (Number.isFinite(unit) && p.adet > EPS) p.maliyet = p.adet * unit;
+    }
+  };
 
   // The store supplies a stable chronological sequence (including same-day
   // Midas fill times); keep it intact so realized totals match portfolio.js.
   for (const t of txs) {
     if (!isNum(t.units) || !isNum(t.price)) continue;
+    if (fromDate && !rebased && t.date >= fromDate) rebaseToStart();
     const ay = t.date.slice(0, 7);
     const yil = Number(t.date.slice(0, 4));
     const fx = fxToTRY(t.code, Math.max(0, indexForDate(t.date)));
@@ -165,10 +180,14 @@ export function cashflowCalendar(txs, fromDate = null) {
     pozisyon.set(t.code, p);
   }
 
+  if (fromDate && !rebased) rebaseToStart();
   return {
     monthly: [...aylik.entries()].sort().map(([month, amount]) => ({ month, amount })),
     realizedByYear: [...gerceklesenYil.entries()].sort().map(([year, amount]) => ({ year, amount })),
     realizedSales: satislar,
+    // Başlangıçtan beri maliyet (elde kalan adet ve TL maliyeti); kartlar bununla ölçülür.
+    sinceStart: Object.fromEntries([...pozisyon].filter(([, p]) => p.adet > EPS)
+      .map(([code, p]) => [code, { units: p.adet, cost: p.maliyet }])),
   };
 }
 

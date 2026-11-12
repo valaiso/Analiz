@@ -149,3 +149,41 @@ test('Tahmini enflasyon: son açıklanan aylık TÜFE geçen güne göre bölün
   near(assert, estimatedInflation(values, 30.44).estimate, est.monthly, 1e-9);   // tam bir ay = aylık oran
   assert.equal(estimatedInflation([100, 100], 5), null);                          // tek değer: tahmin yok
 });
+
+test('Satış sonrası: gerçekleşen kâr ve kart kârı başlangıç değerinden ölçülür, toplamı değer artışına eşit', () => {
+  // 3 Kasım öncesi 1.000 adet ortalama 5,51'den alınmış; 3 Kasım değeri 5,572.
+  const txs = [
+    { date: '2026-10-01', code: 'ZB', type: 'AL', units: 500, price: 5.50 },
+    { date: '2026-10-20', code: 'ZB', type: 'AL', units: 500, price: 5.52 },
+    { date: '2026-11-06', code: 'ZB', type: 'SAT', units: 400, price: 5.62 },
+    { date: '2026-11-09', code: 'ZB', type: 'AL', units: 200, price: 5.60 },
+  ];
+  const calc = cashflowCalendar(txs, '2026-11-03', { ZB: { unitTRY: 5.572 } });
+  // Satış kârı 3 Kasım değerinden: 400 × (5,62 − 5,572) = 19,2 (ortalama maliyetle 44 olurdu)
+  near(assert, calc.realizedSales[0].amount, 400 * (5.62 - 5.572), 1e-9);
+  // Kalan 800 adedin başlangıçtan beri maliyeti: 600 × 5,572 + 200 × 5,60
+  near(assert, calc.sinceStart.ZB.units, 800);
+  near(assert, calc.sinceStart.ZB.cost, 600 * 5.572 + 200 * 5.60, 1e-9);
+  // Bugün fiyat 5,65 → kart kârı + gerçekleşen = 3 Kasım'dan beri değer artışı (nakit dahil)
+  const price = 5.65;
+  const cardGain = 800 * price - calc.sinceStart.ZB.cost;
+  const valueChange = (800 * price + 400 * 5.62 - 200 * 5.60) - 1000 * 5.572;
+  near(assert, cardGain + calc.realizedSales[0].amount, valueChange, 1e-9);
+});
+
+test('Sunucu değerleri yalnızca eksik günleri doldurur; cihaz kaydının ve bugünün üzerine yazmaz', () => {
+  store.setSetting('trackingStart', '2026-11-03');
+  store.setPortfolioValue('2026-11-10', 525550.11);
+  const added = store.fillValueGaps([
+    { date: '2026-11-10', value: 1 },          // cihaz kaydı var: değişmez
+    { date: '2026-11-11', value: 525700.5 },   // eksik gün: doldurulur
+    { date: '2026-11-12', value: 2 },          // bugün: cihaz kaydeder, doldurulmaz
+    { date: '2026-11-01', value: 3 },          // takip başlangıcından önce: alınmaz
+  ], '2026-11-12');
+  assert.equal(added, 1);
+  const history = store.valueHistory();
+  assert.equal(history['2026-11-10'], 525550.11);
+  assert.equal(history['2026-11-11'], 525700.5);
+  assert.equal(history['2026-11-12'], undefined);
+  assert.equal(history['2026-11-01'], undefined);
+});

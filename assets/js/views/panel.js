@@ -12,7 +12,7 @@ import {
   transactions, removeTransaction, daysSinceBackup, getMidasAccountSnapshot, valueHistory,
   recordPortfolioValue, recordMonthlySnapshot, setPortfolioValue, removePortfolioValue, cashflows,
   midasBaselineState, pendingCashflow, updateMidasBaseline, trackingStart, trackingBaseline, alignTrackingStartValue, setTrackingBaselineCash,
-  recordDayPositions, dayOpeningRows, fifoLotsCloud, syncFifoLots,
+  recordDayPositions, dayOpeningRows, fifoLotsCloud, syncFifoLots, sinceStartLedger, syncSinceStartLedger,
   confirmPendingCashflow, rejectPendingCashflow, dividends, dividendsBetween, manualCashflowsBetween,
 } from '../store.js';
 import {
@@ -58,6 +58,25 @@ let heroShowsTotal = false;
 export function renderPanel(ctx) {
   const { analysis, navigate } = ctx;
   const { totals, open, series } = analysis;
+  // Başlangıçtan beri maliyet defteri ve satış kârları: PC'de Midas işlemlerinden hesaplanıp
+  // hesaba yazılır (kartlar bunu kullanır), telefon hesaptan okur. Satılan adetlerin kârı
+  // böylece kartlar ve toplam kazançla aynı başlangıç değerinden (3 Kasım) ölçülür.
+  const startRows = trackingStart() ? trackingBaseline()?.rows || null : null;
+  {
+    const midasTxs = (ctx.analysisTransactions || transactions()).filter((tx) => tx.source === 'midas');
+    if (trackingStart() && startRows && midasTxs.length) {
+      const calc = cashflowCalendar(midasTxs, trackingStart(), startRows);
+      syncSinceStartLedger({
+        positions: Object.fromEntries(Object.entries(calc.sinceStart).map(([code, entry]) => [code, {
+          units: Math.round(entry.units * 1e6) / 1e6, cost: Math.round(entry.cost * 100) / 100,
+        }])),
+        realized: calc.realizedSales.filter((sale) => sale.date >= trackingStart()).map((sale) => ({
+          date: sale.date, code: sale.code, amount: Math.round(sale.amount * 100) / 100, unmatched: Boolean(sale.unmatched),
+        })),
+      });
+    }
+  }
+  const ledgerRealized = sinceStartLedger()?.realized || null;
   const midasSnapshot = getMidasAccountSnapshot();
   const midasSummary = midasSnapshot?.summary;
   const stockPositionsCaptured = midasSnapshot?.positionsSource === 'midas-visible-v1'
@@ -466,8 +485,9 @@ export function renderPanel(ctx) {
       snapshot: midasSnapshot, rows: displayPositions, stockAccount, cryptoTotal, total: midasPortfolioTotal,
       dailyAmount, history: valueHistory(), flows: cashflows(), start: trackingStart(), baseline: trackingBaseline(),
       totalGain: totalGain.total, openingRows,
-      realizedSinceStart: trackingStart() ? cashflowCalendar(txs, trackingStart()).realizedSales
-        .filter((sale) => sale.date >= trackingStart()).reduce((sum, sale) => sum + sale.amount, 0) : 0,
+      realizedSinceStart: !trackingStart() ? 0
+        : (ledgerRealized || cashflowCalendar(txs, trackingStart(), startRows).realizedSales
+          .filter((sale) => sale.date >= trackingStart())).reduce((sum, sale) => sum + sale.amount, 0),
       dividendsSinceStart: trackingStart() ? dividends().filter((item) => item.date >= trackingStart())
         .reduce((sum, item) => sum + item.amount, 0) : 0,
       pending: pendingCashflow(), oversold: analysis.holdings.filter((x) => x.oversold
@@ -677,7 +697,7 @@ export function renderPanel(ctx) {
 
   /* --------------------------------------------------------------- nakit akışı */
 
-  const nakit = cashflowCalendar(txs, trackingStart());
+  const nakit = cashflowCalendar(txs, trackingStart(), startRows);
   const yearlyRealizedTotal = nakit.realizedByYear.reduce((sum, year) => sum + year.amount, 0);
   const realizedDifference = Math.round((totals.realized - yearlyRealizedTotal) * 100) / 100;
   if (!trackingStart() && nakit.realizedByYear.length && Math.abs(realizedDifference) > 0.01) {
@@ -719,7 +739,9 @@ export function renderPanel(ctx) {
     // Portföy kaydı 16.10.2026'da başladı: başlıktaki rakam o günden beri gerçekleşen kâr/zarar.
     // Yıl kutucukları o yılın tamamıdır (kayıt öncesi satışlar da dahil).
     const startDate = trackingStart() || Object.keys(valueHistory()).sort()[0] || null;
-    const sinceSales = startDate ? nakit.realizedSales.filter((sale) => sale.date >= startDate) : [];
+    const sinceSales = !startDate ? []
+      : trackingStart() && ledgerRealized ? ledgerRealized
+        : nakit.realizedSales.filter((sale) => sale.date >= startDate);
     const sinceTotal = sinceSales.reduce((sum, sale) => sum + sale.amount, 0);
     const byCode = new Map();
     for (const sale of sinceSales) byCode.set(sale.code, (byCode.get(sale.code) || 0) + sale.amount);

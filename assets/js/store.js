@@ -916,6 +916,37 @@ export function syncFifoLots(funds) {
   return true;
 }
 
+// Başlangıçtan beri maliyet defteri: kartlar ve satışların kârı aynı başlangıç değerinden
+// ölçülür. Midas işlemleri yalnızca PC'de olduğu için PC hesaplar ve hesaba yazar.
+export const sinceStartLedger = () => state.sinceStartLedgerCloud || null;
+export function syncSinceStartLedger(ledger) {
+  const slim = JSON.stringify(ledger);
+  if (state.sinceStartLedgerCloud && JSON.stringify({ ...state.sinceStartLedgerCloud, at: undefined }) === JSON.stringify({ ...ledger, at: undefined })) return false;
+  state.sinceStartLedgerCloud = { ...JSON.parse(slim), at: new Date().toISOString() };
+  persist();
+  return true;
+}
+/**
+ * Sunucunun kaydettiği günlük değerlerden yalnızca EKSİK günleri doldurur (bugün hariç;
+ * cihazın kaydettiği değerlerin üzerine yazmaz). Doldurulan gün sayısını döndürür.
+ */
+export function fillValueGaps(rows, today) {
+  const history = { ...(state.valueHistory || {}) };
+  let added = 0;
+  for (const row of rows || []) {
+    const date = String(row?.date || '').slice(0, 10);
+    const value = Math.round(Number(row?.value) * 100) / 100;
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !(value > 0) || date >= today || history[date] > 0) continue;
+    if (!afterTrackingStart(date)) continue;
+    history[date] = value;
+    added += 1;
+  }
+  if (added) {
+    state.valueHistory = history;
+    persist();
+  }
+  return added;
+}
 export const afterTrackingStart = (date) => { const start = trackingStart(); return !start || String(date || '') >= start; };
 
 export function setSetting(key, value) {

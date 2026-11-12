@@ -6,7 +6,7 @@ import { analyze } from './portfolio.js';
 import {
   transactions,
   settings, setSetting, subscribe, getState, importJSON, getMidasAccountSnapshot,
-  saveMidasLiveQuotes, ensureMidasPositionsSynced, cleanupStoredData, allTransactions,
+  saveMidasLiveQuotes, ensureMidasPositionsSynced, cleanupStoredData, allTransactions, trackingStart, fillValueGaps,
 } from './store.js';
 import { requestMidasLiveQuotes, requestServerLiveQuotes } from './midas-import.js';
 import { holidayName } from './holidays.js';
@@ -300,6 +300,8 @@ async function startAuthenticatedSession(user) {
       }
 
       cloudReady = true;
+      // Site açılmayan günlerin değeri sunucuda kaydedilir; eksik günler buradan doldurulur.
+      await fillServerValueGaps(user.id);
       // Günlük bildirim için son Midas adetleri hesaba yüklenir.
       ensureMidasPositionsSynced();
       void syncPushSubscription().catch(() => {});
@@ -322,6 +324,18 @@ async function startAuthenticatedSession(user) {
     }
   })().finally(() => { startingSession = null; });
   return startingSession;
+}
+
+async function fillServerValueGaps(userId) {
+  try {
+    const start = trackingStart();
+    let query = supabase.from('portfolio_value_history').select('date,value').eq('user_id', userId);
+    if (start) query = query.gte('date', start);
+    const { data, error } = await query;
+    if (error || !Array.isArray(data)) return;
+    const added = fillValueGaps(data, todayInIstanbul());
+    if (added) console.info(`Sunucu kaydından ${added} eksik gün dolduruldu.`);
+  } catch { /* tablo yoksa ya da çevrimdışıysa site kendi kayıtlarıyla devam eder */ }
 }
 
 function installAuthListener() {

@@ -98,6 +98,28 @@ def fmt_tr(value: float, decimals: int = 2) -> str:
     return text.replace(",", "X").replace(".", ",").replace("X", ".")
 
 
+def save_daily_value(user_id: str, day: str, value: float) -> bool:
+    """Günün portföy değerini portfolio_value_history tablosuna yazar (aynı gün varsa günceller).
+
+    Site açılmayan günlerde günlük değer kaydedilmiyordu; site açılınca eksik günleri buradan
+    doldurur. Tablo yoksa (SQL henüz çalıştırılmadıysa) yalnızca uyarı yazılır.
+    """
+    base = os.environ["SUPABASE_URL"].rstrip("/")
+    key = os.environ["SUPABASE_SERVICE_ROLE_KEY"]
+    try:
+        res = requests.post(f"{base}/rest/v1/portfolio_value_history", timeout=30,
+                            json={"user_id": user_id, "date": day, "value": round(value, 2)},
+                            headers={"apikey": key, "Authorization": f"Bearer {key}",
+                                     "Prefer": "resolution=merge-duplicates,return=minimal"})
+        if res.status_code >= 300:
+            print(f"  günlük değer kaydedilemedi (HTTP {res.status_code}); supabase/value_history.sql çalıştırıldı mı?")
+            return False
+        return True
+    except requests.RequestException as error:
+        print(f"  günlük değer kaydedilemedi: {type(error).__name__}")
+        return False
+
+
 def portfolio_change(cloud: dict, funds: dict) -> tuple[float, float, list[str], dict]:
     """(şimdiki değer, önceki değer, fiyatı bulunamayan kodlar, grup kırılımı) — ₺ cinsinden."""
     usd = yahoo_quote("USDTRY=X")
@@ -194,6 +216,14 @@ def main() -> int:
         now_total, prev_total, missing, groups = portfolio_change(cloud, funds)
         if prev_total <= 0:
             continue
+        # Günün değeri sunucuda da kaydedilir (site açılmasa bile grafikte gün eksik kalmasın).
+        # Sitedeki toplamla aynı olsun diye son Midas taramasındaki nakit/takas eklenir.
+        # Tüm pozisyonların fiyatı bulunduysa kaydedilir; eksik fiyatla yanlış değer yazılmaz.
+        if not force and not missing:
+            cash = float(((state_by_user.get(user_id) or {}).get("midasScanCash") or {}).get("cash") or 0)
+            today_tr = dt.datetime.now(dt.timezone(dt.timedelta(hours=3))).date().isoformat()
+            if save_daily_value(user_id, today_tr, now_total + cash):
+                print(f"{user_id[:8]}: günlük değer kaydedildi ({today_tr})")
         change = now_total - prev_total
         pct = change / prev_total * 100
         up = change >= 0

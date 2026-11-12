@@ -2,7 +2,7 @@ import { isTurkishMarketClosed } from './holidays.js';
 import {
   DB, cachedHistory, exactPriceAtIndex, lastIndex, indexForDate, usdTryAtIndex,
 } from './data.js';
-import { getMidasAccountSnapshot, trackingStart, trackingBaseline, setTrackingBaseline, scanCash, setScanCash } from './store.js';
+import { getMidasAccountSnapshot, trackingStart, trackingBaseline, setTrackingBaseline, scanCash, setScanCash, sinceStartLedger } from './store.js';
 
 const GROUP_ORDER = ['ETF', 'Fon', 'Hisse', 'Kripto', 'Diğer'];
 // Temerrüde düşen, alım-satımı olmayan fonlar: fiyat Midas'taki değerde sabit,
@@ -567,9 +567,24 @@ export function addSiteMarketMetrics(positions) {
   }
   const base = trackingBaseline();
   if (!base || base.date !== start) return rows;
+  const ledger = sinceStartLedger()?.positions || {};
   return rows.map((row) => {
     const b = base.rows?.[row.code];
     if (!b || row.frozen || !Number.isFinite(row.totalPLTRY) || !Number.isFinite(row.marketValueTRY) || !(row.units > 0)) return row;
+    const entry = ledger[row.code];
+    if (entry && Number.isFinite(entry.cost) && Math.abs(entry.units - row.units) <= Math.max(1e-6, row.units * 1e-6)) {
+      // Satış/alım sonrası: başlangıç değerinden yürüyen maliyet (satılan adetlerin kârı gerçekleşene geçti).
+      const totalPLTRY = Math.round((row.marketValueTRY - entry.cost) * 100) / 100 + 0;
+      const fxNative = row.price > 0 ? row.marketValueTRY / (row.units * row.price) : null;
+      return {
+        ...row,
+        totalPLTRY,
+        totalPLNative: Number.isFinite(fxNative) && fxNative > 0 ? totalPLTRY / fxNative : row.totalPLNative,
+        totalPct: entry.cost > 0 ? totalPLTRY / entry.cost * 100 : null,
+        totalSinceTrackingStart: true,
+        purchasePLTRY: row.totalPLTRY,
+      };
+    }
     const midasCostNow = row.marketValueTRY - row.totalPLTRY;
     const keptUnits = Math.min(row.units, b.units);
     const newUnits = row.units - keptUnits;
