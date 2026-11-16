@@ -262,6 +262,41 @@ export function unexplainedChange(previous, current) {
   return { amount, market, threshold, significant: Math.abs(amount) >= threshold };
 }
 
+/**
+ * Hesap defteri: taramadaki nakit, eldeki adetlerin başlangıçtan beri maliyeti ve satışlardan
+ * gerçekleşen kâr. Bütün adetlerin maliyeti biliniyorsa döner; yoksa null (eksik işlem geçmişi).
+ * @param rows      Midas pozisyonları (code, units)
+ * @param cash      taramadaki nakit/takas (Midas toplamı − pozisyonlar)
+ * @param ledger    başlangıçtan beri maliyet defteri ({ positions:{KOD:{units,cost}}, realized:[{amount}] })
+ * @param baseRows  takip başlangıcı fotoğrafı ({ KOD:{units, unitTRY} }); işlem görmeyen varlıkların maliyeti
+ */
+export function accountBook(rows, cash, ledger, baseRows) {
+  if (!Number.isFinite(cash) || !ledger?.positions || !baseRows) return null;
+  const same = (a, b) => Math.abs(a - b) <= Math.max(1e-6, Math.abs(b) * 1e-6);
+  let cost = 0;
+  for (const row of rows || []) {
+    if (!(row?.units > 0)) continue;
+    const entry = ledger.positions[row.code];
+    const base = baseRows[row.code];
+    if (entry && Number.isFinite(entry.cost) && same(entry.units, row.units)) cost += entry.cost;
+    else if (!entry && base && Number.isFinite(base.unitTRY) && same(base.units, row.units)) cost += base.units * base.unitTRY;
+    else return null;
+  }
+  const realized = (ledger.realized || []).reduce((sum, sale) => sum + (Number(sale.amount) || 0), 0);
+  return { cash, cost, realized };
+}
+
+/**
+ * İki tarama arasında hesaba giren (+) / çıkan (−) para, fiyatlardan bağımsız muhasebeyle:
+ * nakit değişimi + alımlara giden maliyet − satışlardan gelen kâr. Aradaki alımların kârı
+ * (fiyat hareketi) para girişi sanılmaz. Defterlerden biri yoksa null.
+ */
+export function bookCashflow(previousBook, currentBook) {
+  if (!previousBook || !currentBook) return null;
+  return (currentBook.cash - previousBook.cash) + (currentBook.cost - previousBook.cost)
+    - (currentBook.realized - previousBook.realized);
+}
+
 // ETF'in neyi takip ettiği ve kısaca ne anlama geldiği.
 const ETF_LABELS = {
   SPY: 'S&P 500 (ABD’nin en büyük 500 şirketi)',
@@ -846,9 +881,19 @@ function computeSiteMarketMetrics(positions) {
 }
 
 /** Compute the daily mark-to-market using market prices and same-day fills. */
-export function applyDailyMarketTransactions(positions, transactions, date, { positionsComplete = false, openingRows = null } = {}) {
+export function applyDailyMarketTransactions(positions, transactions, date, { positionsComplete = false, openingRows = null, windowStart = null } = {}) {
+  // Hafta sonu/tatilde verilen fon emirleri bir sonraki işlem gününün fiyatından gerçekleşir:
+  // önceki işlem gününden sonraki (bugünden önceki) işlemler de bugünün işlemi sayılır.
+  // Kripto 7/24 işlem gördüğü için kriptoda yalnızca bugünün işlemleri sayılır.
+  const cryptoCodes = new Set((positions || []).filter((row) => row.midasCryptoSnapshot).map((row) => row.code));
+  const inWindow = (tx) => {
+    const day = String(tx.date || '').slice(0, 10);
+    if (day === date) return true;
+    const code = String(tx.code || '').trim().toLocaleUpperCase('tr');
+    return Boolean(windowStart) && day > windowStart && day < date && !cryptoCodes.has(code);
+  };
   const byCode = new Map((transactions || []).filter((tx) => tx.source === 'midas'
-    && String(tx.date || '').slice(0, 10) === date && tx.code)
+    && inWindow(tx) && tx.code)
     .reduce((groups, tx) => {
       const code = String(tx.code).trim().toLocaleUpperCase('tr');
       if (!groups.has(code)) groups.set(code, []);

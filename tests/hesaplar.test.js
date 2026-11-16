@@ -16,6 +16,7 @@ const { buildPositions, riskSummary } = await import('../assets/js/portfolio.js'
 const { realReturn, cashflowCalendar, estimatedInflation } = await import('../assets/js/insights.js');
 const { cashflowThreshold, unexplainedChange, applyDailyMarketTransactions, weeklyMarketGain } = await import('../assets/js/asset-groups.js');
 const { runDataChecks } = await import('../assets/js/verify.js');
+const assetGroups = await import('../assets/js/asset-groups.js');
 
 test('Aynı gün işlemleri saate göre sayı olarak sıralanır (9:58 alış, 14:20 satıştan önce)', () => {
   const day = store.transactions().filter((tx) => tx.code === 'BTCX');
@@ -186,4 +187,41 @@ test('Sunucu değerleri yalnızca eksik günleri doldurur; cihaz kaydının ve b
   assert.equal(history['2026-11-11'], 525700.5);
   assert.equal(history['2026-11-12'], undefined);
   assert.equal(history['2026-11-01'], undefined);
+});
+
+test('12 gün taranmadığında aradaki alımların kârı para girişi sanılmaz (defter yöntemi)', () => {
+  const { accountBook, bookCashflow } = assetGroups;
+  const ledgerBefore = { positions: { ZBJ: { units: 10000, cost: 55720 } }, realized: [] };
+  const base = { ZBJ: { units: 10000, unitTRY: 5.572 }, THF: { units: 1000, unitTRY: 2.7 } };
+  const before = accountBook([{ code: 'ZBJ', units: 10000 }, { code: 'THF', units: 1000 }], 100, ledgerBefore, base);
+  // 130.000 TL yatırıldı, 23.276 adet 5,58'den alındı (129.880,08), bir satıştan 377 TL kâr geldi.
+  const ledgerAfter = { positions: { ZBJ: { units: 33276, cost: 55720 + 129880.08 } }, realized: [{ amount: 377 }] };
+  const after = accountBook([{ code: 'ZBJ', units: 33276 }, { code: 'THF', units: 1000 }], 100 + 130000 - 129880.08 + 377, ledgerAfter, base);
+  near(assert, bookCashflow(before, after), 130000, 1e-6);
+  // Eski fiyat yöntemi aradaki alımın kârını (23.276 × 0,066) para girişi sanıyordu.
+  const prev = { total: 10000 * 5.572 + 2700 + 100, frozenValue: 2700, units: { ZBJ: 10000, THF: 1000 }, unitTRY: { ZBJ: 5.572, THF: 2.7 } };
+  const cur = { total: 33276 * 5.646 + 2700 + 100 + 130000 - 129880.08 + 377, frozenValue: 2700, units: { ZBJ: 33276, THF: 1000 }, unitTRY: { ZBJ: 5.646, THF: 2.7 } };
+  assert.ok(unexplainedChange(prev, cur).amount - 130000 > 1000);
+  // Defterdeki adet Midas'la tutmuyorsa (eksik işlem geçmişi) defter kullanılmaz.
+  assert.equal(accountBook([{ code: 'ZBJ', units: 33000 }], 100, ledgerAfter, base), null);
+});
+
+test('Gün başı adetleri eski bir taramadan geliyorsa artan adetler "bugün alındı" sayılmaz', () => {
+  store.recordDayPositions('2026-11-14', { ZBJ: { units: 12857, midasCost: 70970.64 } }, '2026-11-04T11:32:58Z');
+  store.recordDayPositions('2026-11-16', { ZBJ: { units: 40028, midasCost: 223756.52 } }, '2026-11-16T14:58:37Z');
+  assert.equal(store.dayOpeningRows('2026-11-16', '2026-11-13'), null);
+  // Ertesi gün açılış dünkü (güncel) taramadan gelir ve kullanılır.
+  store.recordDayPositions('2026-11-17', { ZBJ: { units: 40028, midasCost: 223756.52 } }, '2026-11-17T10:00:00Z');
+  assert.equal(store.dayOpeningRows('2026-11-17', '2026-11-16').ZBJ.units, 40028);
+});
+
+test('Pazar günü verilen fon emri pazartesinin alımı sayılır', () => {
+  const row = {
+    code: 'ZBJ', units: 16730, price: 5.65, currency: 'TRY',
+    dailyUnitPriceNowTRY: 5.646, dailyUnitPricePrevTRY: 5.63, marketValueTRY: 16730 * 5.646,
+  };
+  const tx = { source: 'midas', date: '2026-11-15', code: 'ZBJ', type: 'AL', units: 6730, price: 5.65, currency: 'TRY' };
+  const result = applyDailyMarketTransactions([row], [tx], '2026-11-16', { windowStart: '2026-11-13' });
+  // 10.000 eski adet dünden bugüne; 6.730 yeni adet alış fiyatından.
+  near(assert, result.rows[0].dailyPLTRY, 10000 * (5.646 - 5.63) + 6730 * (5.646 - 5.65), 1e-6);
 });

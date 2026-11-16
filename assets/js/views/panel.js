@@ -11,14 +11,14 @@ import { isTurkishMarketClosed } from '../holidays.js';
 import {
   transactions, removeTransaction, daysSinceBackup, getMidasAccountSnapshot, valueHistory,
   recordPortfolioValue, recordMonthlySnapshot, setPortfolioValue, removePortfolioValue, cashflows,
-  midasBaselineState, pendingCashflow, updateMidasBaseline, trackingStart, trackingBaseline, alignTrackingStartValue, setTrackingBaselineCash,
+  midasBaselineState, pendingCashflow, updateMidasBaseline, attachBaselineBook, trackingStart, trackingBaseline, alignTrackingStartValue, setTrackingBaselineCash,
   recordDayPositions, dayOpeningRows, fifoLotsCloud, syncFifoLots, sinceStartLedger, syncSinceStartLedger,
   confirmPendingCashflow, rejectPendingCashflow, dividends, dividendsBetween, manualCashflowsBetween,
 } from '../store.js';
 import {
   currentMidasPositions, currentMidasCryptoPositions, addSiteMarketMetrics, applyDailyMarketTransactions,
   groupAssetRows, assetType, midasStockAccountValue, assetLabel, fundStopajRate, midasBaseline,
-  unexplainedChange, cashflowThreshold, weeklyMarketGain,
+  unexplainedChange, cashflowThreshold, weeklyMarketGain, accountBook, bookCashflow,
 } from '../asset-groups.js';
 import { tile, fundParts, groupTiles, plBadge } from './tiles.js';
 import { sectionCard, toneCard, SECTION_TONES, emptyState, rangeSelector, sortableTable, RANGES } from './common.js';
@@ -146,8 +146,6 @@ export function renderPanel(ctx) {
     row.midasCryptoSnapshot && midasPortfolioTotal > 0 && isNum(row.marketValueTRY)
       ? { ...row, allocationPct: row.marketValueTRY / midasPortfolioTotal * 100 }
       : row);
-  const todayMidasTransactions = accountTransactions.filter((tx) => tx.source === 'midas'
-    && String(tx.date || '').slice(0, 10) === todayInIstanbul());
   const dailyPositionCoverageComplete = (stockPositionsCaptured || !expectsStockSnapshot)
     && (cryptoPositionsCaptured || !expectsCryptoSnapshot);
   // Gün başı adetleri: bugün adedi artan varlığın yeni adetleri alış maliyetiyle sayılır.
@@ -170,10 +168,15 @@ export function renderPanel(ctx) {
         midasCost: isNum(row.marketValueTRY) && isNum(purchasePL) ? Math.round((row.marketValueTRY - purchasePL) * 100) / 100 : null,
       };
     }
-    recordDayPositions(todayInIstanbul(), dayRows);
+    recordDayPositions(todayInIstanbul(), dayRows, midasSnapshot.stockCapturedAt || null);
   }
-  const dailyMarket = applyDailyMarketTransactions(snapshotPositions, todayMidasTransactions,
-    todayInIstanbul(), { positionsComplete: dailyPositionCoverageComplete, openingRows });
+  // Bugünün işlemleri + hafta sonu/tatilde verilip bugün gerçekleşen fon emirleri.
+  const recentMidasTransactions = accountTransactions.filter((tx) => tx.source === 'midas'
+    && (previousTradingDay ? String(tx.date || '').slice(0, 10) > previousTradingDay
+      : String(tx.date || '').slice(0, 10) === todayInIstanbul())
+    && String(tx.date || '').slice(0, 10) <= todayInIstanbul());
+  const dailyMarket = applyDailyMarketTransactions(snapshotPositions, recentMidasTransactions,
+    todayInIstanbul(), { positionsComplete: dailyPositionCoverageComplete, openingRows, windowStart: previousTradingDay });
   const dailyPositions = dailyMarket.rows;
   // Do not infer an open holding from Midas order history.
   const displayPositions = positionsVerified ? dailyPositions
@@ -260,14 +263,19 @@ export function renderPanel(ctx) {
   // Adet, maliyet ve nakit yalnızca Midas taramasında güncellenir; fiyatlar
   // kendiliğinden yenilense de eski tarama alım/satım/temettüyü kaçırır.
   const MIDAS_STALE_DAYS = 3;
+  // Boş kripto hesabı (pozisyon yok, değer 0) eskiyemez: oradaki alım parayı önce yatırım
+  // hesabından çeker ve yatırım hesabı taramasında görünür.
+  const cryptoHasHoldings = (midasSnapshot?.cryptoPositions || []).some((row) => row?.units > 0)
+    || Number(midasSnapshot?.cryptoSummary?.totalValue) > 0;
   const midasScanAges = [
-    stockPositionsCaptured ? midasSnapshot.stockCapturedAt : null,
-    cryptoPositionsCaptured ? midasSnapshot.cryptoCapturedAt : null,
-  ].filter(Boolean).map((at) => (Date.now() - Date.parse(at)) / 86400000).filter(Number.isFinite);
-  const oldestScanDays = midasScanAges.length ? Math.floor(Math.max(...midasScanAges)) : 0;
+    stockPositionsCaptured ? ['Yatırım hesabının', midasSnapshot.stockCapturedAt] : null,
+    cryptoPositionsCaptured && cryptoHasHoldings ? ['Kripto hesabının', midasSnapshot.cryptoCapturedAt] : null,
+  ].filter(Boolean).map(([label, at]) => [label, (Date.now() - Date.parse(at)) / 86400000])
+    .filter(([, days]) => Number.isFinite(days) && days >= MIDAS_STALE_DAYS);
+  const oldestScanDays = midasScanAges.length ? Math.floor(Math.max(...midasScanAges.map(([, days]) => days))) : 0;
   if (oldestScanDays >= MIDAS_STALE_DAYS) {
     root.append(h('div', { class: 'notice warn' },
-      `Son Midas taraması ${oldestScanDays} gün önce yapıldı. Fiyatlar güncel ama adet, ortalama maliyet ve nakit o günkü haliyle duruyor; `
+      `${midasScanAges.map(([label]) => label).join(' ve ')} son Midas taraması ${oldestScanDays} gün önce yapıldı. Fiyatlar güncel ama adet, ortalama maliyet ve nakit o günkü haliyle duruyor; `
       + 'bu sürede alım/satım, temettü ya da para yatırma olduysa toplam değer yanlış olabilir. ',
       h('button', {
         class: 'btn btn-sm', type: 'button', style: 'margin-left:6px',
@@ -301,13 +309,23 @@ export function renderPanel(ctx) {
 
   // Yeni Midas taraması geldiyse önceki taramayla karşılaştır: fiyat
   // hareketiyle açıklanamayan fark para yatırma/çekme olabilir; kullanıcıya sor.
-  const currentBaseline = midasBaseline();
+  const scannedBaseline = midasBaseline();
+  // Defter (nakit + maliyet + gerçekleşen kâr) taramayla birlikte saklanır; sonraki taramada
+  // para girişi fiyatlardan değil bununla bulunur. Kriptoda varlık varsa defter kullanılmaz.
+  const currentBaseline = scannedBaseline ? {
+    ...scannedBaseline,
+    book: trackingStart() && !cryptoHasHoldings ? accountBook(
+      snapshotPositions.filter((row) => !row.midasCryptoSnapshot), stockAccount.cash,
+      sinceStartLedger(), trackingBaseline()?.rows) : null,
+  } : null;
   const previousBaseline = midasBaselineState();
   if (currentBaseline && previousBaseline?.key !== currentBaseline.key) {
     // Kripto hesabı ilk kez okunduysa eklenen değer para girişi değildir.
     const cryptoNewlyCaptured = !previousBaseline?.key?.split('|')[1] && currentBaseline.key.split('|')[1];
-    const rawChange = previousBaseline && !cryptoNewlyCaptured
+    const priceChange = previousBaseline && !cryptoNewlyCaptured
       ? unexplainedChange(previousBaseline, currentBaseline) : null;
+    const booked = priceChange ? bookCashflow(previousBaseline.book, currentBaseline.book) : null;
+    const rawChange = priceChange && Number.isFinite(booked) ? { ...priceChange, amount: booked, method: 'defter' } : priceChange;
     // Bu aralıkta girilmiş temettüler para girişi değildir; elle girilen nakit zaten
     // kayıtlıdır. İkisi de tespitten düşülür ki aynı para ikinci kez sorulmasın.
     const change = rawChange ? (() => {
@@ -321,6 +339,8 @@ export function renderPanel(ctx) {
       return { ...rawChange, amount, threshold, weekly, significant: Math.abs(amount) >= threshold };
     })() : null;
     updateMidasBaseline(currentBaseline, change?.significant ? change : null);
+  } else if (currentBaseline?.book) {
+    attachBaselineBook(currentBaseline.key, currentBaseline.book);
   }
   const pending = pendingCashflow();
   if (pending) {
@@ -566,7 +586,7 @@ export function renderPanel(ctx) {
   const chartEndDate = chartDates.at(-1);
 
   const drawChart = () => {
-    const range = { '1a': 30, '3a': 90, '6a': 180, '1y': 365, '3y': 1095, all: 0 }[rangeKey];
+    const range = { '1h': 7, '1a': 30, '3a': 90, '6a': 180, '1y': 365, '3y': 1095, all: 0 }[rangeKey];
     const sinceStart = Math.max(1, Math.ceil((Date.parse(`${chartEndDate}T00:00:00Z`)
       - Date.parse(`${chartStartDate}T00:00:00Z`)) / 86400000));
     const selectedDays = range || sinceStart;
@@ -597,7 +617,7 @@ export function renderPanel(ctx) {
     rangeSelector(rangeKey, (r) => {
       rangeKey = r.key;
       drawChart();
-    }, RANGES.map((range) => range.key === 'all'
+    }, [{ key: '1h', label: '1H', days: 7, title: 'Son 1 hafta' }, ...RANGES].map((range) => range.key === 'all'
       ? { ...range, label: 'Başlangıç', title: 'Yatırım başlangıcından itibaren' } : range)));
 
   // Kayıtlı günler: Midas'ta görülen geçmiş gün toplamları elle eklenip düzeltilebilir.

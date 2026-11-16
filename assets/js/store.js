@@ -445,6 +445,14 @@ export const cashflows = () => (Array.isArray(state.cashflows) ? state.cashflows
 export const midasBaselineState = () => state.midasBaseline || null;
 export const pendingCashflow = () => state.pendingCashflow || null;
 
+/** Aynı taramanın kaydında defter yoksa (eski sürümde kaydedilmiş) sonradan eklenir. */
+export function attachBaselineBook(key, book) {
+  if (!book || !state.midasBaseline || state.midasBaseline.key !== key || state.midasBaseline.book) return false;
+  state.midasBaseline = { ...state.midasBaseline, book };
+  persist();
+  return true;
+}
+
 /** Yeni tarama geldiyse karşılaştırma için önceki fotoğrafı saklayıp günceller. */
 export function updateMidasBaseline(baseline, detected) {
   if (!baseline || state.midasBaseline?.key === baseline.key) return false;
@@ -884,22 +892,36 @@ export function setScanCash(key, cash) {
  * ertesi gün bunlar "açılış" olur. Gün içinde adet artmışsa yeni adetlerin günlük kazancı
  * dünkü kapanıştan değil gerçek alış maliyetinden (Midas maliyet artışı) hesaplanır.
  */
-export function recordDayPositions(today, rows) {
+export function recordDayPositions(today, rows, scanAt = null) {
   if (!today || !rows || !Object.keys(rows).length) return;
   const current = state.positionDays;
   if (current?.date === today) {
     const changed = Object.keys(rows).length !== Object.keys(current.rows || {}).length
-      || Object.entries(rows).some(([code, row]) => Math.abs((current.rows?.[code]?.units ?? -1) - row.units) > 1e-9);
-    state.positionDays = { date: today, rows };
+      || Object.entries(rows).some(([code, row]) => Math.abs((current.rows?.[code]?.units ?? -1) - row.units) > 1e-9)
+      || (scanAt || null) !== (current.scanAt || null);
+    state.positionDays = { date: today, rows, scanAt: scanAt || null };
     if (changed) persist();
     return;
   }
-  if (current?.date && current.date < today) state.positionOpen = { date: today, from: current.date, rows: current.rows };
-  state.positionDays = { date: today, rows };
+  if (current?.date && current.date < today) {
+    state.positionOpen = { date: today, from: current.date, rows: current.rows, scanAt: current.scanAt || null };
+  }
+  state.positionDays = { date: today, rows, scanAt: scanAt || null };
   persist();
 }
+/** ISO zamanının İstanbul günü (YYYY-MM-DD). */
+const istanbulDay = (iso) => {
+  const time = Date.parse(iso || '');
+  return Number.isFinite(time) ? new Date(time + 3 * 3600000).toISOString().slice(0, 10) : null;
+};
 export function dayOpeningRows(today, previousTradingDay) {
-  if (state.positionOpen?.date === today) return state.positionOpen.rows;
+  if (state.positionOpen?.date === today) {
+    // Gün başı adetleri önceki işlem gününden eski bir taramadan geliyorsa (örn. 12 gün
+    // taranmadı) artan adetlerin bugün alındığı bilinemez; "bugün alındı" sayılmaz.
+    const scanDay = istanbulDay(state.positionOpen.scanAt);
+    if (scanDay && previousTradingDay && scanDay < previousTradingDay) return null;
+    return state.positionOpen.rows;
+  }
   // İlk gün: önceki işlem gününün takip başlangıcı fotoğrafı açılış sayılır.
   const base = state.trackingBaseline;
   if (base?.date && base.date === previousTradingDay && !(state.positionDays?.date && state.positionDays.date < today)) return base.rows;
