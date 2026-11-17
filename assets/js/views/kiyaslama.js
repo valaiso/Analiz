@@ -29,6 +29,10 @@ function normalize(values) {
   return values.map((v) => (isNum(v) && v > 0 ? (v / base) * 100 : null));
 }
 
+// Seçili kıyaslar ve aralık: site dakikada bir yeniden çizilince başa dönmesin.
+let savedHidden = new Set();
+let savedRange = 'bas';
+
 export function renderKiyaslama(ctx) {
   const { analysis, navigate } = ctx;
   const { series } = analysis;
@@ -41,7 +45,7 @@ export function renderKiyaslama(ctx) {
 
   const root = h('div', { class: 'stack' });
   const available = Object.keys(DB.benchmarks || {});
-  const selected = new Set(available);
+  const selected = new Set(available.filter((key) => !savedHidden.has(key)));
 
   /* --------------------------------------------------------- grafik ve kontroller */
 
@@ -104,7 +108,7 @@ export function renderKiyaslama(ctx) {
     return null;
   };
 
-  let rangeKey = 'bas';
+  let rangeKey = savedRange;
   const chartBox = h('div', { class: 'chart' });
   const chartNote = h('p', { class: 'dim', style: 'margin:6px 0 0;font-size:.78rem' });
 
@@ -155,11 +159,12 @@ export function renderKiyaslama(ctx) {
 
   const toggles = h('div', { class: 'btn-row' },
     available.map((key) => h('button', {
-      class: 'btn btn-sm', type: 'button', 'aria-pressed': 'true',
-      style: `border-color:${benchStyle(key).color}`,
+      class: 'btn btn-sm', type: 'button', 'aria-pressed': String(selected.has(key)),
+      style: `border-color:${benchStyle(key).color}${selected.has(key) ? '' : ';opacity:.45'}`,
       onclick: (e) => {
         const on = selected.has(key);
         if (on) selected.delete(key); else selected.add(key);
+        if (on) savedHidden.add(key); else savedHidden.delete(key);
         e.currentTarget.setAttribute('aria-pressed', String(!on));
         e.currentTarget.style.opacity = on ? '.45' : '1';
         draw();
@@ -177,6 +182,7 @@ export function renderKiyaslama(ctx) {
       h('span', { class: 'sub' }, `Portföy ${firstRecord ? `${fmtDate(firstRecord)}’den` : 'ilk kayıttan'} itibaren kayıtlı günlük değerlerden · para giriş/çıkışı hariç · TÜFE aylık basamaklı`)),
     rangeSelector(rangeKey, (r) => {
       rangeKey = r.key;
+      savedRange = rangeKey;
       draw();
     }, RANGE_LIST));
 

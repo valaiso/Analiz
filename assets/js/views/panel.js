@@ -54,6 +54,9 @@ function signedCurrency(value, currency = 'TRY') {
 // Özet bandındaki kutu: sayfa açılınca günlük kazanç; dokununca toplam kazanç (panel her
 // dakika yeniden çizilse de seçim korunur, sayfa yenilenince günlüğe döner).
 let heroShowsTotal = false;
+// Portföy grafiğinin seçimleri: site dakikada bir yeniden çizilince başa dönmesin.
+let savedChartRange = 'all';
+let savedChartMode = 'deger';
 
 export function renderPanel(ctx) {
   const { analysis, navigate } = ctx;
@@ -554,9 +557,9 @@ export function renderPanel(ctx) {
 
   /* ------------------------------------------------------ portföy değeri grafiği */
 
-  let rangeKey = 'all';
+  let rangeKey = savedChartRange;
   // Grafik görünümü: değer + yatırılan para, kazanç (₺) ya da gerçek getiri (%).
-  let chartMode = 'deger';
+  let chartMode = savedChartMode;
   const chartBox = h('div', { class: 'chart' });
   const untrackedPrincipal = hasMidasTotal
     ? Math.max(0, midasPortfolioTotal - (series.value.at(-1) || 0)) : 0;
@@ -659,9 +662,10 @@ export function renderPanel(ctx) {
     });
   };
 
-  const chartSub = h('span', { class: 'sub' }, subTexts.deger);
+  const chartSub = h('span', { class: 'sub' }, subTexts[chartMode] || subTexts.deger);
   const modeSelector = rangeSelector(chartMode, (mode) => {
     chartMode = mode.key;
+    savedChartMode = chartMode;
     chartSub.textContent = subTexts[chartMode];
     drawChart();
   }, [
@@ -675,6 +679,7 @@ export function renderPanel(ctx) {
       chartSub),
     rangeSelector(rangeKey, (r) => {
       rangeKey = r.key;
+      savedChartRange = rangeKey;
       drawChart();
     }, [{ key: '1h', label: '1H', days: 7, title: 'Son 1 hafta' }, ...RANGES].map((range) => range.key === 'all'
       ? { ...range, label: 'Başlangıç', title: 'Yatırım başlangıcından itibaren' } : range)));
