@@ -302,7 +302,7 @@ export function renderPanel(ctx) {
         totalPct: isNum(row.totalPct) ? row.totalPct : null,
         frozen: Boolean(row.frozen),
       })),
-    });
+    }, [midasSnapshot?.stockCapturedAt, midasSnapshot?.cryptoCapturedAt].filter(Boolean).sort().at(-1) || null);
   }
 
   /* ------------------------------------------------- para giriş/çıkış tespiti */
@@ -449,13 +449,19 @@ export function renderPanel(ctx) {
     ? { total: liveEnd - real.startValue - real.netFlows, totalPct: ((1 + real.twr / 100) * (liveEnd / real.endValue) - 1) * 100 }
     : { total: null, totalPct: null };
   // Enflasyondan arındırılmış (reel) getiri: dönem başı ve son açıklanan TÜFE endeksine göre.
-  // Alt satır: içinde bulunulan ay ve son açıklanan aylık TÜFE (ör. "Kasım 2026 TÜFE %2,58").
+  // Alt satır: son açıklanan aylık TÜFE ve ait olduğu ay (ör. 3 Kasım'da açıklanan "Ekim 2026 TÜFE %2,58").
+  // TÜFE serisi açıklandığı günden itibaren yeni değeri taşır; değerin ait olduğu ay, açıklandığı ayın bir öncesidir.
   const realReturnText = () => {
     const values = (DB.benchmarks?.TUFE?.values || []).slice(0, indexForDate(todayInIstanbul()) + 1);
     const est = estimatedInflation(values, 0);
-    const [y, m] = todayInIstanbul().split('-').map(Number);
-    const monthName = new Intl.DateTimeFormat('tr-TR', { month: 'long', timeZone: 'UTC' }).format(new Date(Date.UTC(y, m - 1, 15)));
-    const label = `${monthName.charAt(0).toLocaleUpperCase('tr')}${monthName.slice(1)} ${y} TÜFE`;
+    let pub = todayInIstanbul();
+    for (let i = values.length - 1; i > 0; i -= 1) {
+      if (values[i] > 0 && values[i - 1] > 0 && values[i] !== values[i - 1]) { pub = DB.calendar[i] || pub; break; }
+    }
+    const measured = new Date(`${pub.slice(0, 7)}-15T12:00:00Z`);
+    measured.setUTCMonth(measured.getUTCMonth() - 1);
+    const monthName = new Intl.DateTimeFormat('tr-TR', { month: 'long', timeZone: 'UTC' }).format(measured);
+    const label = `${monthName.charAt(0).toLocaleUpperCase('tr')}${monthName.slice(1)} ${measured.getUTCFullYear()} TÜFE (son açıklanan)`;
     return est ? `${label} %${est.monthly.toFixed(2).replace('.', ',')}` : `${label} —`;
   };
   const heroGainBox = () => {

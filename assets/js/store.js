@@ -401,19 +401,24 @@ function lastWeekdayOfMonth(month) {
  * Aylık rapor için pozisyon fotoğrafı (yalnızca Midas taramasından).
  * Her cuma ve ayın son iş günü güncellenir; hafta sonu açılışı cuma sayılır.
  * O ay için hiç kayıt yoksa ilk açılışta bir kez yazılır ki rapor boş kalmasın.
+ * Önceki fotoğraftan sonra yeni bir Midas taraması yapıldıysa (adet, maliyet, nakit değişmiş olabilir) gün
+ * beklenmeden güncellenir: aksi halde ör. cuma fotoğrafı eski taramayla kalır, rapordaki pozisyon ağırlıkları ve
+ * stopaj, sonradan düzeltilen günlük değer kaydıyla çelişir (Kasım 2026: 13.11 fotoğrafı 180 bin TL girişi görmedi).
+ * scanAt: en son Midas taramasının zamanı (ISO).
  */
-export function recordMonthlySnapshot(calendarDate, snapshot) {
+export function recordMonthlySnapshot(calendarDate, snapshot, scanAt = null) {
   if (!snapshot || !Array.isArray(snapshot.rows)) return false;
   const date = tradingDateFor(calendarDate);
   const month = date.slice(0, 7);
   const previous = state.monthlySnapshots?.[month];
   const isFriday = new Date(`${date}T12:00:00Z`).getUTCDay() === 5;
-  if (previous && !isFriday && date !== lastWeekdayOfMonth(month)) return false;
   const lastAt = Date.parse(previous?.savedAt || '') || 0;
-  if (previous && previous.date === date && Date.now() - lastAt < VALUE_RECORD_INTERVAL_MS) return false;
+  const newScan = Boolean(previous) && (Date.parse(scanAt || '') || 0) > lastAt;
+  if (previous && !newScan && !isFriday && date !== lastWeekdayOfMonth(month)) return false;
+  if (previous && !newScan && previous.date === date && Date.now() - lastAt < VALUE_RECORD_INTERVAL_MS) return false;
   state.monthlySnapshots = {
     ...(state.monthlySnapshots || {}),
-    [month]: { ...snapshot, date, savedAt: new Date().toISOString() },
+    [month]: { ...snapshot, date, savedAt: new Date().toISOString(), ...(scanAt ? { scanAt } : {}) },
   };
   persist();
   return true;
