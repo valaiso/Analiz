@@ -225,3 +225,13 @@ test('Pazar günü verilen fon emri pazartesinin alımı sayılır', () => {
   // 10.000 eski adet dünden bugüne; 6.730 yeni adet alış fiyatından.
   near(assert, result.rows[0].dailyPLTRY, 10000 * (5.646 - 5.63) + 6730 * (5.646 - 5.65), 1e-6);
 });
+
+test('Getiri grafiği: para girişi birikmiş gerçek getiriyi artırmaz', () => {
+  const r = realReturn({ '2026-11-03': 100000, '2026-11-04': 101000, '2026-11-05': 152010 },
+    [{ date: '2026-11-05', amount: 50000 }]);
+  near(assert, r.growthPct[0], 0);
+  near(assert, r.growthPct[1], 1, 1e-9);
+  // 5 Kasım: (152.010 − 50.000) / 101.000 = %1 daha → birikmiş %2,01
+  near(assert, r.growthPct[2], 2.01, 1e-9);
+  near(assert, r.growthPct.at(-1), r.twr, 1e-12);
+});

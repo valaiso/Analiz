@@ -549,6 +549,8 @@ export function renderPanel(ctx) {
   /* ------------------------------------------------------ portföy değeri grafiği */
 
   let rangeKey = 'all';
+  // Grafik görünümü: değer + yatırılan para, kazanç (₺) ya da gerçek getiri (%).
+  let chartMode = 'deger';
   const chartBox = h('div', { class: 'chart' });
   const untrackedPrincipal = hasMidasTotal
     ? Math.max(0, midasPortfolioTotal - (series.value.at(-1) || 0)) : 0;
@@ -584,6 +586,22 @@ export function renderPanel(ctx) {
   });
   const chartStartDate = chartDates[0];
   const chartEndDate = chartDates.at(-1);
+  // Gerçek getiri (para girişlerinden arındırılmış, birikmiş %). Midas kaydı yoksa
+  // değer / yatırılan para oranından hesaplanır.
+  const realGrowth = real ? new Map(real.dates.map((date, index) => [date, real.growthPct[index]])) : null;
+  const growthValues = chartDates.map((date, index) => {
+    if (realGrowth) return realGrowth.get(date) ?? null;
+    const value = chartValues[index];
+    const invested = investedValues[index];
+    return isNum(value) && isNum(invested) && invested > 0 ? (value / invested - 1) * 100 : null;
+  });
+  const subTexts = {
+    deger: hasMidasTotal
+      ? `Toplam değer ${chartStartDate ? fmtDate(chartStartDate) : 'bugün'} tarihinden itibaren her gün kaydedilir · yatırılan para = başlangıç değeri + onayladığın para giriş/çıkışları${missingCryptoSnapshot ? ' · kripto hariç' : ''}`
+      : 'Geçmiş alım/satım kayıtlarına göre modellenir.',
+    kazanc: 'Kazanç = portföy değeri − yatırılan para · seçilen dönemin başından itibaren (para girişi kazanç sayılmaz)',
+    getiri: 'Gerçek getiri (%) · seçilen dönemin başından itibaren, para giriş/çıkışlarından arındırılmış',
+  };
 
   const drawChart = () => {
     const range = { '1h': 7, '1a': 30, '3a': 90, '6a': 180, '1y': 365, '3y': 1095, all: 0 }[rangeKey];
@@ -594,11 +612,38 @@ export function renderPanel(ctx) {
     const inv = sliceLastDays(chartDates, investedValues, selectedDays);
     const visibleDays = v.dates.length > 1
       ? (Date.parse(`${v.dates.at(-1)}T00:00:00Z`) - Date.parse(`${v.dates[0]}T00:00:00Z`)) / 86400000 : 0;
+    const xFormat = (date) => visibleDays <= 180 ? `${date.slice(8, 10)}/${date.slice(5, 7)}`
+      : `${date.slice(5, 7)}/${date.slice(0, 4)}`;
+    const trendColor = (values) => ((values.filter(isNum).at(-1) ?? 0) >= 0 ? 'var(--up)' : 'var(--down)');
+    if (chartMode === 'kazanc') {
+      // Dönemin ilk günü 0 kabul edilir: "bu dönemde ne kadar kazandım".
+      const gains = v.values.map((value, index) => (isNum(value) && isNum(inv.values[index]) ? value - inv.values[index] : null));
+      const first = gains.find(isNum) ?? 0;
+      const values = gains.map((gain) => (isNum(gain) ? gain - first : null));
+      lineChart(chartBox, {
+        dates: v.dates, height: 280, xFormat, baseline: 0,
+        yFormat: (x) => tl(x, { compact: true }),
+        valueFormat: (x) => tlSigned(x),
+        series: [{ name: 'Kazanç (₺)', values, color: trendColor(values), fill: true }],
+      });
+      return;
+    }
+    if (chartMode === 'getiri') {
+      const g = sliceLastDays(chartDates, growthValues, selectedDays);
+      const first = g.values.find(isNum) ?? 0;
+      const values = g.values.map((x) => (isNum(x) ? ((1 + x / 100) / (1 + first / 100) - 1) * 100 : null));
+      lineChart(chartBox, {
+        dates: g.dates, height: 280, xFormat, baseline: 0,
+        yFormat: (x) => pctSigned(x, 2),
+        valueFormat: (x) => pctSigned(x, 2),
+        series: [{ name: 'Gerçek getiri (%)', values, color: trendColor(values), fill: true }],
+      });
+      return;
+    }
     lineChart(chartBox, {
       dates: v.dates,
       height: 280,
-      xFormat: (date) => visibleDays <= 180 ? `${date.slice(8, 10)}/${date.slice(5, 7)}`
-        : `${date.slice(5, 7)}/${date.slice(0, 4)}`,
+      xFormat,
       yFormat: (x) => tl(x, { compact: true }),
       valueFormat: (x) => tl(x),
       series: [
@@ -608,12 +653,20 @@ export function renderPanel(ctx) {
     });
   };
 
+  const chartSub = h('span', { class: 'sub' }, subTexts.deger);
+  const modeSelector = rangeSelector(chartMode, (mode) => {
+    chartMode = mode.key;
+    chartSub.textContent = subTexts[chartMode];
+    drawChart();
+  }, [
+    { key: 'deger', label: 'Değer', title: 'Portföy değeri ve yatırılan para' },
+    { key: 'kazanc', label: 'Kazanç ₺', title: 'Para girişleri hariç kazanç (TL)' },
+    { key: 'getiri', label: 'Getiri %', title: 'Para girişlerinden arındırılmış gerçek getiri (%)' },
+  ]);
   const head = h('div', { class: 'card-head' },
     h('div', {},
-      h('h2', {}, 'Portföy Değeri ve Yatırılan Para'),
-      h('span', { class: 'sub' }, hasMidasTotal
-        ? `Toplam değer ${chartStartDate ? fmtDate(chartStartDate) : 'bugün'} tarihinden itibaren her gün kaydedilir · yatırılan para = başlangıç değeri + onayladığın para giriş/çıkışları${missingCryptoSnapshot ? ' · kripto hariç' : ''}`
-        : 'Geçmiş alım/satım kayıtlarına göre modellenir.')),
+      h('div', { class: 'chart-title-row' }, h('h2', {}, 'Portföy Değeri ve Yatırılan Para'), modeSelector),
+      chartSub),
     rangeSelector(rangeKey, (r) => {
       rangeKey = r.key;
       drawChart();

@@ -178,6 +178,7 @@ select:focus, .input:focus, input:focus { border-color: var(--accent); box-shado
   gap: 10px; margin-bottom: 12px; flex-wrap: wrap;
 }
 .card-head .sub { color: var(--text-dim); font-size: .82rem; font-weight: 400; }
+.chart-title-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
 
 .grid { display: grid; gap: 14px; }
 /* Grid/flex çocukları varsayılan min-width:auto ile içeriği kadar genişler;

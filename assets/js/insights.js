@@ -425,18 +425,21 @@ export function realReturn(history, flows) {
   let growth = 1;
   let netFlows = 0;
   const invested = [history[dates[0]]];
+  const growthPct = [0];  // her güne kadar birikmiş gerçek getiri (%), para girişlerinden arındırılmış
   for (let i = 1; i < dates.length; i += 1) {
     const flow = flowsBetween(dates[i - 1], dates[i]);
     netFlows += flow;
     const previous = history[dates[i - 1]];
     if (previous > 0) growth *= (history[dates[i]] - flow) / previous;
     invested.push(history[dates[0]] + netFlows);
+    growthPct.push((growth - 1) * 100);
   }
   const startValue = history[dates[0]];
   const endValue = history[dates.at(-1)];
   return {
     dates,
     invested,
+    growthPct,
     startDate: dates[0],
     startValue,
     endValue,
