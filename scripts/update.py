@@ -321,9 +321,13 @@ def process_extra_assets(hist_dir: Path, calendar: list[str], index_of: dict[str
                     close = float(row["Close"])
                 except (TypeError, ValueError):
                     continue
-                if math.isfinite(close) and close > 0:
-                    price_map[day.strftime("%Y-%m-%d")] = round(close, 4)
-            filled = fill_missing_closes(info["symbol"], price_map, calendar)
+                # Seans sürerken Yahoo bugünün yarım gün fiyatını "kapanış" gibi verir; o fiyat
+                # akşama kadar sabit kalıp siteyi yanıltıyordu (TUPRS 17.11 sabah 352,75). Bitmemiş
+                # gün yazılmaz; gün içinde site canlı fiyatı ya da Midas taramasını kullanır.
+                day_iso = day.strftime("%Y-%m-%d")
+                if math.isfinite(close) and close > 0 and _session_closed(day_iso, info["symbol"]):
+                    price_map[day_iso] = round(close, 4)
+            filled =fill_missing_closes(info["symbol"], price_map, calendar)
             if filled:
                 print(f"  [ekstra] {code}: boş kapanış gün içi son fiyatla dolduruldu: {', '.join(filled)}", flush=True)
             matching_days = [d for d in calendar if d in price_map]

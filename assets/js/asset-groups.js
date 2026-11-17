@@ -760,7 +760,19 @@ function computeSiteMarketMetrics(positions) {
     // Eski kapanış, daha yeni bilinen fiyatın önüne geçmez.
     const tradingDay = (day) => Boolean(day) && ![0, 6].includes(new Date(`${day}T12:00:00Z`).getUTCDay())
       && !(marketTimezone === 'Europe/Istanbul' && isTurkishMarketClosed(day));
-    const snapshotDay = position.midasStockSnapshot ? dateInTimezone(position.midasSnapshotCapturedAt, marketTimezone) : null;
+    // Tarama o borsanın seansı açılmadan yapıldıysa (ör. 14:16 TR = New York 06:16) gösterilen
+    // fiyat önceki kapanıştır; o güne ait yeni fiyat sayılmaz.
+    const scanMinutes = (() => {
+      const at = Date.parse(position.midasSnapshotCapturedAt || '');
+      if (!Number.isFinite(at)) return null;
+      const parts = Object.fromEntries(new Intl.DateTimeFormat('en-GB', {
+        timeZone: marketTimezone, hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+      }).formatToParts(new Date(at)).map((part) => [part.type, part.value]));
+      return Number(parts.hour) * 60 + Number(parts.minute);
+    })();
+    const sessionOpenMinutes = marketTimezone === 'America/New_York' ? 9 * 60 + 30 : 10 * 60;
+    const snapshotDay = position.midasStockSnapshot && Number.isFinite(scanMinutes) && scanMinutes >= sessionOpenMinutes
+      ? dateInTimezone(position.midasSnapshotCapturedAt, marketTimezone) : null;
     const newerCandidates = exchangeTraded ? [
       hasLiveQuote && liveQuote.isRegularSessionBar !== false && liveQuote.date && (!quoteDate || liveQuote.date > quoteDate)
         ? { date: liveQuote.date, at: quoteTimestamp || 0, price: liveQuote.price } : null,
