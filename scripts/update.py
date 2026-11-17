@@ -13,6 +13,7 @@ import sqlite3
 import sys
 import time
 from pathlib import Path
+from zoneinfo import ZoneInfo
 import yfinance as yf
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -258,6 +259,51 @@ def add_category_percentiles(funds: list[dict]) -> None:
                         f["catRank"], f["catRanked"] = len(degerler) - alt, len(degerler)
 
 
+def _session_closed(day: str, symbol: str, now_utc: dt.datetime | None = None) -> bool:
+    """Borsa günü bitti mi? (BIST 18:10 TR, ABD 16:15 New York). Bitmemiş gün kapanış sayılmaz."""
+    now_utc = now_utc or dt.datetime.now(dt.timezone.utc)
+    if symbol.endswith(".IS"):
+        local = now_utc.astimezone(dt.timezone(dt.timedelta(hours=3)))
+        close_at = dt.time(18, 10)
+    else:
+        local = now_utc.astimezone(ZoneInfo("America/New_York"))
+        close_at = dt.time(16, 15)
+    today = local.date().isoformat()
+    return day < today or (day == today and local.time() >= close_at)
+
+
+def fill_missing_closes(symbol: str, price_map: dict[str, float], calendar: list[str],
+                        intraday=None, now_utc: dt.datetime | None = None) -> list[str]:
+    """Yahoo son günlerden birinin günlük kapanışını boş verirse (16.11.2026 TUPRS gibi) o günün
+    gün içi son fiyatı kapanış sayılır. Yalnızca bitmiş seanslar doldurulur. Doldurulan günleri döndürür.
+    """
+    try:
+        if intraday is None:
+            intraday = yf.Ticker(symbol).history(period="5d", interval="60m")
+    except Exception:
+        return []
+    if intraday is None or getattr(intraday, "empty", True):
+        return []
+    last_by_day: dict[str, float] = {}
+    for stamp, row in intraday.iterrows():
+        try:
+            value = float(row["Close"])
+        except (TypeError, ValueError):
+            continue
+        if math.isfinite(value) and value > 0:
+            last_by_day[stamp.strftime("%Y-%m-%d")] = round(value, 4)   # sıralı: günün son değeri kalır
+    known = set(calendar)
+    filled = []
+    for day, value in sorted(last_by_day.items()):
+        if day in price_map or (known and day not in known and symbol.endswith(".IS")):
+            continue
+        if not _session_closed(day, symbol, now_utc):
+            continue
+        price_map[day] = value
+        filled.append(day)
+    return filled
+
+
 def process_extra_assets(hist_dir: Path, calendar: list[str], index_of: dict[str, int]) -> list[dict]:
     """Ekstra BIST/ETF enstrümanlarını yfinance ile çeker ve funds.json formatına getirir."""
     print("\n[ekstra] BIST Hisseleri ve ABD ETF'leri yfinance ile çekiliyor...", flush=True)
@@ -277,6 +323,9 @@ def process_extra_assets(hist_dir: Path, calendar: list[str], index_of: dict[str
                     continue
                 if math.isfinite(close) and close > 0:
                     price_map[day.strftime("%Y-%m-%d")] = round(close, 4)
+            filled = fill_missing_closes(info["symbol"], price_map, calendar)
+            if filled:
+                print(f"  [ekstra] {code}: boş kapanış gün içi son fiyatla dolduruldu: {', '.join(filled)}", flush=True)
             matching_days = [d for d in calendar if d in price_map]
             if not matching_days:
                 continue

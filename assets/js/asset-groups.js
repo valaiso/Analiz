@@ -755,11 +755,25 @@ function computeSiteMarketMetrics(positions) {
     const historyStale = !exchangeTraded && midasPriceKnown
       && isStalePriceDate(quoteDate, DB.meta?.lastDataDate || DB.calendar.at(-1));
     const frozen = FROZEN_FUND_CODES.has(position.code) && midasPriceKnown;
+    // Geçmiş seride son gün(ler) eksikse (ör. Yahoo bir günün kapanışını boş verdi) elimizdeki
+    // daha yeni fiyat kullanılır: son canlı kotasyon ya da işlem gününde yapılmış Midas taraması.
+    // Eski kapanış, daha yeni bilinen fiyatın önüne geçmez.
+    const tradingDay = (day) => Boolean(day) && ![0, 6].includes(new Date(`${day}T12:00:00Z`).getUTCDay())
+      && !(marketTimezone === 'Europe/Istanbul' && isTurkishMarketClosed(day));
+    const snapshotDay = position.midasStockSnapshot ? dateInTimezone(position.midasSnapshotCapturedAt, marketTimezone) : null;
+    const newerCandidates = exchangeTraded ? [
+      hasLiveQuote && liveQuote.isRegularSessionBar !== false && liveQuote.date && (!quoteDate || liveQuote.date > quoteDate)
+        ? { date: liveQuote.date, at: quoteTimestamp || 0, price: liveQuote.price } : null,
+      midasPriceKnown && tradingDay(snapshotDay) && (!quoteDate || snapshotDay > quoteDate)
+        ? { date: snapshotDay, at: Date.parse(position.midasSnapshotCapturedAt) || 0, price: position.price } : null,
+    ].filter(Boolean).sort((a, b) => a.date.localeCompare(b.date) || a.at - b.at) : [];
+    const newerThanHistory = newerCandidates.at(-1) || null;
     const price = frozen ? position.price
       : useQuotePrice ? liveQuote.price
       : historyStale ? position.price
       : historyPriceIsToday && Number.isFinite(priceFromHistory) ? priceFromHistory
         : snapshotPriceIsToday && Number.isFinite(position.price) && position.price > 0 ? position.price
+        : newerThanHistory ? newerThanHistory.price
         : Number.isFinite(priceFromHistory) ? priceFromHistory
           : Number.isFinite(DB.byCode.get(position.code)?.price) ? DB.byCode.get(position.code).price
             : Number.isFinite(position.price) && position.price > 0 ? position.price : null;
@@ -866,7 +880,9 @@ function computeSiteMarketMetrics(positions) {
       marketValueTRY: hasSitePrice ? units * price * fx : null,
       marketValuePrevTRY,
       siteDataAvailable: hasSitePrice,
-      quoteDate: hasLiveQuote ? liveQuote.date : quoteDate,
+      quoteDate: [hasLiveQuote ? liveQuote.date : null, quoteDate, newerThanHistory?.date]
+        .filter(Boolean).sort().at(-1) || null,
+      priceNewerThanHistory: Boolean(newerThanHistory) && !useQuotePrice && !historyPriceIsToday && !snapshotPriceIsToday,
       quoteSource: hasLiveQuote ? liveQuote.source : 'site',
       quoteMissing,
       quoteMissingReason,
