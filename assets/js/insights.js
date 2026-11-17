@@ -448,3 +448,35 @@ export function realReturn(history, flows) {
     twr: dates.length > 1 ? (growth - 1) * 100 : null,
   };
 }
+
+/**
+ * TÜFE çizgisi için günlük seri: TÜFE ayda bir açıklanır (seri açıklama gününde basamak yapar).
+ * Açıklanmamış ay için son açıklanan aylık oran güne yayılır: Kasım'da Ekim'in oranıyla, Aralık'ta
+ * Kasım'ınkiyle gün gün yükselir. Bir ay dolunca (açıklama gecikirse) o oranda durur; yeni rakam
+ * açıklanınca seri gerçek endeks değerine oturur.
+ * @param values    TÜFE endeks değerleri (takvim günlerine hizalı, açıklamaya kadar sabit)
+ * @param calendar  ISO tarihler (values ile aynı uzunlukta)
+ */
+export function spreadMonthlyCpi(values, calendar) {
+  const out = Array.isArray(values) ? values.slice() : [];
+  let previous = null;   // bir önceki açıklanan endeks
+  let base = null;       // son açıklanan endeks
+  let rate = null;       // son açıklanan aylık oran
+  let baseTime = null;
+  for (let i = 0; i < out.length; i += 1) {
+    const value = values[i];
+    if (!(value > 0)) continue;
+    if (base === null || value !== base) {
+      if (base !== null) previous = base;
+      base = value;
+      rate = previous > 0 ? value / previous - 1 : null;
+      baseTime = Date.parse(`${calendar[i]}T00:00:00Z`);
+      continue;
+    }
+    const days = (Date.parse(`${calendar[i]}T00:00:00Z`) - baseTime) / 86400000;
+    if (Number.isFinite(rate) && Number.isFinite(days) && days > 0) {
+      out[i] = base * (1 + rate) ** Math.min(1, days / 30.44);
+    }
+  }
+  return out;
+}

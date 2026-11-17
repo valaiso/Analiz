@@ -13,7 +13,7 @@ seedStorage('tefas-midas-import-v1', [
 
 const store = await import('../assets/js/store.js');
 const { buildPositions, riskSummary } = await import('../assets/js/portfolio.js');
-const { realReturn, cashflowCalendar, estimatedInflation } = await import('../assets/js/insights.js');
+const { realReturn, cashflowCalendar, estimatedInflation, spreadMonthlyCpi } = await import('../assets/js/insights.js');
 const { cashflowThreshold, unexplainedChange, applyDailyMarketTransactions, weeklyMarketGain } = await import('../assets/js/asset-groups.js');
 const { runDataChecks } = await import('../assets/js/verify.js');
 const assetGroups = await import('../assets/js/asset-groups.js');
@@ -234,4 +234,17 @@ test('Getiri grafiği: para girişi birikmiş gerçek getiriyi artırmaz', () =>
   // 5 Kasım: (152.010 − 50.000) / 101.000 = %1 daha → birikmiş %2,01
   near(assert, r.growthPct[2], 2.01, 1e-9);
   near(assert, r.growthPct.at(-1), r.twr, 1e-12);
+});
+
+test('TÜFE çizgisi: açıklanmamış ay önceki ayın oranıyla güne yayılır, yeni rakam gelince ona oturur', () => {
+  const calendar = ['2026-10-03', '2026-10-20', '2026-11-03', '2026-11-18', '2026-12-03', '2026-12-04'];
+  //                 Eylül açıkl.  aynı          Ekim açıkl. (%2,58) aynı    Kasım açıkl. (%2)  aynı
+  const values = [100, 100, 102.58, 102.58, 104.6316, 104.6316];
+  const out = spreadMonthlyCpi(values, calendar);
+  near(assert, out[2], 102.58);                                   // açıklama günü gerçek değer
+  near(assert, out[3], 102.58 * 1.0258 ** (15 / 30.44), 1e-9);    // 18 Kasım: Ekim oranının 15 günü
+  assert.ok(out[3] > 102.58 && out[3] < 102.58 * 1.0258);
+  near(assert, out[4], 104.6316);                                 // Kasım açıklandı: gerçek endeks
+  near(assert, out[5], 104.6316 * 1.02 ** (1 / 30.44), 1e-9);     // Aralık: Kasım oranıyla
+  near(assert, out[1], 100);                                      // ilk ayın oranı bilinmiyor: sabit
 });

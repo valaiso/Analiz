@@ -1,7 +1,7 @@
 /* Kıyaslama: portföyün getirisini BIST 100, gram altın, dolar ve enflasyonla karşılaştırır. */
 
 import { h, tl, tlSigned, pctSigned, num, cls, isNum, colorAt, fmtDate } from '../util.js';
-import { counterfactual } from '../insights.js';
+import { counterfactual, spreadMonthlyCpi } from '../insights.js';
 import { transactions, valueHistory, cashflows, trackingStart, afterTrackingStart } from '../store.js';
 import { DB, indexForDate } from '../data.js';
 import { lineChart } from '../charts.js';
@@ -96,14 +96,17 @@ export function renderKiyaslama(ctx) {
     ...historyDates.filter((date) => date >= start),
   ])].sort();
 
+  // TÜFE: açıklanmamış ay için son açıklanan aylık oran güne yayılır (Kasım'da Ekim'inki).
+  const cpiDaily = DB.benchmarks?.TUFE?.values ? spreadMonthlyCpi(DB.benchmarks.TUFE.values, calendar) : null;
+  const seriesOf = (key) => (key === 'TUFE' && cpiDaily ? cpiDaily : DB.benchmarks[key]?.values || []);
   /** Kıyas serisinin bir tarihteki değeri (takvim dışındaki günlerde değer yok). */
   const benchAt = (key, date) => {
     const index = DB.indexOf?.get(date);
-    const value = index == null ? null : DB.benchmarks[key]?.values?.[index];
+    const value = index == null ? null : seriesOf(key)[index];
     return value > 0 ? value : null;
   };
   const benchBefore = (key, date) => {
-    const values = DB.benchmarks[key]?.values || [];
+    const values = seriesOf(key);
     for (let i = indexForDate(date); i >= 0; i -= 1) if (values[i] > 0) return values[i];
     return null;
   };
@@ -179,7 +182,7 @@ export function renderKiyaslama(ctx) {
   const head = h('div', { class: 'card-head' },
     h('div', {},
       h('h2', {}, 'Getiri Kıyaslaması'),
-      h('span', { class: 'sub' }, `Portföy ${firstRecord ? `${fmtDate(firstRecord)}’den` : 'ilk kayıttan'} itibaren kayıtlı günlük değerlerden · para giriş/çıkışı hariç · TÜFE aylık basamaklı`)),
+      h('span', { class: 'sub' }, `Portföy ${firstRecord ? `${fmtDate(firstRecord)}’den` : 'ilk kayıttan'} itibaren kayıtlı günlük değerlerden · para giriş/çıkışı hariç · TÜFE: açıklanmamış ay için önceki ayın oranı`)),
     rangeSelector(rangeKey, (r) => {
       rangeKey = r.key;
       savedRange = rangeKey;
